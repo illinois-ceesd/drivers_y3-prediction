@@ -32,18 +32,11 @@ import numpy.linalg as la  # noqa
 import pyopencl.array as cla  # noqa
 import math
 import grudge.op as op
-from dataclasses import dataclass, fields
 from pytools.obj_array import make_obj_array
 from functools import partial
 from mirgecom.discretization import create_discretization_collection
 
-from arraycontext import (
-    dataclass_array_container,
-    with_container_arithmetic,
-    get_container_context_recursively
-)
 from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
-from meshmode.dof_array import DOFArray
 from grudge.shortcuts import make_visualizer
 from grudge.dof_desc import VolumeDomainTag, DOFDesc
 from grudge.op import nodal_max, nodal_min
@@ -101,226 +94,18 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
 )
 from mirgecom.navierstokes import grad_cv_operator
 # driver specific utilties
-from utils import (
+from y3prediction.utils import (
     getIsentropicPressure,
     getIsentropicTemperature,
     getMachFromAreaRatio
 )
-
-from grudge.trace_pair import TracePair
-from mirgecom.viscous import viscous_facial_flux_central
-
-
-class PressureOutflowBoundary(PrescribedFluidBoundary):
-    r"""Outflow boundary treatment with prescribed pressure.
-
-    This class implements an outflow boundary as described by
-    [Mengaldo_2014]_.  The boundary condition is implemented as:
-
-    .. math::
-
-        \rho^+ &= \rho^-
-
-        \rho\mathbf{Y}^+ &= \rho\mathbf{Y}^-
-
-        \rho\mathbf{V}^+ &= \rho\mathbf{V}^-
-
-    For an ideal gas at super-sonic flow conditions, i.e. when:
-
-    .. math::
-
-       \rho\mathbf{V} \cdot \hat{\mathbf{n}} \ge c,
-
-    then the pressure is extrapolated from interior points:
-
-    .. math::
-
-        P^+ = P^-
-
-    Otherwise, if the flow is sub-sonic, then the prescribed boundary pressure,
-    $P^+$, is used. In both cases, the energy is computed as:
-
-    .. math::
-
-        \rho{E}^+ = \frac{\left(2~P^+ - P^-\right)}{\left(\gamma-1\right)}
-        + \frac{1}{2}\rho^+\left(\mathbf{V}^+\cdot\mathbf{V}^+\right).
-
-    For mixtures, the pressure is imposed or extrapolated in a similar fashion
-    to the ideal gas case.
-    However, the total energy depends on the temperature to account for the
-    species enthalpy and variable specific heat at constant volume. For super-sonic
-    flows, it is extrapolated from interior points:
-
-    .. math::
-
-       T^+ = T^-
-
-    while for sub-sonic flows, it is evaluated using ideal gas law
-
-    .. math::
-
-        T^+ = \frac{P^+}{R_{mix} \rho^+}
-
-    .. automethod:: __init__
-    .. automethod:: outflow_state
-    """
-
-    def __init__(self, boundary_pressure=101325):
-        """Initialize the boundary condition object."""
-        self._pressure = boundary_pressure
-        PrescribedFluidBoundary.__init__(
-            self, boundary_state_func=self.outflow_state,
-            inviscid_flux_func=self.inviscid_boundary_flux,
-            viscous_flux_func=self.viscous_boundary_flux,
-            boundary_temperature_func=self.temperature_bc,
-            boundary_gradient_cv_func=self.grad_cv_bc
-        )
-
-    def outflow_state(self, dcoll, dd_bdry, gas_model, state_minus, **kwargs):
-        """Get the exterior solution on the boundary.
-
-        This is the partially non-reflective boundary state described by
-        [Mengaldo_2014]_ eqn. 40 if super-sonic, 41 if sub-sonic.
-
-        For super-sonic outflow, the interior flow properties (minus) are
-        extrapolated to the exterior point (plus).
-        For sub-sonic outflow, the pressure is imposed on the external point.
-
-        For mixtures, the internal energy is obtained via temperature, which comes
-        from ideal gas law with the mixture-weighted gas constant.
-        For ideal gas, the internal energy is obtained directly from pressure.
-        """
-        actx = state_minus.array_context
-        nhat = actx.thaw(dcoll.normal(dd_bdry))
-        # boundary-normal velocity
-        boundary_vel = np.dot(state_minus.velocity, nhat)*nhat
-        boundary_speed = actx.np.sqrt(np.dot(boundary_vel, boundary_vel))
-        speed_of_sound = state_minus.speed_of_sound
-        kinetic_energy = gas_model.eos.kinetic_energy(state_minus.cv)
-        gamma = gas_model.eos.gamma(state_minus.cv, state_minus.temperature)
-
-        # evaluate internal energy based on prescribed pressure
-        pressure_plus = 2.0*self._pressure - state_minus.pressure
-        #pressure_plus = state_minus.pressure
-        pressure_plus = 0.95*state_minus.pressure
-        if state_minus.is_mixture:
-            gas_const = gas_model.eos.gas_const(state_minus.cv)
-            temp_plus = (
-                actx.np.where(actx.np.greater(boundary_speed, speed_of_sound),
-                state_minus.temperature,
-                pressure_plus/(state_minus.cv.mass*gas_const))
-            )
-
-            internal_energy = state_minus.cv.mass*(
-                gas_model.eos.get_internal_energy(temp_plus,
-                                            state_minus.species_mass_fractions))
-        else:
-            boundary_pressure = actx.np.where(actx.np.greater(boundary_speed,
-                                                              speed_of_sound),
-                                              state_minus.pressure, pressure_plus)
-            internal_energy = boundary_pressure/(gamma - 1.0)
-
-        total_energy = internal_energy + kinetic_energy
-        cv_outflow = make_conserved(dim=state_minus.dim, mass=state_minus.cv.mass,
-                                    momentum=state_minus.cv.momentum,
-                                    energy=total_energy,
-                                    species_mass=state_minus.cv.species_mass)
-
-        return make_fluid_state(cv=cv_outflow, gas_model=gas_model,
-                                temperature_seed=state_minus.temperature,
-                                smoothness=state_minus.smoothness)
-
-    def outflow_state_for_diffusion(self, dcoll, dd_bdry, gas_model,
-                                           state_minus, **kwargs):
-        """Return state."""
-        actx = state_minus.array_context
-        nhat = actx.thaw(dcoll.normal(dd_bdry))
-
-        # boundary-normal velocity
-        boundary_vel = np.dot(state_minus.velocity, nhat)*nhat
-        boundary_speed = actx.np.sqrt(np.dot(boundary_vel, boundary_vel))
-        speed_of_sound = state_minus.speed_of_sound
-        kinetic_energy = gas_model.eos.kinetic_energy(state_minus.cv)
-        gamma = gas_model.eos.gamma(state_minus.cv, state_minus.temperature)
-
-        # evaluate internal energy based on prescribed pressure
-        #pressure_plus = self._pressure + 0.0*state_minus.pressure
-        pressure_plus = state_minus.pressure
-        pressure_plus = 0.95*state_minus.pressure
-        if state_minus.is_mixture:
-            gas_const = gas_model.eos.gas_const(state_minus.cv)
-            temp_plus = (
-                actx.np.where(actx.np.greater(boundary_speed, speed_of_sound),
-                state_minus.temperature,
-                pressure_plus/(state_minus.cv.mass*gas_const))
-            )
-
-            internal_energy = state_minus.cv.mass*(
-                gas_model.eos.get_internal_energy(
-                    temp_plus, state_minus.species_mass_fractions)
-            )
-        else:
-            boundary_pressure = (
-                actx.np.where(actx.np.greater(boundary_speed, speed_of_sound),
-                              state_minus.pressure, pressure_plus)
-            )
-            internal_energy = (boundary_pressure / (gamma - 1.0))
-
-        cv_plus = make_conserved(
-            state_minus.dim, mass=state_minus.mass_density,
-            energy=kinetic_energy + internal_energy,
-            momentum=state_minus.momentum_density,
-            species_mass=state_minus.species_mass_density
-        )
-        return make_fluid_state(cv=cv_plus, gas_model=gas_model,
-                                temperature_seed=state_minus.temperature)
-
-    def inviscid_boundary_flux(self, dcoll, dd_bdry, gas_model, state_minus,
-            numerical_flux_func=inviscid_facial_flux_rusanov, **kwargs):
-        """."""
-        outflow_state = self.outflow_state(
-            dcoll, dd_bdry, gas_model, state_minus)
-        state_pair = TracePair(dd_bdry, interior=state_minus, exterior=outflow_state)
-
-        actx = state_minus.array_context
-        normal = actx.thaw(dcoll.normal(dd_bdry))
-        return numerical_flux_func(state_pair, gas_model, normal)
-
-    def temperature_bc(self, state_minus, **kwargs):
-        """Get temperature value used in grad(T)."""
-        return state_minus.temperature
-
-    def grad_cv_bc(self, state_minus, grad_cv_minus, normal, **kwargs):
-        """Return grad(CV) to be used in the boundary calculation of viscous flux."""
-        return grad_cv_minus
-
-    def grad_temperature_bc(self, grad_t_minus, normal, **kwargs):
-        """Return grad(temperature) to be used in viscous flux at wall."""
-        return grad_t_minus
-
-    def viscous_boundary_flux(self, dcoll, dd_bdry, gas_model, state_minus,
-                          grad_cv_minus, grad_t_minus,
-                          numerical_flux_func=viscous_facial_flux_central,
-                                           **kwargs):
-        """Return the boundary flux for the divergence of the viscous flux."""
-        from mirgecom.viscous import viscous_flux
-        actx = state_minus.array_context
-        normal = actx.thaw(dcoll.normal(dd_bdry))
-
-        state_plus = self.outflow_state_for_diffusion(dcoll=dcoll,
-            dd_bdry=dd_bdry, gas_model=gas_model, state_minus=state_minus)
-
-        grad_cv_plus = self.grad_cv_bc(state_minus=state_minus,
-                                       grad_cv_minus=grad_cv_minus,
-                                       normal=normal, **kwargs)
-        grad_t_plus = self.grad_temperature_bc(grad_t_minus, normal)
-
-        # Note that [Mengaldo_2014]_ uses F_v(Q_bc, dQ_bc) here and
-        # *not* the numerical viscous flux as advised by [Bassi_1997]_.
-        f_ext = viscous_flux(state=state_plus, grad_cv=grad_cv_plus,
-                             grad_t=grad_t_plus)
-
-        return f_ext@normal
+from y3prediction.wall import (
+    mask_from_elements,
+    WallVars,
+    WallModel,
+)
+from y3prediction.uiuc_sharp import Thermochemistry
+from y3prediction.actii_y3 import InitACTII
 
 
 class SingleLevelFilter(logging.Filter):
@@ -355,345 +140,6 @@ class _FluidOxDiffCommTag:
 
 class _WallOxDiffCommTag:
     pass
-
-
-class HeatSource:
-    r"""Deposit energy from an ignition source."
-
-    Internal energy is deposited as a gaussian of the form:
-
-    .. math::
-
-        e &= e + e_{a}\exp^{(1-r^{2})}\\
-
-    Density if modified to keep pressure constant, according to the eos
-
-    .. automethod:: __init__
-    .. automethod:: __call__
-    """
-
-    def __init__(self, *, dim, center=None, width=1.0,
-                 amplitude=0., amplitude_func=None):
-        r"""Initialize the spark parameters.
-
-        Parameters
-        ----------
-        center: numpy.ndarray
-            center of source
-        amplitude: float
-            source strength modifier
-        amplitude_fun: function
-            variation of amplitude with time
-        """
-        if center is None:
-            center = np.zeros(shape=(dim,))
-        self._center = center
-        self._dim = dim
-        self._amplitude = amplitude
-        self._width = width
-        self._amplitude_func = amplitude_func
-
-    def __call__(self, x_vec, state, eos, time, **kwargs):
-        """
-        Create the energy deposition at time *t* and location *x_vec*.
-
-        the source at time *t* is created by evaluting the gaussian
-        with time-dependent amplitude at *t*.
-
-        If modify density is true, only adjust the temperature. Pressure
-        is maintained by adjusting the density.
-
-        Parameters
-        ----------
-        cv: :class:`mirgecom.fluid.ConservedVars`
-            Fluid conserved quantities
-        time: float
-            Current time at which the solution is desired
-        x_vec: numpy.ndarray
-            Nodal coordinates
-        """
-        t = time
-        if self._amplitude_func is not None:
-            amplitude = self._amplitude*self._amplitude_func(t)
-        else:
-            amplitude = self._amplitude
-
-        loc = self._center
-
-        # coordinates relative to lump center
-        rel_center = make_obj_array(
-            [x_vec[i] - loc[i] for i in range(self._dim)]
-        )
-        actx = x_vec[0].array_context
-        r = actx.np.sqrt(np.dot(rel_center, rel_center))
-        expterm = amplitude * actx.np.exp(-(r**2)/(2*self._width*self._width))
-
-        # elevate the local temperature
-        # if it's below some threshold
-        #temperature = state.temperature + expterm
-        temp_max = 10000.0
-        temperature = actx.np.where(
-            actx.np.greater(state.temperature, temp_max),
-            state.temperature,
-            state.temperature + expterm)
-        pressure = state.pressure
-        y = state.species_mass_fractions
-
-        # density of this new state
-        new_mass = eos.get_density(pressure=pressure, temperature=temperature,
-                                   species_mass_fractions=y)
-
-        # change the density so the pressure stays constant
-        mass_source = new_mass - state.mass_density
-
-        # keep the velocity constant
-        momentum_source = state.velocity*mass_source
-
-        # keep the mass fractions constant
-        species_mass_source = state.species_mass_fractions*mass_source
-
-        # the source term that keeps the energy constant having changed the mass
-        energy_source = 0.5*np.dot(state.velocity, state.velocity)*mass_source
-
-        return make_conserved(dim=self._dim, mass=mass_source,
-                              energy=energy_source,
-                              momentum=momentum_source,
-                              species_mass=species_mass_source)
-
-
-class SparkSource:
-    r"""Energy deposition from a ignition source"
-
-    Internal energy is deposited as a gaussian  of the form:
-
-    .. math::
-
-        e &= e + e_{a}\exp^{(1-r^{2})}\\
-
-    .. automethod:: __init__
-    .. automethod:: __call__
-    """
-    def __init__(self, *, dim, center=None, width=1.0,
-                 amplitude=0., amplitude_func=None):
-        r"""Initialize the spark parameters.
-
-        Parameters
-        ----------
-        center: numpy.ndarray
-            center of source
-        amplitude: float
-            source strength modifier
-        amplitude_fun: function
-            variation of amplitude with time
-        """
-
-        if center is None:
-            center = np.zeros(shape=(dim,))
-        self._center = center
-        self._dim = dim
-        self._amplitude = amplitude
-        self._width = width
-        self._amplitude_func = amplitude_func
-
-    def __call__(self, x_vec, cv, time, **kwargs):
-        """
-        Create the energy deposition at time *t* and location *x_vec*.
-
-        the source at time *t* is created by evaluting the gaussian
-        with time-dependent amplitude at *t*.
-
-        Parameters
-        ----------
-        cv: :class:`mirgecom.gas_model.FluidState`
-            Fluid state object with the conserved and thermal state.
-        time: float
-            Current time at which the solution is desired
-        x_vec: numpy.ndarray
-            Nodal coordinates
-        """
-
-        t = time
-        if self._amplitude_func is not None:
-            amplitude = self._amplitude*self._amplitude_func(t)
-        else:
-            amplitude = self._amplitude
-
-        #print(f"{time=} {amplitude=}")
-
-        loc = self._center
-
-        # coordinates relative to lump center
-        rel_center = make_obj_array(
-            [x_vec[i] - loc[i] for i in range(self._dim)]
-        )
-        actx = x_vec[0].array_context
-        r = actx.np.sqrt(np.dot(rel_center, rel_center))
-        expterm = amplitude * actx.np.exp(-(r**2)/(2*self._width*self._width))
-
-        mass = 0*cv.mass
-        momentum = 0*cv.momentum
-        species_mass = 0*cv.species_mass
-
-        energy = cv.energy + cv.mass*expterm
-
-        return make_conserved(dim=self._dim, mass=mass, energy=energy,
-                              momentum=momentum, species_mass=species_mass)
-
-
-class InitSponge:
-    r"""Solution initializer for flow in the ACT-II facility
-
-    This initializer creates a physics-consistent flow solution
-    given the top and bottom geometry profiles and an EOS using isentropic
-    flow relations.
-
-    The flow is initialized from the inlet stagnations pressure, P0, and
-    stagnation temperature T0.
-
-    geometry locations are linearly interpolated between given data points
-
-    .. automethod:: __init__
-    .. automethod:: __call__
-    """
-    def __init__(self, *, x0, thickness, amplitude):
-        r"""Initialize the sponge parameters.
-
-        Parameters
-        ----------
-        x0: float
-            sponge starting x location
-        thickness: float
-            sponge extent
-        amplitude: float
-            sponge strength modifier
-        """
-
-        self._x0 = x0
-        self._thickness = thickness
-        self._amplitude = amplitude
-
-    def __call__(self, x_vec, *, time=0.0):
-        """Create the sponge intensity at locations *x_vec*.
-
-        Parameters
-        ----------
-        x_vec: numpy.ndarray
-            Coordinates at which solution is desired
-        time: float
-            Time at which solution is desired. The strength is (optionally)
-            dependent on time
-        """
-        xpos = x_vec[0]
-        actx = xpos.array_context
-        zeros = 0*xpos
-        x0 = zeros + self._x0
-
-        return self._amplitude * actx.np.where(
-            actx.np.greater(xpos, x0),
-            (zeros + ((xpos - self._x0)/self._thickness) *
-            ((xpos - self._x0)/self._thickness)),
-            zeros + 0.0
-        )
-
-
-def mask_from_elements(vol_discr, actx, elements):
-    mesh = vol_discr.mesh
-    zeros = vol_discr.zeros(actx)
-
-    group_arrays = []
-
-    for igrp in range(len(mesh.groups)):
-        start_elem_nr = mesh.base_element_nrs[igrp]
-        end_elem_nr = start_elem_nr + mesh.groups[igrp].nelements
-        grp_elems = elements[
-            (elements >= start_elem_nr)
-            & (elements < end_elem_nr)] - start_elem_nr
-        grp_ary_np = actx.to_numpy(zeros[igrp])
-        grp_ary_np[grp_elems] = 1
-        group_arrays.append(actx.from_numpy(grp_ary_np))
-
-    return DOFArray(actx, tuple(group_arrays))
-
-
-@with_container_arithmetic(bcast_obj_array=False,
-                           bcast_container_types=(DOFArray, np.ndarray),
-                           matmul=True,
-                           _cls_has_array_context_attr=True,
-                           rel_comparison=True)
-@dataclass_array_container
-@dataclass(frozen=True)
-class WallVars:
-    mass: DOFArray
-    energy: DOFArray
-    ox_mass: DOFArray
-
-    @property
-    def array_context(self):
-        """Return an array context for the :class:`ConservedVars` object."""
-        return get_container_context_recursively(self.mass)
-
-    def __reduce__(self):
-        """Return a tuple reproduction of self for pickling."""
-        return (WallVars, tuple(getattr(self, f.name)
-                                    for f in fields(WallVars)))
-
-
-@dataclass_array_container
-@dataclass(frozen=True)
-class WallDependentVars:
-    thermal_conductivity: DOFArray
-    temperature: DOFArray
-
-
-class WallModel:
-    """Model for calculating wall quantities."""
-    def __init__(
-            self,
-            heat_capacity,
-            thermal_conductivity_func,
-            *,
-            effective_surface_area_func=None,
-            mass_loss_func=None,
-            oxygen_diffusivity=0.):
-        self._heat_capacity = heat_capacity
-        self._thermal_conductivity_func = thermal_conductivity_func
-        self._effective_surface_area_func = effective_surface_area_func
-        self._mass_loss_func = mass_loss_func
-        self._oxygen_diffusivity = oxygen_diffusivity
-
-    @property
-    def heat_capacity(self):
-        return self._heat_capacity
-
-    def thermal_conductivity(self, mass, temperature):
-        return self._thermal_conductivity_func(mass, temperature)
-
-    def thermal_diffusivity(self, mass, temperature, thermal_conductivity=None):
-        if thermal_conductivity is None:
-            thermal_conductivity = self.thermal_conductivity(mass, temperature)
-        return thermal_conductivity/(mass * self.heat_capacity)
-
-    def mass_loss_rate(self, mass, ox_mass, temperature):
-        dm = mass*0.
-        if self._effective_surface_area_func is not None:
-            eff_surf_area = self._effective_surface_area_func(mass)
-            if self._mass_loss_func is not None:
-                dm = self._mass_loss_func(mass, ox_mass, temperature, eff_surf_area)
-        return dm
-
-    @property
-    def oxygen_diffusivity(self):
-        return self._oxygen_diffusivity
-
-    def temperature(self, wv):
-        return wv.energy/(wv.mass * self.heat_capacity)
-
-    def dependent_vars(self, wv):
-        temperature = self.temperature(wv)
-        kappa = self.thermal_conductivity(wv.mass, temperature)
-        return WallDependentVars(
-            thermal_conductivity=kappa,
-            temperature=temperature)
 
 
 @mpi_entry_point
@@ -1621,7 +1067,6 @@ def main(ctx_factory=cl.create_some_context,
         species_names = ["air", "fuel", "inert"]
     else:
         from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
-        from uiuc import Thermochemistry
         pyro_mech = get_pyrometheus_wrapper_class(
             pyro_class=Thermochemistry, temperature_niter=pyro_temp_iter,
             zero_level=chem_source_tol)(actx.np)
@@ -1848,14 +1293,15 @@ def main(ctx_factory=cl.create_some_context,
     geometry_top = None
     if rank == 0:
         from numpy import loadtxt
-        geometry_bottom = loadtxt("nozzleBottom.dat", comments="#", unpack=False)
-        geometry_top = loadtxt("nozzleTop.dat", comments="#", unpack=False)
+        geometry_bottom = loadtxt("data/nozzleBottom.dat",
+                                  comments="#", unpack=False)
+        geometry_top = loadtxt("data/nozzleTop.dat",
+                               comments="#", unpack=False)
     geometry_bottom = comm.bcast(geometry_bottom, root=0)
     geometry_top = comm.bcast(geometry_top, root=0)
 
     inj_ymin = -0.0243245
     inj_ymax = -0.0227345
-    from actii import InitACTII
     bulk_init = InitACTII(dim=dim,
                           geom_top=geometry_top, geom_bottom=geometry_bottom,
                           P0=total_pres_inflow, T0=total_temp_inflow,
@@ -2385,11 +1831,13 @@ def main(ctx_factory=cl.create_some_context,
         return expterm
 
     if use_ignition == 2:
+        from y3prediction.utils import HeatSource
         ignition_source = HeatSource(dim=dim, center=spark_center,
                                       amplitude=spark_strength,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
     else:
+        from y3prediction.utils import SparkSource
         ignition_source = SparkSource(dim=dim, center=spark_center,
                                       amplitude=spark_strength,
                                       amplitude_func=spark_time_func,
@@ -2402,6 +1850,7 @@ def main(ctx_factory=cl.create_some_context,
     # initialize the sponge field
     sponge_amp = sponge_sigma/current_dt/1000
 
+    from y3prediction.utils import InitSponge
     sponge_init = InitSponge(x0=sponge_x0, thickness=sponge_thickness,
                              amplitude=sponge_amp)
     x_vec = actx.thaw(dcoll.nodes(dd_vol_fluid))
@@ -3494,87 +2943,5 @@ def main(ctx_factory=cl.create_some_context,
     finish_tol = 2*current_dt
     assert np.abs(current_t - t_final) < finish_tol
 
-
-if __name__ == "__main__":
-
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        level=logging.INFO)
-
-    #root_logger = logging.getLogger()
-
-    #logging.debug("A DEBUG message")
-    #logging.info("An INFO message")
-    #logging.warning("A WARNING message")
-    #logging.error("An ERROR message")
-    #logging.critical("A CRITICAL message")
-
-    import argparse
-    parser = argparse.ArgumentParser(
-        description="MIRGE-Com Isentropic Nozzle Driver")
-    parser.add_argument("-r", "--restart_file", type=ascii, dest="restart_file",
-                        nargs="?", action="store", help="simulation restart file")
-    parser.add_argument("-t", "--target_file", type=ascii, dest="target_file",
-                        nargs="?", action="store", help="simulation target file")
-    parser.add_argument("-i", "--input_file", type=ascii, dest="input_file",
-                        nargs="?", action="store", help="simulation config file")
-    parser.add_argument("-c", "--casename", type=ascii, dest="casename", nargs="?",
-                        action="store", help="simulation case name")
-    parser.add_argument("-g", "--logpath", type=ascii, dest="log_path", nargs="?",
-                        action="store", help="simulation case name")
-    parser.add_argument("--profile", action="store_true", default=False,
-                        help="enable kernel profiling [OFF]")
-    parser.add_argument("--log", action="store_true", default=False,
-                        help="enable logging profiling [ON]")
-    parser.add_argument("--lazy", action="store_true", default=False,
-                        help="enable lazy evaluation [OFF]")
-    parser.add_argument("--overintegration", action="store_true",
-        help="use overintegration in the RHS computations")
-
-    args = parser.parse_args()
-
-    # for writing output
-    casename = "prediction"
-    if args.casename:
-        print(f"Custom casename {args.casename}")
-        casename = args.casename.replace("'", "")
-    else:
-        print(f"Default casename {casename}")
-    lazy = args.lazy
-    if args.profile:
-        if lazy:
-            raise ValueError("Can't use lazy and profiling together.")
-
-    from grudge.array_context import get_reasonable_array_context_class
-    actx_class = get_reasonable_array_context_class(lazy=lazy, distributed=True)
-
-    restart_filename = None
-    if args.restart_file:
-        restart_filename = (args.restart_file).replace("'", "")
-        print(f"Restarting from file: {restart_filename}")
-
-    target_filename = None
-    if args.target_file:
-        target_filename = (args.target_file).replace("'", "")
-        print(f"Target file specified: {target_filename}")
-
-    input_file = None
-    if args.input_file:
-        input_file = args.input_file.replace("'", "")
-        print(f"Using user input from file: {input_file}")
-    else:
-        print("No user input file, using default values")
-
-    log_path = "log_data"
-    if args.log_path:
-        log_path = args.log_path.replace("'", "")
-
-    print(f"Running {sys.argv[0]}\n")
-
-    main(restart_filename=restart_filename, target_filename=target_filename,
-         user_input_file=input_file, log_path=log_path,
-         use_profiling=args.profile, use_logmgr=args.log,
-         use_overintegration=args.overintegration, lazy=lazy,
-         actx_class=actx_class, casename=casename)
 
 # vim: foldmethod=marker

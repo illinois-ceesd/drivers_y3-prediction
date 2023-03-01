@@ -1,0 +1,5 @@
+[MASTER]
+
+extension-pkg-whitelist=numpy
+disable=all
+enable=E

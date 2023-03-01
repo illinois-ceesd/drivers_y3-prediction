@@ -115,4 +115,4 @@ cd ..
 cp githooks/pre-commit .git/hooks/pre-commit
 
 # install the prediction driver and utils
-python -m pip install .
+python -m pip install -e .

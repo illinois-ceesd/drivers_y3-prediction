@@ -1,16 +1,15 @@
 """mirgecom driver initializer for the Y2 prediction."""
 import numpy as np
 from mirgecom.fluid import make_conserved
-from utils import *
 
-from utils import (
+from y3prediction.utils import (
     getIsentropicPressure,
     getIsentropicTemperature,
     getMachFromAreaRatio,
-    get_y_from_x,
     get_theta_from_data,
     smooth_step
 )
+
 
 class InitACTII:
     r"""Solution initializer for flow in the ACT-II facility
@@ -238,8 +237,8 @@ class InitACTII:
                 actx, sigma*actx.np.abs(ypos-ybottom))
             smoothing_fore = ones
             smoothing_aft = ones
-            z0 = 0.
-            z1 = 0.035
+            z0 = -0.0175
+            z1 = 0.0175
             if self._dim == 3:
                 smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
                 smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
@@ -253,11 +252,9 @@ class InitACTII:
         # make a little region along the top of the cavity where we don't want
         # the temperature smoothed
         #xc_left = zeros + 0.65163 + 0.0004
-        if self._dim == 2:
-            xc_left = zeros + 0.65163 - 0.000001
-        else:
-            xc_left = zeros + 0.651482 - 0.000001
-        xc_right = zeros + 0.72163 - 0.0004
+        #xc_right = zeros + 0.72163 - 0.0004
+        xc_left = zeros + 0.60628 + 0.0004
+        xc_right = zeros + 0.63578 - 0.0004
         yc_top = zeros - 0.006
         yc_bottom = zeros - 0.01
 
@@ -271,12 +268,19 @@ class InitACTII:
 
         # smooth the temperature in the cavity region, this helps along the wall
         # initially in pressure/temperature equilibrium with the exterior flow
-        xc_right = zeros + 0.742 + 0.000001
+        xc_left = zeros + 0.60627
+        xc_right = zeros + 0.65088
+        #xc_left = zeros + 0.65163 - 0.000001
+        #xc_right = zeros + 0.742 + 0.000001
+        #xc_left = zeros + 0.60628 + 0.0004
+        #xc_right = zeros + 0.63578 - 0.0004
         yc_top = zeros - 0.0083245
         if self._vel_sigma <= 0:
             yc_top = zeros - 0.0099
-        yc_bottom = zeros - 0.0283245
-        xc_bottom = zeros + 0.70163
+        #yc_bottom = zeros - 0.0283245
+        #xc_bottom = zeros + 0.70163
+        yc_bottom = zeros - 0.0133245
+        xc_bottom = zeros + 0.63078
         wall_theta = np.sqrt(2)/2.
 
         left_edge = actx.np.greater(xpos, xc_left)
@@ -337,15 +341,13 @@ class InitACTII:
             velocity[2] = 0.*velocity[2]
 
         # zero out the velocity in the cavity region, let the flow develop naturally
-        #xc_left = zeros + 0.65 - 0.000001
-        #xc_right = zeros + 0.72163 + 0.000001
-        xc_right = zeros + 0.742 + 0.000001
+        xc_left = zeros + 0.60627
+        xc_right = zeros + 0.65088
         yc_top = zeros - 0.0083245
         if self._vel_sigma <= 0:
             yc_top = zeros - 0.0099
-        yc_bottom = zeros - 0.0283245
-        xc_bottom = zeros + 0.70163
-        wall_theta = np.sqrt(2)/2.
+        yc_bottom = zeros - 0.0133245
+        xc_bottom = zeros + 0.63078
 
         left_edge = actx.np.greater(xpos, xc_left)
         right_edge = actx.np.less(xpos, xc_right)
@@ -360,8 +362,8 @@ class InitACTII:
         # this approximates the BL velocity profile
         if self._vel_sigma <= 0:
 
-            xc_left = zeros + 0.65 - 0.000001
-            xc_right = zeros + 0.72163 + 0.000001
+            xc_left = zeros + 0.606 - 0.000001
+            xc_right = zeros + 0.636 + 0.000001
             yc_top = zeros
             #yc_bottom = zeros - 0.0083246
             yc_bottom = zeros - 0.0099
@@ -381,8 +383,8 @@ class InitACTII:
                                             velocity[i]*smoothing,
                                             velocity[i])
 
-            xc_left = zeros + 0.65 - 0.000001
-            xc_right = zeros + 0.72163 + 0.000001
+            xc_left = zeros + 0.606 - 0.000001
+            xc_right = zeros + 0.636 + 0.000001
             yc_top = zeros - 0.0083246
             yc_bottom = zeros - 0.0099
 
@@ -422,8 +424,8 @@ class InitACTII:
             inj_right = 0.73
             inj_top = -0.0226
             inj_bottom = -0.025
-            inj_fore = 0.035/2. + 1.59e-3
-            inj_aft = 0.035/2. - 1.59e-3
+            inj_fore = 1.59e-3
+            inj_aft = -1.59e-3
             xc_left = zeros + inj_left
             xc_right = zeros + inj_right
             yc_top = zeros + inj_top
@@ -432,7 +434,7 @@ class InitACTII:
             zc_aft = zeros + inj_aft
 
             yc_center = zeros - 0.0283245 + 4e-3 + 1.59e-3/2.
-            zc_center = zeros + 0.035/2.
+            zc_center = zeros
             inj_radius = 1.59e-3/2.
 
             if self._dim == 2:
