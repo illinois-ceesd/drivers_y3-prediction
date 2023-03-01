@@ -212,103 +212,103 @@ def main(ctx_factory=cl.create_some_context,
     else:
         actx = actx_class(comm, queue, allocator=alloc, force_device_scalars=True)
 
-    # default i/o junk frequencies
-    nviz = 500
-    nhealth = 1
-    nrestart = 5000
-    nstatus = 1
+    # set up driver parameters
+    from mirgecom.simutil import configurate
+    input_data = None
+    if user_input_file:
+        if rank == 0:
+            with open(user_input_file) as f:
+                input_data = yaml.load(f, Loader=yaml.FullLoader)
+        input_data = comm.bcast(input_data, root=0)
+
+    # i/o frequencies
+    nviz = configurate("nviz", input_data, 500)
+    nrestart = configurate("nrestart", input_data, 5000)
+    nhealth = configurate("nhealth", input_data, 1)
+    nstatus = configurate("nstatus", input_data, 1)
 
     # verbosity for what gets written to viz dumps, increase for more stuff
-    viz_level = 1
+    viz_level = configurate("viz_level", input_data, 1)
     # control the time interval for writing viz dumps
-    viz_interval_type = 0
+    viz_interval_type = configurate("viz_interval_type", input_data, 0)
 
     # default timestepping control
-    integrator = "rk4"
-    current_dt = 1e-8
-    t_final = 1e-7
-    t_viz_interval = 1.e-8
+    integrator = configurate("integrator", input_data, "rk4")
+    current_dt = configurate("current_dt", input_data, 1.e-8)
+    t_final = configurate("t_final", input_data, 1.e-7)
+    t_viz_interval = configurate("t_viz_interval", input_data, 1.e-8)
+    current_cfl = configurate("current_cfl", input_data, 1.0)
+    constant_cfl = configurate("constant_cfl", input_data, False)
+
+    # these are modified below for a restart
     current_t = 0
     t_start = 0.
     t_wall_start = 0.
     current_step = 0
     first_step = 0
-    current_cfl = 1.0
-    constant_cfl = False
     last_viz_interval = 0
     force_eval = True
 
     # default health status bounds
-    health_pres_min = 1.0e-1
-    health_pres_max = 2.0e6
-    health_temp_min = 1.0
-    health_temp_max = 5000.
-    health_mass_frac_min = -10
-    health_mass_frac_max = 10
+    health_pres_min = configurate("health_pres_min", input_data, 0.1)
+    health_pres_max = configurate("health_pres_max", input_data, 2.e6)
+    health_temp_min = configurate("health_temp_min", input_data, 1.0)
+    health_temp_max = configurate("health_temp_max", input_data, 5000.)
+    health_mass_frac_min = configurate("health_mass_frac_min", input_data, -1.0)
+    health_mass_frac_max = configurate("health_mass_frac_max", input_data, 2.0)
 
     # discretization and model control
-    order = 1
-    alpha_sc = 0.3
-    s0_sc = -5.0
-    kappa_sc = 0.5
-    dim = 2
-    inv_num_flux = "rusanov"
-    mesh_filename = "data/actii_2d.msh"
-    noslip = True
-    adiabatic = False
-    use_1d_part = True
+    order = configurate("order", input_data, 2)
+    alpha_sc = configurate("alpha_sc", input_data, 0.3)
+    kappa_sc = configurate("kappa_sc", input_data, 0.5)
+    s0_sc = configurate("s0_sc", input_data, -5.0)
 
-    # material properties
-    gas_mat_prop = 0
-    mu = 1.0e-5
-    spec_diff = 1.e-4
-    mu_override = False  # optionally read in from input
-    nspecies = 0
-    pyro_temp_iter = 3  # for pyrometheus, number of newton iterations
-    pyro_temp_tol = 1.e-4  # for pyrometheus, toleranace for temperature residual
-    transport_type = 0
-    eos_type = 0
-    # for overwriting the defaults
-    fluid_mw = -1.
-    fluid_gamma = -1.
-    fluid_kappa = -1.
+    dim = configurate("dim", input_data, 2)
+    inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
+    mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
+    noslip = configurate("noslip", input_data, True)
+    adiabatic = configurate("adiabatic", input_data, False)
+    use_1d_part = configurate("use_1d_part", input_data, True)
 
-    # Averaging from https://www.azom.com/article.aspx?ArticleID=1630
-    # for graphite
-    wall_insert_rho = 1625
-    wall_insert_cp = 770
-    wall_insert_kappa = 247.5  # This seems high
+    # material properties and models options
+    gas_mat_prop = configurate("gas_mat_prop", input_data, 0)
+    spec_diff = configurate("spec_diff", input_data, 1.e-4)
+    nspecies = configurate("nspecies", input_data, 0)
+    eos_type = configurate("eos", input_data, 0)
+    transport_type = configurate("transport", input_data, 0)
+    # for pyrometheus, number of newton iterations
+    pyro_temp_iter = configurate("pyro_temp_iter", input_data, 3)
+    # for pyrometheus, toleranace for temperature residual
+    pyro_temp_tol = configurate("pyro_temp_tol", input_data, 1.e-4)
 
-    # Fiberform
-    # wall_insert_rho = 183.6
-    # wall_insert_cp = 710
-    wall_insert_ox_diff = spec_diff
-
-    # Averaging from http://www.matweb.com/search/datasheet.aspx?bassnum=MS0001
-    # for steel
-    wall_surround_rho = 7.9e3
-    wall_surround_cp = 470
-    wall_surround_kappa = 48
+    # for overwriting the default fluid material properties
+    fluid_gamma = configurate("fluid_gamma", input_data, -1.)
+    fluid_mw = configurate("fluid_mw", input_data, -1.)
+    fluid_kappa = configurate("fluid_kappa", input_data, -1.)
+    fluid_mu = configurate("mu", input_data, -1.)
 
     # rhs control
-    use_ignition = 0
-    use_sponge = True
-    use_combustion = True
-    use_injection = True
-    use_wall_ox = True
-    use_wall_mass = True
+    use_combustion = configurate("use_combustion", input_data, True)
+    use_wall_ox = configurate("use_wall_ox", input_data, True)
+    use_wall_mass = configurate("use_wall_mass", input_data, True)
+    use_ignition = configurate("use_ignition", input_data, 0)
+    use_injection = configurate("use_injection", input_data, True)
+
+    # outflow sponge location and strength
+    use_sponge = configurate("use_sponge", input_data, True)
+    sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
+    sponge_thickness = configurate("sponge_thickness", input_data, 0.09)
+    sponge_x0 = configurate("sponge_x0", input_data, 0.9)
 
     # artificial viscosity control
     #    0 - none
     #    1 - physical viscosity based, div(velocity) indicator
-    use_av = 0
+    use_av = configurate("use_av", input_data, 0)
 
     # species limiter
     #    0 - none
     #    1 - limit in on call to make_fluid_state
-    use_species_limiter = 0
-
-    sponge_sigma = 1.0
+    use_species_limiter = configurate("use_species_limiter", input_data, 0)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -328,398 +328,71 @@ def main(ctx_factory=cl.create_some_context,
     #
     # --- Filtering settings ---
     # ------ Solution filtering
-    soln_nfilter = -1  # filter every *nfilter* steps (-1 = no filtering)
-    soln_filter_cutoff = -1  # (-1 = filter_frac*order)
-    soln_filter_frac = .5
-    soln_filter_order = 8
+    # filter every *nfilter* steps (-1 = no filtering)
+    soln_nfilter = configurate("soln_nfilter", input_data, -1)
+    soln_filter_frac = configurate("soln_filter_frac", input_data, 0.5)
+    # soln_filter_cutoff = -1 => filter_frac*order)
+    soln_filter_cutoff = configurate("soln_filter_cutoff", input_data, -1)
+    soln_filter_order = configurate("soln_filter_order", input_data, 8)
     # Alpha value suggested by:
     # JSH/TW Nodal DG Methods, Section 5.3
     # DOI: 10.1007/978-0-387-72067-8
-    soln_filter_alpha = -1.0*np.log(np.finfo(float).eps)
+    soln_filter_alpha_default = -1.0*np.log(np.finfo(float).eps)
+    soln_filter_alpha = configurate("soln_filter_alpha", input_data,
+                                    soln_filter_alpha_default)
     # ------ RHS filtering
-    use_rhs_filter = False
-    rhs_filter_cutoff = -1
-    rhs_filter_frac = .5
-    rhs_filter_order = 8
-    rhs_filter_alpha = soln_filter_alpha
+    use_rhs_filter = configurate("use_rhs_filter", input_data, False)
+    rhs_filter_frac = configurate("rhs_filter_frac", input_data, 0.5)
+    rhs_filter_cutoff = configurate("rhs_filter_cutoff", input_data, -1)
+    rhs_filter_order = configurate("rhs_filter_order", input_data, 8)
+    rhs_filter_alpha = configurate("rhs_filter_alpha", input_data,
+                                   soln_filter_alpha_default)
 
     # ACTII flow properties
-    total_pres_inflow = 2.745e5
-    total_temp_inflow = 2076.43
+    total_pres_inflow = configurate("total_pres_inflow", input_data, 2.745e5)
+    total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
-    total_pres_inj = 50400
-    total_temp_inj = 300.0
-    mach_inj = 1.0
+    total_pres_inj = configurate("total_pres_inj", input_data, 50400)
+    total_temp_inj = configurate("total_temp_inj", input_data, 300)
+    mach_inj = configurate("mach_inj", input_data, 1.0)
 
     # parameters to adjust the shape of the initialization
-    vel_sigma = 1000
-    temp_sigma = 1250
+    vel_sigma = configurate("vel_sigma", input_data, 1000)
+    temp_sigma = configurate("temp_sigma", input_data, 1250)
     # adjusted to match the mass flow rate
-    vel_sigma_inj = 5000
-    temp_sigma_inj = 5000
+    vel_sigma_inj = configurate("vel_sigma_inj", input_data, 5000)
+    temp_sigma_inj = configurate("temp_sigma_inj", input_data, 5000)
     temp_wall = 300
-    sponge_thickness = 0.09
-    sponge_x0 = 0.9
 
     # wall stuff
-    wall_penalty_amount = 25
-    wall_time_scale = 50
-    wall_material = 0
+    wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
+    wall_time_scale = configurate("wall_time_scale", input_data, 1)
+    wall_material = configurate("wall_material", input_data, 0)
+
+    # use fluid average diffusivity by default
+    wall_insert_ox_diff = spec_diff
+
+    # Averaging from https://www.azom.com/article.aspx?ArticleID=1630
+    # for graphite
+    wall_insert_rho = configurate("wall_insert_rho", input_data, 1625)
+    wall_insert_cp = configurate("wall_insert_cp", input_data, 770)
+    wall_insert_kappa = configurate("wall_insert_kappa", input_data, 247.5)
+
+    # Averaging from http://www.matweb.com/search/datasheet.aspx?bassnum=MS0001
+    # for steel
+    wall_surround_rho = configurate("wall_surround_rho", input_data, 7.9e3)
+    wall_surround_cp = configurate("wall_surround_cp", input_data, 470)
+    wall_surround_kappa = configurate("wall_surround_kappa", input_data, 48)
 
     # initialize the ignition spark
-    spark_init_loc_x = 0.677
-    spark_init_loc_y = -0.021
     spark_init_loc_z = 0.035/2.
-    spark_diameter = 0.0025
-    spark_strength = 20000000.
-    spark_init_time = 999999999.
-    spark_duration = 1.e-8
-
-    if user_input_file:
-        input_data = None
-        if rank == 0:
-            with open(user_input_file) as f:
-                input_data = yaml.load(f, Loader=yaml.FullLoader)
-        input_data = comm.bcast(input_data, root=0)
-        try:
-            nviz = int(input_data["nviz"])
-        except KeyError:
-            pass
-        try:
-            t_viz_interval = float(input_data["t_viz_interval"])
-        except KeyError:
-            pass
-        try:
-            viz_interval_type = int(input_data["viz_interval_type"])
-        except KeyError:
-            pass
-        try:
-            viz_level = int(input_data["viz_level"])
-        except KeyError:
-            pass
-        try:
-            nrestart = int(input_data["nrestart"])
-        except KeyError:
-            pass
-        try:
-            nhealth = int(input_data["nhealth"])
-        except KeyError:
-            pass
-        try:
-            nstatus = int(input_data["nstatus"])
-        except KeyError:
-            pass
-        try:
-            soln_nfilter = int(input_data["soln_nfilter"])
-        except KeyError:
-            pass
-        try:
-            soln_filter_frac = float(input_data["soln_filter_frac"])
-        except KeyError:
-            pass
-        try:
-            soln_filter_cutoff = int(input_data["soln_filter_cutoff"])
-        except KeyError:
-            pass
-        try:
-            soln_filter_alpha = float(input_data["soln_filter_alpha"])
-        except KeyError:
-            pass
-        try:
-            soln_filter_order = int(input_data["soln_filter_order"])
-        except KeyError:
-            pass
-        try:
-            use_rhs_filter = bool(input_data["use_rhs_filter"])
-        except KeyError:
-            pass
-        try:
-            rhs_filter_frac = float(input_data["rhs_filter_frac"])
-        except KeyError:
-            pass
-        try:
-            rhs_filter_cutoff = int(input_data["rhs_filter_cutoff"])
-        except KeyError:
-            pass
-        try:
-            rhs_filter_alpha = float(input_data["rhs_filter_alpha"])
-        except KeyError:
-            pass
-        try:
-            rhs_filter_order = int(input_data["rhs_filter_order"])
-        except KeyError:
-            pass
-        try:
-            use_species_limiter = int(input_data["use_species_limiter"])
-        except KeyError:
-            pass
-        try:
-            constant_cfl = int(input_data["constant_cfl"])
-        except KeyError:
-            pass
-        try:
-            current_dt = float(input_data["current_dt"])
-        except KeyError:
-            pass
-        try:
-            current_cfl = float(input_data["current_cfl"])
-        except KeyError:
-            pass
-        try:
-            t_final = float(input_data["t_final"])
-        except KeyError:
-            pass
-        try:
-            alpha_sc = float(input_data["alpha_sc"])
-        except KeyError:
-            pass
-        try:
-            kappa_sc = float(input_data["kappa_sc"])
-        except KeyError:
-            pass
-        try:
-            s0_sc = float(input_data["s0_sc"])
-        except KeyError:
-            pass
-        try:
-            fluid_gamma = float(input_data["fluid_gamma"])
-        except KeyError:
-            pass
-        try:
-            fluid_mw = float(input_data["fluid_mw"])
-        except KeyError:
-            pass
-        try:
-            fluid_kappa = float(input_data["fluid_kappa"])
-        except KeyError:
-            pass
-        try:
-            mu_input = float(input_data["mu"])
-            mu_override = True
-        except KeyError:
-            pass
-        try:
-            spec_diff = float(input_data["spec_diff"])
-            wall_insert_ox_diff = spec_diff
-        except KeyError:
-            pass
-        try:
-            order = int(input_data["order"])
-        except KeyError:
-            pass
-        try:
-            noslip = bool(input_data["noslip"])
-        except KeyError:
-            pass
-        try:
-            adiabatic = bool(input_data["adiabatic"])
-        except KeyError:
-            pass
-        try:
-            use_1d_part = bool(input_data["use_1d_part"])
-        except KeyError:
-            pass
-        try:
-            dim = int(input_data["dimen"])
-        except KeyError:
-            pass
-        try:
-            total_pres_inflow = float(input_data["total_pres_inflow"])
-        except KeyError:
-            pass
-        try:
-            total_temp_inflow = float(input_data["total_temp_inflow"])
-        except KeyError:
-            pass
-        try:
-            total_pres_inj = float(input_data["total_pres_inj"])
-        except KeyError:
-            pass
-        try:
-            total_temp_inj = float(input_data["total_temp_inj"])
-        except KeyError:
-            pass
-        try:
-            mach_inj = float(input_data["mach_inj"])
-        except KeyError:
-            pass
-        try:
-            nspecies = int(input_data["nspecies"])
-        except KeyError:
-            pass
-        try:
-            eos_type = int(input_data["eos"])
-        except KeyError:
-            pass
-        try:
-            transport_type = int(input_data["transport"])
-        except KeyError:
-            pass
-        try:
-            pyro_temp_iter = int(input_data["pyro_temp_iter"])
-        except KeyError:
-            pass
-        try:
-            pyro_temp_tol = float(input_data["pyro_temp_tol"])
-        except KeyError:
-            pass
-        try:
-            vel_sigma = float(input_data["vel_sigma"])
-        except KeyError:
-            pass
-        try:
-            temp_sigma = float(input_data["temp_sigma"])
-        except KeyError:
-            pass
-        try:
-            vel_sigma_inj = float(input_data["vel_sigma_inj"])
-        except KeyError:
-            pass
-        try:
-            temp_sigma_inj = float(input_data["temp_sigma_inj"])
-        except KeyError:
-            pass
-        try:
-            integrator = input_data["integrator"]
-        except KeyError:
-            pass
-        try:
-            inv_num_flux = input_data["inviscid_numerical_flux"]
-        except KeyError:
-            pass
-        try:
-            health_pres_min = float(input_data["health_pres_min"])
-        except KeyError:
-            pass
-        try:
-            health_pres_max = float(input_data["health_pres_max"])
-        except KeyError:
-            pass
-        try:
-            health_temp_min = float(input_data["health_temp_min"])
-        except KeyError:
-            pass
-        try:
-            health_temp_max = float(input_data["health_temp_max"])
-        except KeyError:
-            pass
-        try:
-            health_mass_frac_min = float(input_data["health_mass_frac_min"])
-        except KeyError:
-            pass
-        try:
-            health_mass_frac_max = float(input_data["health_mass_frac_max"])
-        except KeyError:
-            pass
-        try:
-            use_ignition = int(input_data["use_ignition"])
-        except KeyError:
-            pass
-        try:
-            use_injection = int(input_data["use_injection"])
-        except KeyError:
-            pass
-        try:
-            spark_init_time = float(input_data["ignition_init_time"])
-        except KeyError:
-            pass
-        try:
-            spark_strength = float(input_data["ignition_strength"])
-        except KeyError:
-            pass
-        try:
-            spark_duration = float(input_data["ignition_duration"])
-        except KeyError:
-            pass
-        try:
-            spark_diameter = float(input_data["ignition_diameter"])
-        except KeyError:
-            pass
-        try:
-            spark_init_loc_x = float(input_data["ignition_loc_x"])
-        except KeyError:
-            pass
-        try:
-            spark_init_loc_y = float(input_data["ignition_loc_y"])
-        except KeyError:
-            pass
-        try:
-            use_sponge = bool(input_data["use_sponge"])
-        except KeyError:
-            pass
-        try:
-            sponge_sigma = float(input_data["sponge_sigma"])
-        except KeyError:
-            pass
-        try:
-            sponge_thickness = float(input_data["sponge_thickness"])
-        except KeyError:
-            pass
-        try:
-            sponge_x0 = float(input_data["sponge_x0"])
-        except KeyError:
-            pass
-        try:
-            use_av = int(input_data["use_av"])
-        except KeyError:
-            pass
-        try:
-            use_combustion = bool(input_data["use_combustion"])
-        except KeyError:
-            pass
-        try:
-            use_wall_ox = bool(input_data["use_wall_ox"])
-        except KeyError:
-            pass
-        try:
-            use_wall_mass = bool(input_data["use_wall_mass"])
-        except KeyError:
-            pass
-        try:
-            mesh_filename = input_data["mesh_filename"]
-        except KeyError:
-            pass
-        try:
-            wall_penalty_amount = float(input_data["wall_penalty_amount"])
-        except KeyError:
-            pass
-        try:
-            wall_time_scale = float(input_data["wall_time_scale"])
-        except KeyError:
-            pass
-        try:
-            wall_material = int(input_data["wall_material"])
-        except KeyError:
-            pass
-        try:
-            wall_insert_rho = float(input_data["wall_insert_rho"])
-        except KeyError:
-            pass
-        try:
-            wall_insert_cp = float(input_data["wall_insert_cp"])
-        except KeyError:
-            pass
-        try:
-            wall_insert_kappa = float(input_data["wall_insert_kappa"])
-        except KeyError:
-            pass
-        try:
-            wall_surround_rho = float(input_data["wall_surround_rho"])
-        except KeyError:
-            pass
-        try:
-            wall_surround_cp = float(input_data["wall_surround_cp"])
-        except KeyError:
-            pass
-        try:
-            wall_surround_kappa = float(input_data["wall_surround_kappa"])
-        except KeyError:
-            pass
-        try:
-            gas_mat_prop = int(input_data["gas_material_properties"])
-        except KeyError:
-            pass
+    spark_init_time = configurate("ignition_init_time", input_data, 999999999.)
+    spark_strength = configurate("ignition_strength", input_data, 2.e7)
+    spark_duration = configurate("ignition_duration", input_data, 1.e-8)
+    spark_diameter = configurate("ignition_diameter", input_data, 0.0025)
+    spark_init_loc_x = configurate("ignition_init_loc_x", input_data, 0.677)
+    spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
 
     # param sanity check
     allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144", "compiled_lsrk54"]
@@ -917,8 +590,8 @@ def main(ctx_factory=cl.create_some_context,
         # working gas: Ar #
         mu_ar = 4.22e-5
         mu = mu_ar
-    if mu_override:
-        mu = mu_input
+    if fluid_mu > 0:
+        mu = fluid_mu
 
     kappa = cp*mu/Pr
     if fluid_kappa > 0:
