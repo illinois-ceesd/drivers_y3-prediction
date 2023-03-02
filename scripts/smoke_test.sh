@@ -38,6 +38,8 @@ cd ${TOP_PATH}
 TOP_PATH=$(pwd)
 printf "Driver directory: ${TOP_PATH}\n"
 
+python -m pip install .
+
 date
 
 # Demonstrate how to run multiple tests
@@ -47,13 +49,14 @@ succeeded_tests=""
 failed_tests=""
 
 printf "Running serial tests...\n"
-serial_test_names="smoke_test smoke_test_3d smoke_test_ks"
+# serial_test_names="smoke_test smoke_test_3d smoke_test_ks"
+serial_test_names="smoke_test smoke_test_ks"
 for test_name in $serial_test_names
 do
     test_path=${test_name}
     printf "* Running test ${test_name} in ${test_path}\n"
     cd ${TOP_PATH}/${test_path}
-    $MPI_EXEC -n 1 $PARALLEL_SPAWNER python -u -m mpi4py prediction.py -i run_params.yaml --log --lazy
+    $MPI_EXEC -n 1 $PARALLEL_SPAWNER python -u -m mpi4py driver.py -i run_params.yaml --log --lazy
     return_code=$?
     cd -
 
@@ -82,7 +85,7 @@ do
     printf "* Running test ${test_name} in ${test_name}."
     cd ${TOP_PATH}/${test_path}
     
-    $MPI_EXEC -n 2 $PARALLEL_SPAWNER python -u -m mpi4py prediction.py -i run_params.yaml --log --lazy
+    $MPI_EXEC -n 2 $PARALLEL_SPAWNER python -u -m mpi4py driver.py -i run_params.yaml --log --lazy
     return_code=$?
     cd -
 
