@@ -65,6 +65,12 @@ Else
     cavity_factor=1.0;
 EndIf
 
+If(Exists(samplefac))
+    sample_factor=samplefac;
+Else
+    sample_factor=2.0;
+EndIf
+
 // horizontal injection
 cavityAngle=45;
 inj_h=4.;  // height of injector (bottom) from floor
@@ -77,7 +83,7 @@ isosize = basesize/iso_factor;       // background mesh size in the isolator
 nozzlesize = basesize/12;       // background mesh size in the nozzle
 cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
 shearsize = isosize/shear_factor; // background mesh size in the shear region
-samplesize = basesize/2;       // background mesh size in the sample
+samplesize = basesize/sample_factor;       // background mesh size in the sample
 injectorsize = inj_d/injector_factor; // background mesh size in the injector region
 
 Printf("basesize = %f", basesize);
@@ -244,6 +250,24 @@ Field[18].SizeMax = cavitysize;
 Field[18].DistMin = 0.2;
 Field[18].DistMax = 5;
 Field[18].StopAtDistMax = 1;
+
+// Create distance field from curves, sample/fluid interface
+Field[117] = Distance;
+Field[117].CurvesList = {
+    68, // cavity sample corner
+    69, 62  // cavity surround corner
+};
+
+Field[117].Sampling = 1000;
+
+//Create threshold field that varies element size near boundaries
+Field[118] = Threshold;
+Field[118].InField = 117;
+Field[118].SizeMin = cavitysize / boundratiosample/2.;
+Field[118].SizeMax = cavitysize;
+Field[118].DistMin = 0.2;
+Field[118].DistMax = 5;
+Field[118].StopAtDistMax = 1;
 //
 nozzle_start = 270;
 nozzle_end = 300;
@@ -369,7 +393,7 @@ Field[21].InField = 7;
 Field[100] = Min;
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 7, 12, 14};
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 20, 21};
-Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105, 118};
 Background Field = 100;
 
 Mesh.MeshSizeExtendFromBoundary = 0;
