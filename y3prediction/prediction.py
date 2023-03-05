@@ -263,7 +263,7 @@ def main(ctx_factory=cl.create_some_context,
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
 
-    dim = configurate("dim", input_data, 2)
+    dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
     noslip = configurate("noslip", input_data, True)
@@ -444,7 +444,7 @@ def main(ctx_factory=cl.create_some_context,
             print(f"\tConstant dt mode, current_dt = {current_dt}")
         print(f"\tt_final = {t_final}")
         print(f"\torder = {order}")
-        print(f"\tdimen = {dim}")
+        print(f"\tdimension = {dim}")
         print(f"\tTime integration {integrator}")
         if noslip:
             print("Fluid wall boundary conditions are noslip for veloctiy")

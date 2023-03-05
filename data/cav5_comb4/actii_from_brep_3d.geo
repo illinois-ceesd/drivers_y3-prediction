@@ -65,6 +65,12 @@ Else
     cavity_factor=1.0;
 EndIf
 
+If(Exists(samplefac))
+    sample_factor=samplefac;
+Else
+    sample_factor=2.0;
+EndIf
+
 // horizontal injection
 cavityAngle=45;
 inj_h=4.;  // height of injector (bottom) from floor
@@ -77,7 +83,7 @@ isosize = basesize/iso_factor;       // background mesh size in the isolator
 nozzlesize = basesize/12;       // background mesh size in the nozzle
 cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
 shearsize = isosize/shear_factor; // background mesh size in the shear region
-samplesize = basesize/2;       // background mesh size in the sample
+samplesize = basesize/sample_factor;       // background mesh size in the sample
 injectorsize = inj_d/injector_factor; // background mesh size in the injector region
 
 Printf("basesize = %f", basesize);
@@ -205,7 +211,8 @@ Field[13].Sampling = 1000;
 Field[14] = Threshold;
 Field[14].InField = 13;
 Field[14].SizeMin = injectorsize / boundratioinjector;
-Field[14].SizeMax = injectorsize;
+//Field[14].SizeMax = injectorsize;
+Field[14].SizeMax = bigsize;
 Field[14].DistMin = 0.001;
 Field[14].DistMax = 1.0;
 Field[14].StopAtDistMax = 1;
@@ -222,9 +229,10 @@ Field[15].Sampling = 1000;
 Field[16] = Threshold;
 Field[16].InField = 15;
 Field[16].SizeMin = samplesize / boundratiosurround;
-Field[16].SizeMax = samplesize;
-Field[16].DistMin = 0.2;
-Field[16].DistMax = 5;
+//Field[16].SizeMax = samplesize;
+Field[16].SizeMax = bigsize;
+Field[16].DistMin = 0.02;
+Field[16].DistMax = 10;
 Field[16].StopAtDistMax = 1;
 
 // Create distance field from curves, sample/fluid interface
@@ -239,11 +247,30 @@ Field[17].Sampling = 1000;
 //Create threshold field that varies element size near boundaries
 Field[18] = Threshold;
 Field[18].InField = 17;
-Field[18].SizeMin = cavitysize / boundratiosample;
-Field[18].SizeMax = cavitysize;
-Field[18].DistMin = 0.2;
-Field[18].DistMax = 5;
+Field[18].SizeMin = samplesize / boundratiosample;
+//Field[18].SizeMax = cavitysize;
+Field[18].SizeMax = bigsize;
+Field[18].DistMin = 0.02;
+Field[18].DistMax = 10;
 Field[18].StopAtDistMax = 1;
+
+// Create distance field from curves, sample/fluid interface
+Field[117] = Distance;
+Field[117].CurvesList = {
+    68, // cavity sample corner
+    69, 62  // cavity surround corner
+};
+
+Field[117].Sampling = 1000;
+
+//Create threshold field that varies element size near boundaries
+Field[118] = Threshold;
+Field[118].InField = 117;
+Field[118].SizeMin = samplesize / boundratiosample/2.;
+Field[118].SizeMax = cavitysize;
+Field[118].DistMin = 0.02;
+Field[118].DistMax = 5;
+Field[118].StopAtDistMax = 1;
 //
 nozzle_start = 270;
 nozzle_end = 300;
@@ -333,9 +360,20 @@ Field[7].VIn = injectorsize;
 Field[7].VOut = bigsize;
 
 // background mesh size in the sample region
-Field[8] = Constant;
-Field[8].VolumesList = {2:5};
-Field[8].VIn = samplesize;
+//Field[8] = Constant;
+//Field[8].VolumesList = {5:5};
+//Field[8].VIn = samplesize;
+//Field[8].VOut = bigsize;
+
+Field[8] = Box;
+Field[8].XMin = -100000;
+Field[8].XMax =  100000;
+Field[8].YMin = -10000;
+Field[8].YMax =  100000;
+Field[8].ZMin = -100000;
+Field[8].ZMax =  10000;
+Field[8].Thickness = 100;
+Field[8].VIn = samplesize/4;
 Field[8].VOut = bigsize;
 
 // background mesh size in the shear region
@@ -365,11 +403,22 @@ Field[21] = Restrict;
 Field[21].VolumesList = {1};
 Field[21].InField = 7;
 
+// keep the cavity spacing in the fluid mesh only
+Field[22] = Restrict;
+Field[22].VolumesList = {1};
+Field[22].InField = 6;
+
+// keep the sampel spacing in the wall mesh only
+Field[23] = Restrict;
+Field[23].VolumesList = {2:5};
+Field[23].InField = 8;
+
 // take the minimum of all defined meshing fields
 Field[100] = Min;
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 7, 12, 14};
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 20, 21};
-Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+//Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 22, 102, 105, 118};
+Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
 Background Field = 100;
 
 Mesh.MeshSizeExtendFromBoundary = 0;
