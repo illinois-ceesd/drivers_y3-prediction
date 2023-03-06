@@ -25,7 +25,6 @@ THE SOFTWARE.
 """
 import logging
 import sys
-import yaml
 import numpy as np
 import pyopencl as cl
 import numpy.linalg as la  # noqa
@@ -71,22 +70,18 @@ from grudge.shortcuts import compiled_lsrk45_step
 from mirgecom.fluid import make_conserved
 from mirgecom.limiter import bound_preserving_limiter
 from mirgecom.steppers import advance_state
-from mirgecom.boundary import (
-    PrescribedFluidBoundary,
-    IsothermalWallBoundary,
-    AdiabaticSlipBoundary,
-    AdiabaticNoslipWallBoundary,
-    DummyBoundary
-)
 from mirgecom.diffusion import (
     diffusion_operator,
     DirichletDiffusionBoundary
 )
 #from mirgecom.initializers import (Uniform, PlanarDiscontinuity)
 from mirgecom.eos import IdealSingleGas, PyrometheusMixture
-from mirgecom.transport import (SimpleTransport,
-                                PowerLawTransport,
-                                ArtificialViscosityTransportDiv)
+from mirgecom.transport import (
+    SimpleTransport,
+    PowerLawTransport,
+    MixtureAveragedTransport,
+    ArtificialViscosityTransportDiv
+)
 from mirgecom.gas_model import GasModel, make_fluid_state
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     coupled_grad_t_operator,
@@ -214,18 +209,18 @@ def main(ctx_factory=cl.create_some_context,
 
     # set up driver parameters
     from mirgecom.simutil import configurate
-    input_data = None
-    if user_input_file:
-        if rank == 0:
-            with open(user_input_file) as f:
-                input_data = yaml.load(f, Loader=yaml.FullLoader)
-        input_data = comm.bcast(input_data, root=0)
+    from mirgecom.io import read_and_distribute_yaml_file
+    input_data = read_and_distribute_yaml_file(comm, user_input_file)
+
+    # Let the user specify a name to customize initialization
+    init_name = configurate("init_name", input_data, "ACTII")
 
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
     nrestart = configurate("nrestart", input_data, 5000)
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
+    ngarbage = configurate("ngarbage", input_data, 10)
 
     # verbosity for what gets written to viz dumps, increase for more stuff
     viz_level = configurate("viz_level", input_data, 1)
@@ -269,6 +264,67 @@ def main(ctx_factory=cl.create_some_context,
     noslip = configurate("noslip", input_data, True)
     adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
+
+    # - Flash1D-specific configuration parameters
+    # -- mesh generation
+    mesh_angle = configurate("mesh_angle", input_data, 0.)
+    mesh_size = configurate("mesh_size", input_data, 1e-3)
+    bl_ratio = configurate("bl_ratio", input_data, 3.)
+    interface_ratio = configurate("interface_ratio", input_data, 2.)
+    transfinite = configurate("transfinite", input_data, False)
+    use_gmsh = configurate("use_gmsh", input_data, True)
+    periodic = configurate("periodic", input_data, False)
+    mesh_theta = mesh_angle/180.*np.pi/2.
+    mesh_normal = np.zeros(shape=(dim,))
+    mesh_normal[0] = np.cos(mesh_theta)
+    mesh_normal[1] = np.sin(mesh_theta)
+    mesh_normal = mesh_normal / np.sqrt(np.dot(mesh_normal, mesh_normal))
+    mesh_rotation = np.matrix([[mesh_normal[0],
+                               mesh_normal[1]],
+                               [-mesh_normal[1],
+                                mesh_normal[0]]])
+    # -- initialization parameters
+    # --- common
+    flash_sigma = configurate("sigma", input_data, .001)
+    flash_mach = configurate("mach", input_data, 2.0)
+    flash_press = configurate("pressure_background", input_data, 101325.)
+    flash_temp = configurate("temperature_background", input_data, 300.)
+    init_flame = configurate("init_flame", input_data, False)
+    init_shock = configurate("init_shock", input_data, False)
+
+    # --- shock init
+    shock_angle = configurate("shock_angle", input_data, 0.)
+    shock_normal = np.zeros(shape=(dim,))
+    shock_theta = shock_angle/180.*np.pi/2.
+    shock_normal[0] = np.cos(shock_theta)
+    shock_normal[1] = np.sin(shock_theta)
+    shock_normal = shock_normal / np.sqrt(np.dot(shock_normal, shock_normal))
+    shock_location = np.zeros(shape=(dim,))
+    shock_location[0] = configurate("shock_location_x", input_data, .05)
+    shock_location[1] = configurate("shock_location_y", input_data, 0.)
+    if not init_shock:
+        shock_location = None
+
+    # --- flame init
+    flame_angle = configurate("flame_angle", input_data, 0.)
+    flame_normal = np.zeros(shape=(dim,))
+    flame_theta = flame_angle/180.*np.pi/2.
+    flame_normal[0] = np.cos(flame_theta)
+    flame_normal[1] = np.sin(flame_theta)
+    flame_location = np.zeros(shape=(dim,))
+    flame_location[0] = configurate("flame_location_x", input_data, .05)
+    flame_location[1] = configurate("flame_location_y", input_data, 0.)
+    temperature_burned = configurate("temperature_burned", input_data, 1500.)
+    if not init_flame:
+        flame_location = None
+
+    if np.abs(mesh_angle) > 0.:
+        if init_shock:
+            shock_location = mesh_rotation.dot(shock_location)
+            shock_normal = mesh_rotation.dot(shock_normal)
+        if init_flame:
+            flame_location = mesh_rotation.dot(flame_location)
+            flame_normal = mesh_rotation.dot(flame_normal)
 
     # material properties and models options
     gas_mat_prop = configurate("gas_mat_prop", input_data, 0)
@@ -447,9 +503,9 @@ def main(ctx_factory=cl.create_some_context,
         print(f"\tdimension = {dim}")
         print(f"\tTime integration {integrator}")
         if noslip:
-            print("Fluid wall boundary conditions are noslip for veloctiy")
+            print("Fluid wall boundary conditions are noslip for velocity")
         else:
-            print("Fluid wall boundary conditions are slip for veloctiy")
+            print("Fluid wall boundary conditions are slip for velocity")
         if adiabatic:
             print("Fluid wall boundary conditions are adiabatic for temperature")
         else:
@@ -500,6 +556,7 @@ def main(ctx_factory=cl.create_some_context,
     spark_center[1] = spark_init_loc_y
     if dim == 3:
         spark_center[2] = spark_init_loc_z
+
     if rank == 0 and use_ignition > 0:
         print("\n#### Ignition control parameters ####")
         print(f"spark center ({spark_center[0]},{spark_center[1]})")
@@ -699,56 +756,46 @@ def main(ctx_factory=cl.create_some_context,
         print(f"\tWall penalty = {wall_penalty_amount}")
         print("#### Simluation material properties: ####")
 
-    spec_diffusivity = spec_diff * np.ones(nspecies)
-    if transport_type == 0:
-        physical_transport_model = SimpleTransport(
-            viscosity=mu, thermal_conductivity=kappa,
-            species_diffusivity=spec_diffusivity)
-    if transport_type == 1:
-        physical_transport_model = PowerLawTransport(
-            alpha=transport_alpha, beta=transport_beta,
-            sigma=transport_sigma, n=transport_n,
-            species_diffusivity=spec_diffusivity)
+    # {{{ Set up physical gas model
 
-    transport_model = physical_transport_model
-    if use_av:
-        transport_model = ArtificialViscosityTransportDiv(
-            physical_transport=physical_transport_model,
-            av_mu=alpha_sc, av_prandtl=0.75)
-
-    #
-    # stagnation tempertuare 2076.43 K
-    # stagnation pressure 2.745e5 Pa
-    #
-    # isentropic expansion based on the area ratios between the inlet (r=54e-3m) and
-    # the throat (r=3.167e-3)
-    #
-    vel_inflow = np.zeros(shape=(dim,))
-    vel_outflow = np.zeros(shape=(dim,))
-    vel_injection = np.zeros(shape=(dim,))
-
-    throat_height = 3.61909e-3
-    inlet_height = 54.129e-3
-    outlet_height = 28.54986e-3
-    inlet_area_ratio = inlet_height/throat_height
-    outlet_area_ratio = outlet_height/throat_height
-
-    chem_source_tol = 1.e-10
     # make the eos
     if eos_type == 0:
         eos = IdealSingleGas(gamma=gamma, gas_const=r)
         species_names = ["air", "fuel", "inert"]
     else:
         from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
+        chem_source_tol = 1.e-10
         pyro_mech = get_pyrometheus_wrapper_class(
             pyro_class=Thermochemistry, temperature_niter=pyro_temp_iter,
             zero_level=chem_source_tol)(actx.np)
         eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
         species_names = pyro_mech.species_names
 
+    spec_diffusivity = spec_diff * np.ones(nspecies)
+    physical_transport_model = \
+        (SimpleTransport(viscosity=mu, thermal_conductivity=kappa,
+                         species_diffusivity=spec_diffusivity)
+         if transport_type == 0
+         else PowerLawTransport(alpha=transport_alpha, beta=transport_beta,
+                                sigma=transport_sigma, n=transport_n,
+                                species_diffusivity=spec_diffusivity)
+         if transport_type == 1
+         else MixtureAveragedTransport(pyro_mech))
+
+    transport_model = physical_transport_model
+
+    if use_av:
+        transport_model = ArtificialViscosityTransportDiv(
+            physical_transport=physical_transport_model,
+            av_mu=alpha_sc, av_prandtl=0.75)
+
     gas_model = GasModel(eos=eos, transport=transport_model)
 
-    # initialize eos and species mass fractions
+    # }}}
+
+    # initialize species mass fractions
+    inj_ymin = -0.0243245
+    inj_ymax = -0.0227345
     y = np.zeros(nspecies)
     y_fuel = np.zeros(nspecies)
     if nspecies == 3:
@@ -772,6 +819,23 @@ def main(ctx_factory=cl.create_some_context,
         # Set the species mass fractions to the free-stream flow
         y_fuel[i_c2h4] = mf_c2h4
         y_fuel[i_h2] = mf_h2
+
+    #
+    # stagnation tempertuare 2076.43 K
+    # stagnation pressure 2.745e5 Pa
+    #
+    # isentropic expansion based on the area ratios between the inlet (r=54e-3m) and
+    # the throat (r=3.167e-3)
+    #
+    vel_inflow = np.zeros(shape=(dim,))
+    vel_outflow = np.zeros(shape=(dim,))
+    vel_injection = np.zeros(shape=(dim,))
+
+    throat_height = 3.61909e-3
+    inlet_height = 54.129e-3
+    outlet_height = 28.54986e-3
+    inlet_area_ratio = inlet_height/throat_height
+    outlet_area_ratio = outlet_height/throat_height
 
     inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
                                       gamma=gamma,
@@ -973,22 +1037,104 @@ def main(ctx_factory=cl.create_some_context,
     geometry_bottom = comm.bcast(geometry_bottom, root=0)
     geometry_top = comm.bcast(geometry_top, root=0)
 
-    inj_ymin = -0.0243245
-    inj_ymax = -0.0227345
-    bulk_init = InitACTII(dim=dim,
-                          geom_top=geometry_top, geom_bottom=geometry_bottom,
-                          P0=total_pres_inflow, T0=total_temp_inflow,
-                          temp_wall=temp_wall, temp_sigma=temp_sigma,
-                          vel_sigma=vel_sigma, nspecies=nspecies,
-                          mass_frac=y, gamma_guess=inlet_gamma,
-                          inj_gamma_guess=gamma_injection,
-                          inj_pres=total_pres_inj,
-                          inj_temp=total_temp_inj,
-                          inj_vel=vel_injection, inj_mass_frac=y_fuel,
-                          inj_temp_sigma=temp_sigma_inj,
-                          inj_vel_sigma=vel_sigma_inj,
-                          inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
-                          inj_mach=mach_inj, injection=use_injection)
+    if init_name == "ACTII":
+        bulk_init = InitACTII(dim=dim,
+                              geom_top=geometry_top, geom_bottom=geometry_bottom,
+                              P0=total_pres_inflow, T0=total_temp_inflow,
+                              temp_wall=temp_wall, temp_sigma=temp_sigma,
+                              vel_sigma=vel_sigma, nspecies=nspecies,
+                              mass_frac=y, gamma_guess=inlet_gamma,
+                              inj_gamma_guess=gamma_injection,
+                              inj_pres=total_pres_inj,
+                              inj_temp=total_temp_inj,
+                              inj_vel=vel_injection, inj_mass_frac=y_fuel,
+                              inj_temp_sigma=temp_sigma_inj,
+                              inj_vel_sigma=vel_sigma_inj,
+                              inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
+                              inj_mach=mach_inj, injection=use_injection)
+    elif init_name == "Flash1D":
+        from flash_utils import Flash1D
+        rho_bkrnd = flash_press/r/flash_temp
+        c_bkrnd = math.sqrt(gamma*flash_press/rho_bkrnd)
+
+        pressure_ratio = (2.*gamma*flash_mach**2-(gamma-1.))/(gamma+1.)
+        density_ratio = (gamma+1.)*flash_mach**2/((gamma-1.)*flash_mach**2+2.)
+
+        rho1 = rho_bkrnd
+        pressure1 = flash_press
+        temperature1 = pressure1/rho1/r
+        rho2 = rho1*density_ratio
+        pressure2 = pressure1*pressure_ratio
+        temperature2 = pressure2/rho2/r
+        velocity2 = -flash_mach*c_bkrnd*(1/density_ratio-1)
+        temp_wall = temperature1
+
+        vel_left = velocity2*shock_normal
+        vel_right = np.zeros(shape=(dim,))
+        vel_cross = np.zeros(shape=(dim,))
+        vel_cross[1] = 0
+
+        pressure_shocked = pressure2
+        pressure_unshocked = pressure1
+        temperature_shocked = temperature2
+        temperature_unshocked = temperature1
+        vel_shocked = vel_left
+        vel_unshocked = vel_right
+
+        if init_flame and nspecies == 7:
+            from flash_utils import setup_flame
+            flame_states = setup_flame(pressure_unburned=pressure_unshocked,
+                                       temperature_unburned=temperature_unshocked)
+            pressure_unburned, temperature_unburned, y_unburned, rho_unburned = \
+                flame_states["unburned"]
+            pressure_burned, temperature_burned_c, y_burned, rho_burned = \
+                flame_states["burned"]
+        else:
+            y_unburned = y_fuel
+            y_burned = y
+            pressure_burned = pressure_unshocked
+            pressure_unburned = pressure_unshocked
+            temperature_burned = temperature_unshocked
+            temperature_unburned = temperature_unshocked
+
+        if rank == 0:
+            print("#### Flash1D initialization data: ####")
+            print(f"\tShock Mach number {flash_mach}")
+            print(f"\tgamma {gamma}")
+            print(f"\tambient temperature {temperature1}")
+            print(f"\tambient pressure {pressure1}")
+            print(f"\tambient rho {rho1}")
+            print(f"\tambient velocity {vel_right[0]}")
+            print(f"\tpost-shock temperature {temperature2}")
+            print(f"\tpost-shock pressure {pressure2}")
+            print(f"\tpost-shock rho {rho2}")
+            print(f"\tpost-shock velocity {velocity2}")
+
+        bulk_init = Flash1D(dim=dim,
+                            nspecies=nspecies,
+                            shock_location=shock_location,
+                            flame_location=flame_location,
+                            shock_normal_dir=shock_normal,
+                            flame_normal_dir=flame_normal,
+                            flash_sigma=flash_sigma,
+                            pressure_shocked=pressure_shocked,
+                            pressure_unshocked=pressure_unshocked,
+                            temperature_shocked=temperature_shocked,
+                            temperature_unshocked=temperature_unshocked,
+                            velocity_shocked=vel_shocked,
+                            velocity_unshocked=vel_unshocked,
+                            velocity_cross=vel_cross,
+                            species_mass_fractions_shocked=y,
+                            species_mass_fractions_unshocked=y,
+                            species_mass_fractions_burned=y_burned,
+                            species_mass_fractions_unburned=y_unburned,
+                            temperature_burned=temperature_burned,
+                            temperature_unburned=temperature_unburned,
+                            pressure_burned=pressure_burned,
+                            pressure_unburned=pressure_unburned,
+                            temp_wall=temp_wall,
+                            vel_sigma=vel_sigma,
+                            temp_sigma=temp_sigma)
 
     viz_path = "viz_data/"
     vizname = viz_path + casename
@@ -1014,19 +1160,23 @@ def main(ctx_factory=cl.create_some_context,
 
         assert restart_data["nparts"] == nparts
         assert restart_data["nspecies"] == nspecies
-    else:  # generate the grid from scratch
+    else:  # initialize grid data
         if rank == 0:
-            print(f"Reading mesh from {mesh_filename}")
-
-        def get_mesh_data():
-            from meshmode.mesh.io import read_gmsh
-            mesh, tag_to_elements = read_gmsh(
-                mesh_filename, force_ambient_dim=dim,
-                return_tag_to_elements_map=True)
-            volume_to_tags = {
-                "fluid": ["fluid"],
-                "wall": ["wall_insert", "wall_surround"]}
-            return mesh, tag_to_elements, volume_to_tags
+            print(f"Initializing grid data for initialization case: {init_name}")
+        if init_name == "ACTII":
+            from y3prediction.actii_y3 import get_mesh_data as get_init_mesh
+            get_mesh_data = \
+                partial(get_init_mesh, mesh_filename=mesh_filename, dim=dim)
+        elif init_name == "Flash1D":
+            from y3prediction.flash_utils import get_mesh_data as get_init_mesh
+            get_mesh_data = \
+                partial(get_init_mesh, dim=dim, mesh_angle=mesh_angle,
+                        mesh_size=mesh_size, bl_ratio=bl_ratio,
+                        interface_ratio=interface_ratio,
+                        transfinite=transfinite, periodic=periodic,
+                        use_gmsh=use_gmsh)
+        else:
+            raise ValueError(f"Unrecognized initializtion case: {init_name}.")
 
         def my_partitioner(mesh, tag_to_elements, num_ranks):
             from mirgecom.simutil import geometric_mesh_partitioner
@@ -1082,10 +1232,15 @@ def main(ctx_factory=cl.create_some_context,
 
     wall_vol_discr = dcoll.discr_from_dd(dd_vol_wall)
     wall_tag_to_elements = volume_to_local_mesh_data["wall"][1]
-    wall_insert_mask = mask_from_elements(
-        wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
-    wall_surround_mask = mask_from_elements(
-        wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
+
+    if init_name == "ACTII":
+        wall_insert_mask = mask_from_elements(
+            wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
+        wall_surround_mask = mask_from_elements(
+            wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
+    elif init_name == "Flash1D":
+        wall_insert_mask = mask_from_elements(
+            wall_vol_discr, actx, wall_tag_to_elements["wall"])
 
     from grudge.dt_utils import characteristic_lengthscales
     char_length = characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid)
@@ -1333,33 +1488,6 @@ def main(ctx_factory=cl.create_some_context,
     current_wv = force_evaluation(actx, restart_wv)
     #current_wv = get_wv(restart_wv)
 
-    # use dummy boundaries to setup the smoothness state for the target
-    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
-    inflow_bnd = dd_vol_fluid.trace("inflow")
-    outflow_bnd = dd_vol_fluid.trace("outflow")
-    inj_bnd = dd_vol_fluid.trace("injection")
-    flow_bnd = dd_vol_fluid.trace("flow")
-    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
-
-    if use_injection:
-        target_boundaries = {
-            flow_bnd.domain_tag:  # pylint: disable=no-member
-            DummyBoundary(),
-            wall_bnd.domain_tag:  # pylint: disable=no-member
-            IsothermalWallBoundary()
-        }
-    else:
-        target_boundaries = {
-            inflow_bnd.domain_tag:   # pylint: disable=no-member
-            DummyBoundary(),
-            outflow_bnd.domain_tag:  # pylint: disable=no-member
-            DummyBoundary(),
-            inj_bnd.domain_tag:      # pylint: disable=no-member
-            IsothermalWallBoundary(),
-            wall_bnd.domain_tag:     # pylint: disable=no-member
-            IsothermalWallBoundary()
-        }
-
     def _grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
                                 dd=dd_vol_fluid,
@@ -1383,80 +1511,20 @@ def main(ctx_factory=cl.create_some_context,
     stepper_state = make_obj_array([current_fluid_state.cv,
                                     temperature_seed, current_wv])
 
-    ##################################
-    # Set up the boundary conditions #
-    ##################################
+    if init_name == "ACTII":
+        from y3prediction.actii_y3 import get_boundaries
+        fluid_boundaries, wall_boundaries, target_boundaries = \
+            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall,
+                           use_injection, quadrature_tag, gas_model,
+                           noslip, adiabatic, temp_wall, target_fluid_state)
+    elif init_name == "Flash1D":
+        from y3prediction.flash_utils import get_boundaries
+        fluid_boundaries, wall_boundaries, target_boundaries = \
+            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, noslip,
+                           adiabatic, periodic, temp_wall, gas_model, quadrature_tag,
+                           target_fluid_state)
 
-    from mirgecom.gas_model import project_fluid_state
-
-    def get_target_state_on_boundary(btag):
-        return project_fluid_state(
-            dcoll, dd_vol_fluid,
-            dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
-            target_fluid_state, gas_model
-        )
-
-    flow_ref_state = \
-        get_target_state_on_boundary("flow")
-
-    flow_ref_state = force_evaluation(actx, flow_ref_state)
-
-    def _target_flow_state_func(**kwargs):
-        return flow_ref_state
-
-    flow_boundary = PrescribedFluidBoundary(
-        boundary_state_func=_target_flow_state_func)
-
-    inflow_ref_state = \
-        get_target_state_on_boundary("inflow")
-
-    inflow_ref_state = force_evaluation(actx, inflow_ref_state)
-
-    def _target_inflow_state_func(**kwargs):
-        return inflow_ref_state
-
-    inflow_boundary = PrescribedFluidBoundary(
-        boundary_state_func=_target_inflow_state_func)
-
-    outflow_ref_state = \
-        get_target_state_on_boundary("outflow")
-
-    outflow_ref_state = force_evaluation(actx, outflow_ref_state)
-
-    def _target_outflow_state_func(**kwargs):
-        return outflow_ref_state
-
-    outflow_boundary = PrescribedFluidBoundary(
-        boundary_state_func=_target_outflow_state_func)
-    #outflow_pressure = 2000
-    #outflow_boundary = PressureOutflowBoundary(outflow_pressure)
-
-    if noslip:
-        if adiabatic:
-            fluid_wall = AdiabaticNoslipWallBoundary()
-        else:
-            fluid_wall = IsothermalWallBoundary(temp_wall)
-    else:
-        fluid_wall = AdiabaticSlipBoundary()
-
-    wall_farfield = DirichletDiffusionBoundary(temp_wall)
-
-    if use_injection:
-        fluid_boundaries = {
-            flow_bnd.domain_tag: flow_boundary,   # pylint: disable=no-member
-            wall_bnd.domain_tag: fluid_wall  # pylint: disable=no-member
-        }
-    else:
-        fluid_boundaries = {
-            inflow_bnd.domain_tag: inflow_boundary,    # pylint: disable=no-member
-            outflow_bnd.domain_tag: outflow_boundary,  # pylint: disable=no-member
-            inj_bnd.domain_tag: fluid_wall,       # pylint: disable=no-member
-            wall_bnd.domain_tag: fluid_wall       # pylint: disable=no-member
-        }
-
-    wall_boundaries = {
-        wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
-    }
+    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     # compiled wrapper for grad_cv_operator
     def _grad_cv_operator(fluid_state, time):
@@ -2218,7 +2286,8 @@ def main(ctx_factory=cl.create_some_context,
     #check_time = _check_time
 
     def my_pre_step(step, t, dt, state):
-        if step % 10 == 0:
+
+        if check_step(step=step, interval=ngarbage):
             with gc_timer.start_sub_timer():
                 from warnings import warn
                 warn("Running gc.collect() to work around memory growth issue "
@@ -2239,6 +2308,8 @@ def main(ctx_factory=cl.create_some_context,
                                          temperature_seed=tseed,
                                          smoothness=no_smoothness)
         wdv = create_wall_dependent_vars_compiled(wv)
+        new_tseed = fluid_state.temperature
+        state = make_obj_array([cv, new_tseed, wv])
 
         try:
 
@@ -2247,14 +2318,11 @@ def main(ctx_factory=cl.create_some_context,
 
             # disable non-constant dt timestepping for now
             # re-enable when we're ready
-
             do_viz = check_step(step=step, interval=nviz)
             do_restart = check_step(step=step, interval=nrestart)
             do_health = check_step(step=step, interval=nhealth)
             do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
-
-            state = make_obj_array([cv, fluid_state.temperature, wv])
 
             if any([do_viz, do_restart, do_health, do_status]):
 
@@ -2422,7 +2490,7 @@ def main(ctx_factory=cl.create_some_context,
         wdv = wall_model.dependent_vars(wv)
 
         # Temperature seed RHS (keep tseed updated)
-        tseed_rhs = fluid_state.temperature - tseed
+        tseed_rhs = 0*fluid_state.temperature  # - tseed
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
@@ -2435,7 +2503,7 @@ def main(ctx_factory=cl.create_some_context,
             operator_states_quad=operator_fluid_states)
         """
 
-        ns_rhs, wall_energy_rhs = coupled_ns_heat_operator(
+        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
             dcoll=dcoll,
             gas_model=gas_model,
             fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
@@ -2451,23 +2519,25 @@ def main(ctx_factory=cl.create_some_context,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
-        chem_rhs = 0*cv
         if use_combustion:  # conditionals evaluated only once at compile time
-            chem_rhs =  \
-                eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
+            fluid_rhs = (
+                fluid_rhs
+                + eos.get_species_source(cv, temperature=fluid_state.temperature)
+            )
 
-        ignition_rhs = 0*cv
         if use_ignition > 0:
-            ignition_rhs = ignition_source(x_vec=x_vec, state=fluid_state,
-                                           eos=gas_model.eos, time=t)/current_dt
+            fluid_rhs = (
+                fluid_rhs
+                + ignition_source(x_vec=x_vec, state=fluid_state,
+                                  eos=gas_model.eos, time=t)/current_dt
+            )
 
-        sponge_rhs = 0*cv
         if use_sponge:
-            sponge_rhs = _sponge_source(cv=cv)
+            fluid_rhs = (
+                fluid_rhs
+                + _sponge_source(cv=cv)
+            )
 
-        fluid_rhs = ns_rhs + chem_rhs + sponge_rhs + ignition_rhs
-
-        #wall_mass_rhs = -wall_model.mass_loss_rate(wv)
         # wall mass loss
         wall_mass_rhs = 0.*wv.mass
         if use_wall_mass:
@@ -2476,7 +2546,6 @@ def main(ctx_factory=cl.create_some_context,
                 temperature=wdv.temperature)
 
         # wall oxygen diffusion
-        #wall_ox_mass_rhs = 0.*wv.ox_mass
         wall_ox_mass_rhs = 0.*wv.mass
         if use_wall_ox:
             if nspecies == 0:
