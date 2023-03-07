@@ -25,7 +25,6 @@ THE SOFTWARE.
 """
 import logging
 import sys
-import yaml
 import numpy as np
 import pyopencl as cl
 import numpy.linalg as la  # noqa
@@ -214,12 +213,8 @@ def main(ctx_factory=cl.create_some_context,
 
     # set up driver parameters
     from mirgecom.simutil import configurate
-    input_data = None
-    if user_input_file:
-        if rank == 0:
-            with open(user_input_file) as f:
-                input_data = yaml.load(f, Loader=yaml.FullLoader)
-        input_data = comm.bcast(input_data, root=0)
+    from mirgecom.io import read_and_distribute_yaml_data
+    input_data = read_and_distribute_yaml_data(comm, user_input_file)
 
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
