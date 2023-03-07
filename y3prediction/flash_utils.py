@@ -362,7 +362,7 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     # for 2D, the line segments/surfaces need to be specified clockwise to
         # get the correct facing (right-handed) surface normals
         my_string = \
-            (f"""
+            f"""
             Point(1) = {{ {bottom_inflow[0]},  {bottom_inflow[1]}, 0, {size}}};
             Point(2) = {{ {bottom_interface[0]}, {bottom_interface[1]},  0, {size}}};
             Point(3) = {{ {top_interface[0]}, {top_interface[1]},    0, {size}}};
@@ -391,29 +391,26 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Physical Curve('solid_wall_top') = {{5}};
             Physical Curve('solid_wall_bottom') = {{6}};
             Physical Curve('solid_wall_end') = {{7}};
-            """)
+            """
 
-        trans_string = \
+        if transfinite:
+            transfinite_string = \
             f"""
             Transfinite Curve {{1, 3}} = {0.1} / {size};
             Transfinite Curve {{5, 6}} = {0.02} / {size};
             Transfinite Curve {{-2, 4, 7}} = {0.02} / {size} Using Bump 1/{bl_ratio};
             Transfinite Surface {{1, 2}} Right;
-
             Mesh.MeshSizeExtendFromBoundary = 0;
             Mesh.MeshSizeFromPoints = 0;
             Mesh.MeshSizeFromCurvature = 0;
-
             Mesh.Algorithm = 5;
             Mesh.OptimizeNetgen = 1;
             Mesh.Smoothing = 0;
             """
-        if transfinite:
             my_string = my_string + trans_string
         else:
-            my_string = \
-                my_string
-            + (f"""
+            mesh_tail = \
+            f"""
             // Create distance field from curves, excludes cavity
             Field[1] = Distance;
             Field[1].CurvesList = {{1,3}};
@@ -462,7 +459,8 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Mesh.Algorithm = 5;
             Mesh.OptimizeNetgen = 1;
             Mesh.Smoothing = 100;
-            """)
+            """
+            my_string = my_string + mesh_tail
 
         # print(my_string)
         from functools import partial
@@ -503,7 +501,7 @@ def get_mesh_data(dim, mesh_angle, mesh_size, bl_ratio, interface_ratio,
 
     volume_to_tags = {
         "fluid": ["fluid"],
-        "wall": ["solid"]}
+        "wall": ["wall"]}
 
     # apply periodicity
     if periodic:

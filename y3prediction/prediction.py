@@ -1028,16 +1028,17 @@ def main(ctx_factory=cl.create_some_context,
     # read geometry files
     geometry_bottom = None
     geometry_top = None
-    if rank == 0:
-        from numpy import loadtxt
-        geometry_bottom = loadtxt("data/nozzleBottom.dat",
-                                  comments="#", unpack=False)
-        geometry_top = loadtxt("data/nozzleTop.dat",
-                               comments="#", unpack=False)
-    geometry_bottom = comm.bcast(geometry_bottom, root=0)
-    geometry_top = comm.bcast(geometry_top, root=0)
 
     if init_name == "ACTII":
+        if rank == 0:
+            from numpy import loadtxt
+            geometry_bottom = loadtxt("data/nozzleBottom.dat",
+                                      comments="#", unpack=False)
+            geometry_top = loadtxt("data/nozzleTop.dat",
+                                   comments="#", unpack=False)
+
+        geometry_bottom = comm.bcast(geometry_bottom, root=0)
+        geometry_top = comm.bcast(geometry_top, root=0)
         bulk_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
                               P0=total_pres_inflow, T0=total_temp_inflow,
@@ -1052,8 +1053,10 @@ def main(ctx_factory=cl.create_some_context,
                               inj_vel_sigma=vel_sigma_inj,
                               inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
                               inj_mach=mach_inj, injection=use_injection)
+        fluid_init = partial(bulk_init, dcoll=dcoll)
+
     elif init_name == "Flash1D":
-        from flash_utils import Flash1D
+        from y3prediction.flash_utils import Flash1D
         rho_bkrnd = flash_press/r/flash_temp
         c_bkrnd = math.sqrt(gamma*flash_press/rho_bkrnd)
 
@@ -1082,7 +1085,7 @@ def main(ctx_factory=cl.create_some_context,
         vel_unshocked = vel_right
 
         if init_flame and nspecies == 7:
-            from flash_utils import setup_flame
+            from y3prediction.flash_utils import setup_flame
             flame_states = setup_flame(pressure_unburned=pressure_unshocked,
                                        temperature_unburned=temperature_unshocked)
             pressure_unburned, temperature_unburned, y_unburned, rho_unburned = \
@@ -1110,31 +1113,30 @@ def main(ctx_factory=cl.create_some_context,
             print(f"\tpost-shock rho {rho2}")
             print(f"\tpost-shock velocity {velocity2}")
 
-        bulk_init = Flash1D(dim=dim,
-                            nspecies=nspecies,
-                            shock_location=shock_location,
-                            flame_location=flame_location,
-                            shock_normal_dir=shock_normal,
-                            flame_normal_dir=flame_normal,
-                            flash_sigma=flash_sigma,
-                            pressure_shocked=pressure_shocked,
-                            pressure_unshocked=pressure_unshocked,
-                            temperature_shocked=temperature_shocked,
-                            temperature_unshocked=temperature_unshocked,
-                            velocity_shocked=vel_shocked,
-                            velocity_unshocked=vel_unshocked,
-                            velocity_cross=vel_cross,
-                            species_mass_fractions_shocked=y,
-                            species_mass_fractions_unshocked=y,
-                            species_mass_fractions_burned=y_burned,
-                            species_mass_fractions_unburned=y_unburned,
-                            temperature_burned=temperature_burned,
-                            temperature_unburned=temperature_unburned,
-                            pressure_burned=pressure_burned,
-                            pressure_unburned=pressure_unburned,
-                            temp_wall=temp_wall,
-                            vel_sigma=vel_sigma,
-                            temp_sigma=temp_sigma)
+        fluid_init = Flash1D(dim=dim,
+                             nspecies=nspecies,
+                             shock_location=shock_location,
+                             flame_location=flame_location,
+                             shock_normal_dir=shock_normal,
+                             flame_normal_dir=flame_normal,
+                             sigma=flash_sigma,
+                             pressure_shocked=pressure_shocked,
+                             pressure_unshocked=pressure_unshocked,
+                             temperature_shocked=temperature_shocked,
+                             temperature_unshocked=temperature_unshocked,
+                             velocity_shocked=vel_shocked,
+                             velocity_unshocked=vel_unshocked,
+                             velocity_cross=vel_cross,
+                             species_mass_fractions_shocked=y,
+                             species_mass_fractions_unshocked=y,
+                             species_mass_fractions_burned=y_burned,
+                             species_mass_fractions_unburned=y_unburned,
+                             temperature_burned=temperature_burned,
+                             temperature_unburned=temperature_unburned,
+                             pressure_burned=pressure_burned,
+                             pressure_unburned=pressure_unburned,
+                             temp_wall=temp_wall,
+                             vel_sigma=vel_sigma, temp_sigma=temp_sigma)
 
     viz_path = "viz_data/"
     vizname = viz_path + casename
@@ -1241,6 +1243,7 @@ def main(ctx_factory=cl.create_some_context,
     elif init_name == "Flash1D":
         wall_insert_mask = mask_from_elements(
             wall_vol_discr, actx, wall_tag_to_elements["wall"])
+        wall_surround_mask = None
 
     from grudge.dt_utils import characteristic_lengthscales
     char_length = characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid)
@@ -1435,16 +1438,16 @@ def main(ctx_factory=cl.create_some_context,
         # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
-        restart_cv = bulk_init(
-            dcoll=dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)), eos=eos,
-            time=0)
+        restart_cv = fluid_init(x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
+                                eos=eos, time=0)
         temperature_seed = 0*restart_cv.mass + init_temperature
-        wall_mass = (
-            wall_insert_rho * wall_insert_mask
-            + wall_surround_rho * wall_surround_mask)
-        wall_cp = (
-            wall_insert_cp * wall_insert_mask
-            + wall_surround_cp * wall_surround_mask)
+        wall_mass = wall_insert_rho * wall_insert_mask
+        wall_cp = wall_insert_cp * wall_insert_mask
+
+        if wall_surround_mask is not None:
+            wall_mass = wall_mass + wall_surround_rho * wall_surround_mask
+            wall_cp = wall_cp + wall_surround_cp * wall_surround_mask
+
         restart_wv = WallVars(
             mass=wall_mass,
             energy=wall_mass * wall_cp * temp_wall,
@@ -1636,14 +1639,16 @@ def main(ctx_factory=cl.create_some_context,
             experimental_kappa(temperature)
             * puma_kappa(mass_loss_frac)
             / puma_kappa(0))
-        return (
-            scaled_insert_kappa * wall_insert_mask
-            + wall_surround_kappa * wall_surround_mask)
+        retval = scaled_insert_kappa * wall_insert_mask
+        if wall_surround_mask is not None:
+            retval = retval + wall_surround_kappa*wall_surround_mask
+        return retval
 
     def _get_wall_kappa_inert(mass, temperature):
-        return (
-            wall_insert_kappa * wall_insert_mask
-            + wall_surround_kappa * wall_surround_mask)
+        retval = wall_insert_kappa * wall_insert_mask
+        if wall_surround_mask is not None:
+            retval = retval + wall_surround_kappa*wall_surround_mask
+        return retval
 
     def _get_wall_effective_surface_area_fiber(mass):
         mass_loss_frac = (
@@ -1664,16 +1669,12 @@ def main(ctx_factory=cl.create_some_context,
     # inert
     if wall_material == 0:
         wall_model = WallModel(
-            heat_capacity=(
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask),
+            heat_capacity=wall_cp,
             thermal_conductivity_func=_get_wall_kappa_inert)
     # non-porous
     elif wall_material == 1:
         wall_model = WallModel(
-            heat_capacity=(
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask),
+            heat_capacity=wall_cp,
             thermal_conductivity_func=_get_wall_kappa_fiber,
             effective_surface_area_func=_get_wall_effective_surface_area_fiber,
             mass_loss_func=_mass_loss_rate_fiber,
@@ -1681,9 +1682,7 @@ def main(ctx_factory=cl.create_some_context,
     # porous
     elif wall_material == 2:
         wall_model = WallModel(
-            heat_capacity=(
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask),
+            heat_capacity=wall_cp,
             thermal_conductivity_func=_get_wall_kappa_fiber,
             effective_surface_area_func=_get_wall_effective_surface_area_fiber,
             mass_loss_func=_mass_loss_rate_fiber,
