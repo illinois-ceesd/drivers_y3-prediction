@@ -1293,9 +1293,9 @@ def main(ctx_factory=cl.create_some_context,
     if rhs_filter_cutoff < 0:
         rhs_filter_cutoff = int(rhs_filter_frac * order)
 
-    if soln_filter_cutoff >= order:
+    if soln_nfilter > 0 and soln_filter_cutoff >= order:
         raise ValueError("Invalid setting for solution filter (cutoff >= order).")
-    if rhs_filter_cutoff >= order:
+    if use_rhs_filter and rhs_filter_cutoff >= order:
         raise ValueError("Invalid setting for RHS filter (cutoff >= order).")
 
     from mirgecom.filter import (
@@ -1848,6 +1848,7 @@ def main(ctx_factory=cl.create_some_context,
         cv = fluid_state.cv
         dv = fluid_state.dv
         mu = fluid_state.viscosity
+        nu = mu / cv.mass
 
         # basic viz quantities, things here are difficult (or impossible) to compute
         # in post-processing
@@ -1904,6 +1905,8 @@ def main(ctx_factory=cl.create_some_context,
                     fluid_state.species_diffusivity
                 )
             cell_Pe_mass = char_length*cv.speed/d_alpha_max
+            cell_Sc = nu / d_alpha_max
+
             # these are useful if our transport properties
             # are not constant on the mesh
             # prandtl
@@ -1912,7 +1915,9 @@ def main(ctx_factory=cl.create_some_context,
 
             viz_ext = [("Re", cell_Re),
                        ("Pe_mass", cell_Pe_mass),
-                       ("Pe_heat", cell_Pe_heat)]
+                       ("Pe_heat", cell_Pe_heat),
+                       ("Sc", cell_Sc)]
+
             fluid_viz_fields.extend(viz_ext)
 
             cell_alpha = wall_model.thermal_diffusivity(
