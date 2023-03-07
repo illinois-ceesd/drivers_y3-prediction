@@ -787,7 +787,7 @@ def get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, noslip, adiabatic,
     from mirgecom.diffusion import (
         DirichletDiffusionBoundary
     )
-    from mirgecom.simutils import force_evaluation
+    from mirgecom.simutil import force_evaluation
     from mirgecom.gas_model import project_fluid_state
 
     if noslip:

@@ -209,8 +209,8 @@ def main(ctx_factory=cl.create_some_context,
 
     # set up driver parameters
     from mirgecom.simutil import configurate
-    from mirgecom.io import read_and_distribute_yaml_file
-    input_data = read_and_distribute_yaml_file(comm, user_input_file)
+    from mirgecom.io import read_and_distribute_yaml_data
+    input_data = read_and_distribute_yaml_data(comm, user_input_file)
 
     # Let the user specify a name to customize initialization
     init_name = configurate("init_name", input_data, "ACTII")
@@ -1488,6 +1488,21 @@ def main(ctx_factory=cl.create_some_context,
     current_wv = force_evaluation(actx, restart_wv)
     #current_wv = get_wv(restart_wv)
 
+    if init_name == "ACTII":
+        from y3prediction.actii_y3 import get_boundaries
+        fluid_boundaries, wall_boundaries, target_boundaries = \
+            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall,
+                           use_injection, quadrature_tag, gas_model,
+                           noslip, adiabatic, temp_wall, target_fluid_state)
+    elif init_name == "Flash1D":
+        from y3prediction.flash_utils import get_boundaries
+        fluid_boundaries, wall_boundaries, target_boundaries = \
+            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, noslip,
+                           adiabatic, periodic, temp_wall, gas_model, quadrature_tag,
+                           target_fluid_state)
+
+    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
+
     def _grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
                                 dd=dd_vol_fluid,
@@ -1511,20 +1526,6 @@ def main(ctx_factory=cl.create_some_context,
     stepper_state = make_obj_array([current_fluid_state.cv,
                                     temperature_seed, current_wv])
 
-    if init_name == "ACTII":
-        from y3prediction.actii_y3 import get_boundaries
-        fluid_boundaries, wall_boundaries, target_boundaries = \
-            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall,
-                           use_injection, quadrature_tag, gas_model,
-                           noslip, adiabatic, temp_wall, target_fluid_state)
-    elif init_name == "Flash1D":
-        from y3prediction.flash_utils import get_boundaries
-        fluid_boundaries, wall_boundaries, target_boundaries = \
-            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, noslip,
-                           adiabatic, periodic, temp_wall, gas_model, quadrature_tag,
-                           target_fluid_state)
-
-    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     # compiled wrapper for grad_cv_operator
     def _grad_cv_operator(fluid_state, time):
@@ -2522,7 +2523,8 @@ def main(ctx_factory=cl.create_some_context,
         if use_combustion:  # conditionals evaluated only once at compile time
             fluid_rhs = (
                 fluid_rhs
-                + eos.get_species_source(cv, temperature=fluid_state.temperature)
+                + eos.get_species_source_terms(
+                    cv, temperature=fluid_state.temperature)
             )
 
         if use_ignition > 0:
