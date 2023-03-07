@@ -227,6 +227,9 @@ def main(ctx_factory=cl.create_some_context,
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
 
+    # garbage collection frequency
+    ngarbage = configurate("ngarbage", input_data, 10)
+
     # verbosity for what gets written to viz dumps, increase for more stuff
     viz_level = configurate("viz_level", input_data, 1)
     # control the time interval for writing viz dumps
@@ -2218,7 +2221,8 @@ def main(ctx_factory=cl.create_some_context,
     #check_time = _check_time
 
     def my_pre_step(step, t, dt, state):
-        if step % 10 == 0:
+
+        if check_step(step=step, interval=ngarbage):
             with gc_timer.start_sub_timer():
                 from warnings import warn
                 warn("Running gc.collect() to work around memory growth issue "
