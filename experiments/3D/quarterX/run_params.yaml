@@ -37,6 +37,8 @@ alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
 order:  1
+#use_rhs_filter: True
+#rhs_filter_cutoff: 4
 dimen: 3
 use_injection: False
 noslip: True
