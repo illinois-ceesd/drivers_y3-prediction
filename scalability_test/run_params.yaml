@@ -1,0 +1,73 @@
+##############
+# run control
+##############
+mesh_filename: data/actii.msh
+use_1d_part: True
+nviz: 1000
+nrestart: 5000
+nhealth: 100
+nstatus: 100
+viz_level: 2
+viz_interval_type: 0
+#viz_interval_type: 1
+#viz_interval_type: 2
+t_viz_interval: 1.e-9
+constant_cfl: 0
+#constant_cfl: 1
+current_cfl: 0.05
+current_dt: 5.0e-10
+t_final: 2.e-3
+
+##############
+# wall model
+##############
+wall_time_scale: 1
+wall_penalty_amount: 0
+wall_material: 0
+use_wall_mass: False
+use_wall_ox: False
+
+##############
+# model control
+##############
+nlimit: 100
+use_species_limiter: 0
+use_av: 1
+alpha_sc: 0.01
+s0_sc: -5.0
+kappa_sc: 0.5
+order:  3
+use_rhs_filter: False
+rhs_filter_cutoff: 4
+dimen: 3
+use_injection: False
+noslip: True
+adiabatic: False
+mu: 5.0e-4
+
+##############
+# equation of state
+##############
+eos_type: 0
+nspecies: 0
+pyro_temp_iter: 1
+pyro_temp_tol: 1.
+transport: 0
+
+integrator: compiled_lsrk54
+#integrator: euler
+#health_pres_min: 2828
+#health_pres_max: 274259
+
+##############
+# initialization
+##############
+vel_sigma: 500
+temp_sigma: 750
+#vel_sigma: 0
+#temp_sigma: 0
+vel_sigma_inj: 5000
+temp_sigma_inj: 5000
+sponge_sigma: 10
+sponge_x0: 0.89
+sponge_thickness: 0.04

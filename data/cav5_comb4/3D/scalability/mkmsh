@@ -1,0 +1,104 @@
+#!/bin/bash
+
+# SIZE=${1}
+# NCPUS=$(getconf _NPROCESSORS_ONLN)
+NCPUS="1"
+SIZE="6.4"
+INJRAT="2"
+BLRAT="4"
+BLCAVRAT="2"
+BLINJRAT="2"
+BLSAMPRAT="4"
+BLSURRRAT="2"
+CAVFAC="4"
+ISOFAC="2"
+INJFAC="3"
+SHEARFAC="4"
+SAMPFAC="4"
+OUTPUT="actii"
+
+while [[ $# -gt 0 ]]; do
+  arg=$1
+  shift
+  case $arg in
+    --np=*)
+        NCPUS=${arg#*=}
+        ;;
+    --size=*)
+        SIZE=${arg#*=}
+        ;;
+    --injectorratio=*)
+        INJRAT=${arg#*=}
+        ;;
+    --blratio=*)
+        BLRAT=${arg#*=}
+        ;;
+    --blinjrat=*)
+        BLINJRAT=${arg#*=}
+        ;;
+    --blcavrat=*)
+        BLCAVRAT=${arg#*=}
+        ;;
+    --blsamprat=*)
+        BLSAMPRAT=${arg#*=}
+        ;;
+    --blsurrrat=*)
+        BLSURRRAT=${arg#*=}
+        ;;
+    --cavityfac=*)
+        CAVFAC=${arg#*=}
+        ;;
+    --isofac=*)
+        ISOFAC=${arg#*=}
+        ;;
+    --injfac=*)
+        INJFAC=${arg#*=}
+        ;;
+    --shearfac=*)
+        SHEARFAC=${arg#*=}
+        ;;
+    --samplefac=*)
+        SAMPFAC=${arg#*=}
+        ;;
+    --output=*)
+        OUTPUT=${arg#*=}
+        ;;
+    *)
+        echo "=== Error: unknown argument '$arg' ."
+        # usage
+        exit 1
+        ;;
+  esac
+done
+
+printf "Making 3D mesh with the following parameters:\n"
+printf "Output name: ${OUTPUT}\n"
+printf "Number of threads: ${NCPUS}\n"
+printf "Mesh size: ${SIZE}\n"
+printf "Injector ratio: ${INJRAT}\n"
+printf "Sample boundary layer ratio: ${BLSAMPRAT}\n"
+printf "Bulk boundary layer ratio: ${BLRAT}\n"
+printf "Injector boundary layer ratio: ${BLINJRAT}\n"
+printf "Cavity boundary layer ratio: ${BLCAVRAT}\n"
+printf "Surround boundary layer ratio: ${BLSURRRAT}\n"
+printf "Isolator factor: ${ISOFAC}\n"
+printf "Cavity factor: ${CAVFAC}\n"
+printf "Injector factor: ${INJFAC}\n"
+printf "Shear layer factor: ${SHEARFAC}\n"
+printf "Sample factor: ${SAMPFAC}\n"
+
+date
+set -x
+rm -f tmp.msh
+gmsh -setnumber size ${SIZE} -setnumber blratio ${BLRAT} -setnumber cavityfac ${CAVFAC} -setnumber isofac ${ISOFAC} -setnumber samplefac ${SAMPFAC} -setnumber injectorfac ${INJFAC} -setnumber blratiocavity ${BLCAVRAT} -setnumber blratioinjector ${BLINJRAT} -setnumber blratiosample ${BLSAMPRAT} -setnumber blratiosurround ${BLSURRRAT} -setnumber shearfac ${SHEARFAC} -o tmp.msh -nopopup -format msh2 ./actii_from_brep.geo -3 -nt ${NCPUS}
+set +x
+date
+
+if [ -f "tmp.msh" ]; then
+    NCELLS=$(grep -cP '^[0-9]+\s4\b(?!.*")' tmp.msh)
+    mv tmp.msh ${OUTPUT}_${NCELLS}.msh
+    printf "Created ${OUTPUT}_${NCELLS}.msh with ${NCELLS} tets.\n"
+else
+    printf "Mesh creation failed."
+fi
+
