@@ -2234,6 +2234,7 @@ def main(ctx_factory=cl.create_some_context,
                                          temperature_seed=tseed,
                                          smoothness=no_smoothness)
         wdv = create_wall_dependent_vars_compiled(wv)
+        cv = fluid_state.cv  # reset cv to limited version
 
         try:
 
@@ -2397,6 +2398,7 @@ def main(ctx_factory=cl.create_some_context,
                                        smoothness=no_smoothness,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
+        cv = fluid_state.cv  # reset cv to the limited version
 
         if use_av:
             # use the divergence to compute the smoothness field
