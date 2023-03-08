@@ -7,6 +7,7 @@ def setup_flame(mechanism_name="uiuc", fuel_name="C2H4",
                 oxidizer_name="O2", inert_name="N2",
                 pressure_unburned=None):
     # {{{  Set up burned/unburned state using Cantera
+
     import cantera
     from mirgecom.mechanisms import get_mechanism_input
     mech_input = get_mechanism_input(mechanism_name)
@@ -359,7 +360,7 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             ScriptSource
         )
 
-    # for 2D, the line segments/surfaces need to be specified clockwise to
+        # for 2D, the line segments/surfaces need to be specified clockwise to
         # get the correct facing (right-handed) surface normals
         my_string = \
             f"""
@@ -407,7 +408,7 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Mesh.OptimizeNetgen = 1;
             Mesh.Smoothing = 0;
             """
-            my_string = my_string + trans_string
+            my_string = my_string + transfinite_string
         else:
             mesh_tail = \
             f"""

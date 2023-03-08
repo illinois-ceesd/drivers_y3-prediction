@@ -1039,7 +1039,7 @@ def main(ctx_factory=cl.create_some_context,
 
         geometry_bottom = comm.bcast(geometry_bottom, root=0)
         geometry_top = comm.bcast(geometry_top, root=0)
-        bulk_init = InitACTII(dim=dim,
+        fluid_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
                               P0=total_pres_inflow, T0=total_temp_inflow,
                               temp_wall=temp_wall, temp_sigma=temp_sigma,
@@ -1053,7 +1053,6 @@ def main(ctx_factory=cl.create_some_context,
                               inj_vel_sigma=vel_sigma_inj,
                               inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
                               inj_mach=mach_inj, injection=use_injection)
-        fluid_init = partial(bulk_init, dcoll=dcoll)
 
     elif init_name == "Flash1D":
         from y3prediction.flash_utils import Flash1D
@@ -1438,8 +1437,12 @@ def main(ctx_factory=cl.create_some_context,
         # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
-        restart_cv = fluid_init(x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
-                                eos=eos, time=0)
+        if init_name == "ACTII":
+            restart_cv = fluid_init(dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
+                                    eos=eos, time=0)
+        else:
+            restart_cv = fluid_init(x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
+                                    eos=eos, time=0)            
         temperature_seed = 0*restart_cv.mass + init_temperature
         wall_mass = wall_insert_rho * wall_insert_mask
         wall_cp = wall_insert_cp * wall_insert_mask
@@ -2315,6 +2318,7 @@ def main(ctx_factory=cl.create_some_context,
         wdv = create_wall_dependent_vars_compiled(wv)
         new_tseed = fluid_state.temperature
         state = make_obj_array([cv, new_tseed, wv])
+        cv = fluid_state.cv
 
         try:
 
@@ -2475,6 +2479,7 @@ def main(ctx_factory=cl.create_some_context,
                                        smoothness=no_smoothness,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
+        cv = fluid_state.cv
 
         if use_av:
             # use the divergence to compute the smoothness field
