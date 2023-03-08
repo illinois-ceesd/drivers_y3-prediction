@@ -2250,6 +2250,7 @@ def main(ctx_factory=cl.create_some_context,
             do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
 
+            # This re-creation of the state resets *tseed* to current temp
             state = make_obj_array([cv, fluid_state.temperature, wv])
 
             if any([do_viz, do_restart, do_health, do_status]):
@@ -2417,9 +2418,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
-
-        # Temperature seed RHS (keep tseed updated)
-        tseed_rhs = fluid_state.temperature - tseed
+        tseed_rhs = 0*fluid_state.temperature
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
