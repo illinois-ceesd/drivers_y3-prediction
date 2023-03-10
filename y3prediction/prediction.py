@@ -222,6 +222,9 @@ def main(ctx_factory=cl.create_some_context,
     nstatus = configurate("nstatus", input_data, 1)
     ngarbage = configurate("ngarbage", input_data, 10)
 
+    # garbage collection frequency
+    ngarbage = configurate("ngarbage", input_data, 10)
+
     # verbosity for what gets written to viz dumps, increase for more stuff
     viz_level = configurate("viz_level", input_data, 1)
     # control the time interval for writing viz dumps
@@ -1183,7 +1186,7 @@ def main(ctx_factory=cl.create_some_context,
         def my_partitioner(mesh, tag_to_elements, num_ranks):
             from mirgecom.simutil import geometric_mesh_partitioner
             return geometric_mesh_partitioner(
-                mesh, num_ranks, auto_balance=True, debug=True)
+                mesh, num_ranks, auto_balance=True, debug=False)
 
         part_func = my_partitioner if use_1d_part else None
 
@@ -2313,8 +2316,9 @@ def main(ctx_factory=cl.create_some_context,
                                          temperature_seed=tseed,
                                          smoothness=no_smoothness)
         wdv = create_wall_dependent_vars_compiled(wv)
-        new_tseed = fluid_state.temperature
-        state = make_obj_array([cv, new_tseed, wv])
+        cv = fluid_state.cv  # reset cv to limited version
+        # This re-creation of the state resets *tseed* to current temp
+        state = make_obj_array([cv, fluid_state.temperature, wv])
 
         try:
 
@@ -2475,6 +2479,7 @@ def main(ctx_factory=cl.create_some_context,
                                        smoothness=no_smoothness,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
+        cv = fluid_state.cv  # reset cv to the limited version
 
         if use_av:
             # use the divergence to compute the smoothness field
@@ -2493,9 +2498,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
-
-        # Temperature seed RHS (keep tseed updated)
-        tseed_rhs = 0*fluid_state.temperature  # - tseed
+        tseed_rhs = 0*fluid_state.temperature
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
