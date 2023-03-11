@@ -16,6 +16,8 @@ INJFAC="3"
 SHEARFAC="4"
 SAMPFAC="4"
 OUTPUT="actii"
+MKLINK="false"
+OVRWT="false"
 
 while [[ $# -gt 0 ]]; do
   arg=$1
@@ -63,6 +65,12 @@ while [[ $# -gt 0 ]]; do
     --output=*)
         OUTPUT=${arg#*=}
         ;;
+    --link)
+        MKLINK="true"
+        ;;
+    --force)
+        OVRWT="true"
+        ;;
     *)
         echo "=== Error: unknown argument '$arg' ."
         # usage
@@ -87,6 +95,19 @@ printf "Injector factor: ${INJFAC}\n"
 printf "Shear layer factor: ${SHEARFAC}\n"
 printf "Sample factor: ${SAMPFAC}\n"
 
+if [[ "${OVRWT}" == "true" ]]; then
+    rm -f ${OUTPUT}.msh
+    MKLINK="true"
+fi
+
+if [[ "${MKLINK}" == "true" ]]; then
+    if [[ -f "${OUTPUT}.msh" ]]; then
+        printf "Mesh file ${OUTPUT}.msh already exists.\n"
+        exit 0
+    fi
+    printf "Make link ${OUTPUT}.msh for finished mesh.\n"
+fi
+
 date
 set -x
 rm -f tmp.msh
@@ -96,9 +117,17 @@ date
 
 if [ -f "tmp.msh" ]; then
     NCELLS=$(grep -cP '^[0-9]+\s4\b(?!.*")' tmp.msh)
+    if [[ "${NCELLS}" == "0" ]]; then
+        printf "Mesh creation failed.\n"
+        exit 1
+    fi
     mv tmp.msh ${OUTPUT}_${NCELLS}.msh
     printf "Created ${OUTPUT}_${NCELLS}.msh with ${NCELLS} tets.\n"
+    if [[ "${MKLINK}" == "true" ]]; then
+        ln -s ${OUTPUT}_${NCELLS}.msh ${OUTPUT}.msh
+    fi
 else
     printf "Mesh creation failed."
+    exit 1
 fi
 
