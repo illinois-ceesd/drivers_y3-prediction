@@ -1319,6 +1319,7 @@ def main(ctx_factory=cl.create_some_context,
                               dd=dd_vol_fluid)
 
     filter_cv_compiled = actx.compile(filter_cv)
+    filter_rhs_compiled = actx.compile(filter_rhs)
 
     if soln_nfilter >= 0 and rank == 0:
         logger.info("Solution filtering settings:")
@@ -2471,7 +2472,7 @@ def main(ctx_factory=cl.create_some_context,
             logmgr.tick_after()
         return state, dt
 
-    def my_rhs(t, state):
+    def unfiltered_rhs(t, state):
         cv, tseed, wv = state
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
@@ -2613,9 +2614,18 @@ def main(ctx_factory=cl.create_some_context,
 
             fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
+        return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
+
+    unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
+
+    def my_rhs(t, state):
+        # Work around long compile issue by computing and filtering RHS in separate
+        # compiled functions
+        fluid_rhs, tseed_rhs, wall_rhs = unfiltered_rhs_compiled(t, state)
+
         # Use a spectral filter on the RHS
         if use_rhs_filter:
-            fluid_rhs = filter_rhs(fluid_rhs)
+            fluid_rhs = filter_rhs_compiled(fluid_rhs)
 
         return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
 
@@ -2631,7 +2641,8 @@ def main(ctx_factory=cl.create_some_context,
                       istep=current_step, dt=current_dt,
                       t=current_t, t_final=t_final,
                       force_eval=force_eval,
-                      state=stepper_state)
+                      state=stepper_state,
+                      compile_rhs=False)
     current_cv, tseed, current_wv = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              no_smoothness)
