@@ -110,13 +110,26 @@ fi
 #   to caller for what the sqlite files are named.
 #
 printf "Running serial timing tests...\n"
-serial_test_names="smoke_test smoke_test_3d smoke_test_ks"
+serial_test_names="smoke_test_ks_3d"
 for test_name in $serial_test_names
 do
     test_path=${test_name}
     printf "* Running test ${test_name} in ${test_path}\n"
     cd ${DRIVER_PATH}/${test_path}
     casename="${CASENAME_ROOT}${test_name}"
+
+    # Create 3d mesh if not already there
+    if [[ "${test_name}" == *"_3d"* ]]; then
+        cd data
+        rm actii.msh
+        if [[ -f "actii_24110.msh" ]]; then
+            ln -s actii_24110.msh actii.msh
+        else
+            ./mkmsh --size=48 --link  # will not overwrite if exists
+        fi
+        cd ../
+    fi
+
     $MPI_EXEC -n 1 $PARALLEL_SPAWNER python -u -m mpi4py prediction.py -c ${casename} -g ${LOG_PATH} -i single_timing.yaml --log --lazy
     return_code=$?
     cd -
