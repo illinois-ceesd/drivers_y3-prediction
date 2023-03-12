@@ -60,12 +60,7 @@ do
     # Create 3d mesh if not already there
     if [[ "${test_name}" == *"_3d"* ]]; then
         cd data
-        rm actii.msh
-        if [[ -f "actii_24110.msh" ]]; then
-            ln -s actii_24110.msh actii.msh
-        else
-            ./mkmsh --size=48 --link  # will not overwrite if exists
-        fi
+        ./mkmsh --size=48 --nelem=24110 --link  # will not overwrite if exists
         cd ../
     fi
 
@@ -100,12 +95,7 @@ do
     
     # Create 3d mesh unless already there
     cd data
-    rm actii.msh
-    if [[ -f "actii_47908.msh" ]]; then
-        ln -s actii_47908.msh actii.msh
-    else
-        ./mkmsh --size=30.5 --link  # will not overwrite if it exists
-    fi
+    ./mkmsh --size=30.5 --nelem=47908 --link  # will not overwrite if it exists
     cd ../
 
     # Run the case
