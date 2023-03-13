@@ -25,6 +25,7 @@ THE SOFTWARE.
 """
 import logging
 import sys
+import gc
 import numpy as np
 import pyopencl as cl
 import numpy.linalg as la  # noqa
@@ -436,6 +437,11 @@ def main(ctx_factory=cl.create_some_context,
         print(f"\tnrestart = {nrestart}")
         print(f"\tnhealth = {nhealth}")
         print(f"\tnstatus = {nstatus}")
+        if ngarbage >= 0:
+            print(f"\tSyncd garbage collection every {ngarbage} steps.")
+            gc.disable()
+        else:
+            print(f"\tUsing Python automatic garbage collection.")
         if constant_cfl == 1:
             print(f"\tConstant cfl mode, current_cfl = {current_cfl}")
         else:
@@ -2223,7 +2229,6 @@ def main(ctx_factory=cl.create_some_context,
                 from warnings import warn
                 warn("Running gc.collect() to work around memory growth issue "
                      "https://github.com/illinois-ceesd/mirgecom/issues/839")
-                import gc
                 gc.collect()
 
         # Filter *first* because this will be most straightfwd to
