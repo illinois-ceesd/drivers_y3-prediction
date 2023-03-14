@@ -2314,8 +2314,9 @@ def main(ctx_factory=cl.create_some_context,
                                          temperature_seed=tseed,
                                          smoothness=no_smoothness)
         wdv = create_wall_dependent_vars_compiled(wv)
-        state = make_obj_array([cv, fluid_state.temperature, wv])
         cv = fluid_state.cv  # reset cv to limited version
+        # This re-creation of the state resets *tseed* to current temp
+        state = make_obj_array([cv, fluid_state.temperature, wv])
 
         try:
 
