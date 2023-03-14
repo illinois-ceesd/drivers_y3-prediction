@@ -5,7 +5,7 @@ nviz: 1000
 nrestart: 1000
 nhealth: -1
 nstatus: -1
-ngarbage: 100
+ngarbage: 10
 viz_level: 1
 viz_interval_type: 0
 #viz_interval_type: 1

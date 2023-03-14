@@ -112,7 +112,8 @@ fi
 printf "Running parallel timing tests...\n"
 # test_directories="scalability_test"
 test_path="scalability_test"
-test_name="scalability1"
+test_name="prediction-scalability"
+
 printf "* Running ${test_name} test in ${test_path}.\n"
 running_casename_base="${CASENAME_ROOT}${test_name}"
 
@@ -122,13 +123,19 @@ for nrank in 1 2 4; do
 
     if [[ "${nrank}" == "1" ]]; then
         msize="48"
-        nelem="24110"
+        nelem="24036"
     elif [[ "${nrank}" == "2" ]]; then
         msize="30.5"
         nelem="47908"
     elif [[ "${nrank}" == "4" ]]; then
         msize="21.5"
         nelem="96425"
+    elif [[ "${nrank}" == "8" ]]; then
+        msize="16.05"
+        nelem="192658"
+    elif [[ "${nrank}" == "16" ]]; then
+        msize="12.3"
+        nelem="383014"
     fi
 
     casename="${running_casename_base}_np${nrank}"
@@ -138,16 +145,12 @@ for nrank in 1 2 4; do
     rm actii.msh
     ./mkmsh --size=${msize} --nelem=${nelem} --link
     cd ../
-    
-    # FIXME: overwrite/hardcode log path for now
-    LOG_PATH="log_data_${nrank}"
 
     set -x
     $MPI_EXEC -n ${nrank} $PARALLEL_SPAWNER python -u -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
     return_code=$?
     set +x
 
-    # mv ${LOG_PATH} log_data_${nrank}
     mv viz_data viz_data_${nrank}
     mv restart_data restart_data_${nrank}
 

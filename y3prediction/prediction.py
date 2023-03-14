@@ -195,7 +195,7 @@ def main(ctx_factory=cl.create_some_context,
     comm.Barrier()
 
     logmgr = initialize_logmgr(use_logmgr,
-        filename=logname, mode="wo", mpi_comm=comm)
+        filename=logname, mode="wu", mpi_comm=comm)
 
     if use_profiling:
         queue = cl.CommandQueue(cl_ctx,
@@ -434,7 +434,7 @@ def main(ctx_factory=cl.create_some_context,
         print(f"\tnstatus = {nstatus}")
         if ngarbage >= 0:
             print(f"\tSyncd garbage collection every {ngarbage} steps.")
-            gc.disable()
+            # gc.disable()
         else:
             print(f"\tUsing Python automatic garbage collection.")
         if constant_cfl == 1:
