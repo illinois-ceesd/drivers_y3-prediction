@@ -109,46 +109,67 @@ fi
 # - The casename thing is a "nice to have" as it allows some control
 #   to caller for what the sqlite files are named.
 #
-printf "Running serial timing tests...\n"
-serial_test_names="smoke_test_ks_3d"
-for test_name in $serial_test_names
-do
-    test_path=${test_name}
-    printf "* Running test ${test_name} in ${test_path}\n"
-    cd ${DRIVER_PATH}/${test_path}
-    casename="${CASENAME_ROOT}${test_name}"
+printf "Running parallel timing tests...\n"
+# test_directories="scalability_test"
+test_path="scalability_test"
+test_name="prediction-scalability"
 
-    # Create 3d mesh if not already there
-    if [[ "${test_name}" == *"_3d"* ]]; then
-        cd data
-        rm actii.msh
-        if [[ -f "actii_24110.msh" ]]; then
-            ln -s actii_24110.msh actii.msh
-        else
-            ./mkmsh --size=48 --link  # will not overwrite if exists
-        fi
-        cd ../
+printf "* Running ${test_name} test in ${test_path}.\n"
+running_casename_base="${CASENAME_ROOT}${test_name}"
+
+cd ${DRIVER_PATH}/${test_path}
+
+for nrank in 1 2 4; do
+
+    if [[ "${nrank}" == "1" ]]; then
+        msize="48"
+        nelem="24036"
+    elif [[ "${nrank}" == "2" ]]; then
+        msize="30.5"
+        nelem="47908"
+    elif [[ "${nrank}" == "4" ]]; then
+        msize="21.5"
+        nelem="96425"
+    elif [[ "${nrank}" == "8" ]]; then
+        msize="16.05"
+        nelem="192658"
+    elif [[ "${nrank}" == "16" ]]; then
+        msize="12.3"
+        nelem="383014"
     fi
 
-    $MPI_EXEC -n 1 $PARALLEL_SPAWNER python -u -m mpi4py prediction.py -c ${casename} -g ${LOG_PATH} -i single_timing.yaml --log --lazy
+    casename="${running_casename_base}_np${nrank}"
+    printf "** Running ${casename} on ${nrank} ranks.\n"
+
+    cd data
+    rm actii.msh
+    ./mkmsh --size=${msize} --nelem=${nelem} --link
+    cd ../
+
+    set -x
+    $MPI_EXEC -n ${nrank} $PARALLEL_SPAWNER python -u -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
     return_code=$?
-    cd -
+    set +x
+
+    mv viz_data viz_data_${nrank}
+    mv restart_data restart_data_${nrank}
+
 
     if [[ $return_code -eq 0 ]]
     then
         ((numsuccess=numsuccess+1))
-        echo "** ${test_name} succeeded."
-        succeeded_tests="$succeeded_tests ${test_name}"
+        echo "** ${test_path}/${casename} $succeeded."
+        succeeded_tests="$succeeded_tests ${test_path}/${casename}"
     else
         ((numfail=numfail+1))
-        echo "** Example $example failed."
-        failed_tests="$failed_tests ${test_name}"
+        echo "**  ${test_path}/${casename} failed."
+        failed_tests="$failed_tests ${test_path}/${casename}"
     fi
 
 done
 
 date
-printf "Serial timing tests done.\n"
+printf "Scaling/timing tests done.\n"
 printf "Passing tests: ${succeeded_tests}\n"
 printf "Failing tests: ${failed_tests}\n"
 

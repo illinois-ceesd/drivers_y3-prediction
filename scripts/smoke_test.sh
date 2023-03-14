@@ -50,12 +50,20 @@ failed_tests=""
 
 printf "Running serial tests...\n"
 # serial_test_names="smoke_test smoke_test_3d smoke_test_ks"
-serial_test_names="smoke_test smoke_test_ks"
+serial_test_names="smoke_test_ks_3d"
 for test_name in $serial_test_names
 do
     test_path=${test_name}
     printf "* Running test ${test_name} in ${test_path}\n"
     cd ${TOP_PATH}/${test_path}
+
+    # Create 3d mesh if not already there
+    if [[ "${test_name}" == *"_3d"* ]]; then
+        cd data
+        ./mkmsh --size=48 --nelem=24110 --link  # will not overwrite if exists
+        cd ../
+    fi
+
     $MPI_EXEC -n 1 $PARALLEL_SPAWNER python -u -m mpi4py driver.py -i run_params.yaml --log --lazy
     return_code=$?
     cd -
@@ -77,7 +85,7 @@ date
 printf "Serial tests done.\n"
 printf "Running parallel tests.\n"
 
-parallel_test_names="smoke_test_ks"
+parallel_test_names="smoke_test_ks_3d"
 for test_name in $parallel_test_names
 do
     test_path=${test_name}
@@ -85,6 +93,12 @@ do
     printf "* Running test ${test_name} in ${test_name}."
     cd ${TOP_PATH}/${test_path}
     
+    # Create 3d mesh unless already there
+    cd data
+    ./mkmsh --size=30.5 --nelem=47908 --link  # will not overwrite if it exists
+    cd ../
+
+    # Run the case
     $MPI_EXEC -n 2 $PARALLEL_SPAWNER python -u -m mpi4py driver.py -i run_params.yaml --log --lazy
     return_code=$?
     cd -

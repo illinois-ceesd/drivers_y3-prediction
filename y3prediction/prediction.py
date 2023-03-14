@@ -25,6 +25,7 @@ THE SOFTWARE.
 """
 import logging
 import sys
+import gc
 import numpy as np
 import pyopencl as cl
 import numpy.linalg as la  # noqa
@@ -190,7 +191,7 @@ def main(ctx_factory=cl.create_some_context,
     comm.Barrier()
 
     logmgr = initialize_logmgr(use_logmgr,
-        filename=logname, mode="wo", mpi_comm=comm)
+        filename=logname, mode="wu", mpi_comm=comm)
 
     if use_profiling:
         queue = cl.CommandQueue(cl_ctx,
@@ -357,14 +358,10 @@ def main(ctx_factory=cl.create_some_context,
     sponge_x0 = configurate("sponge_x0", input_data, 0.9)
 
     # artificial viscosity control
-    #    0 - none
-    #    1 - physical viscosity based, div(velocity) indicator
-    use_av = configurate("use_av", input_data, 0)
+    use_av = configurate("use_av", input_data, False)
 
     # species limiter
-    #    0 - none
-    #    1 - limit in on call to make_fluid_state
-    use_species_limiter = configurate("use_species_limiter", input_data, 0)
+    use_species_limiter = configurate("use_species_limiter", input_data, False)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -469,7 +466,6 @@ def main(ctx_factory=cl.create_some_context,
         print(f"Shock capturing parameters: alpha {alpha_sc}, "
               f"s0 {s0_sc}, kappa {kappa_sc}")
 
-    # use_av=1 specific parameters
     # flow stagnation temperature
     static_temp = 2076.43
     # steepness of the smoothed function
@@ -479,21 +475,26 @@ def main(ctx_factory=cl.create_some_context,
     gamma_sc = 1.5
 
     if rank == 0:
-        if use_av == 0:
-            print("Artificial viscosity disabled")
-        else:
+        if use_av:
             print("Artificial viscosity using modified physical viscosity")
             print("Using velocity divergence indicator")
             print(f"Shock capturing parameters: alpha {alpha_sc}, "
                   f"gamma_sc {gamma_sc}"
                   f"theta_sc {theta_sc}, beta_sc {beta_sc}, Pr 0.75, "
                   f"stagnation temperature {static_temp}")
+        else:
+            print("Artificial viscosity disabled")
 
     if rank == 0:
         print("\n#### Simluation control data: ####")
         print(f"\tnrestart = {nrestart}")
         print(f"\tnhealth = {nhealth}")
         print(f"\tnstatus = {nstatus}")
+        if ngarbage >= 0:
+            print(f"\tSyncd garbage collection every {ngarbage} steps.")
+            # gc.disable()
+        else:
+            print(f"\tUsing Python automatic garbage collection.")
         if constant_cfl == 1:
             print(f"\tConstant cfl mode, current_cfl = {current_cfl}")
         else:
@@ -657,7 +658,7 @@ def main(ctx_factory=cl.create_some_context,
 
     # don't allow limiting on flows without species
     if nspecies == 0:
-        use_species_limiter = 0
+        use_species_limiter = False
         use_injection = False
 
     # Turn off combustion unless EOS supports it
@@ -694,7 +695,7 @@ def main(ctx_factory=cl.create_some_context,
         elif eos_type == 1:
             print("\tPyrometheus EOS")
 
-        if use_species_limiter == 1:
+        if use_species_limiter:
             print("\nSpecies mass fractions limited to [0:1]")
 
     transport_alpha = 0.6
@@ -1183,7 +1184,7 @@ def main(ctx_factory=cl.create_some_context,
         def my_partitioner(mesh, tag_to_elements, num_ranks):
             from mirgecom.simutil import geometric_mesh_partitioner
             return geometric_mesh_partitioner(
-                mesh, num_ranks, auto_balance=True, debug=True)
+                mesh, num_ranks, auto_balance=True, debug=False)
 
         part_func = my_partitioner if use_1d_part else None
 
@@ -1316,6 +1317,7 @@ def main(ctx_factory=cl.create_some_context,
                               dd=dd_vol_fluid)
 
     filter_cv_compiled = actx.compile(filter_cv)
+    filter_rhs_compiled = actx.compile(filter_rhs)
 
     if soln_nfilter >= 0 and rank == 0:
         logger.info("Solution filtering settings:")
@@ -2297,7 +2299,6 @@ def main(ctx_factory=cl.create_some_context,
                 from warnings import warn
                 warn("Running gc.collect() to work around memory growth issue "
                      "https://github.com/illinois-ceesd/mirgecom/issues/839")
-                import gc
                 gc.collect()
 
         # Filter *first* because this will be most straightfwd to
@@ -2313,8 +2314,8 @@ def main(ctx_factory=cl.create_some_context,
                                          temperature_seed=tseed,
                                          smoothness=no_smoothness)
         wdv = create_wall_dependent_vars_compiled(wv)
-        new_tseed = fluid_state.temperature
-        state = make_obj_array([cv, new_tseed, wv])
+        state = make_obj_array([cv, fluid_state.temperature, wv])
+        cv = fluid_state.cv  # reset cv to limited version
 
         try:
 
@@ -2467,7 +2468,7 @@ def main(ctx_factory=cl.create_some_context,
             logmgr.tick_after()
         return state, dt
 
-    def my_rhs(t, state):
+    def unfiltered_rhs(t, state):
         cv, tseed, wv = state
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
@@ -2475,6 +2476,7 @@ def main(ctx_factory=cl.create_some_context,
                                        smoothness=no_smoothness,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
+        cv = fluid_state.cv  # reset cv to the limited version
 
         if use_av:
             # use the divergence to compute the smoothness field
@@ -2493,9 +2495,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
-
-        # Temperature seed RHS (keep tseed updated)
-        tseed_rhs = 0*fluid_state.temperature  # - tseed
+        tseed_rhs = 0*fluid_state.temperature
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
@@ -2610,9 +2610,18 @@ def main(ctx_factory=cl.create_some_context,
 
             fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
+        return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
+
+    unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
+
+    def my_rhs(t, state):
+        # Work around long compile issue by computing and filtering RHS in separate
+        # compiled functions
+        fluid_rhs, tseed_rhs, wall_rhs = unfiltered_rhs_compiled(t, state)
+
         # Use a spectral filter on the RHS
         if use_rhs_filter:
-            fluid_rhs = filter_rhs(fluid_rhs)
+            fluid_rhs = filter_rhs_compiled(fluid_rhs)
 
         return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
 
@@ -2628,7 +2637,8 @@ def main(ctx_factory=cl.create_some_context,
                       istep=current_step, dt=current_dt,
                       t=current_t, t_final=t_final,
                       force_eval=force_eval,
-                      state=stepper_state)
+                      state=stepper_state,
+                      compile_rhs=False)
     current_cv, tseed, current_wv = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              no_smoothness)
