@@ -1,12 +1,14 @@
 #! /bin/bash
 #BSUB -nnodes 1
 #BSUB -G uiuc
-#BSUB -W 240
+#BSUB -W 360
 #BSUB -J flash1
 #BSUB -q pbatch
 #BSUB -o flash1.out
 
 source ../emirge/config/activate_env.sh
+# source ../emirge/mirgecom/scripts/mirge-testing-env.sh
+
 export PYOPENCL_CTX="port:tesla"
 export XDG_CACHE_ROOT="/tmp/$USER/xdg-scratch"
 export POCL_CACHE_DIR_ROOT="/tmp/$USER/pocl-cache"

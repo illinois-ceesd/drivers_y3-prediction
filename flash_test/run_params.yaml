@@ -4,12 +4,12 @@ order:  4
 mu: 1.e-4
 mesh_size: 0.0015
 current_dt: 1.e-8
-nviz: 100
+nviz: 1000
 # everything else
 init_shock: False
 init_flame: True
 viz_level: 3
-nrestart: 1000000
+nrestart: 1000
 mesh_angle: 0
 periodic: False
 bl_ratio: 1.0
@@ -25,7 +25,7 @@ vel_sigma: 0
 temp_sigma: 0
 nspecies:  7
 use_av: False
-use_species_limiting: True
+use_species_limiter: True
 noslip: False
 adiabatic: True
 #mu: 1.e-5

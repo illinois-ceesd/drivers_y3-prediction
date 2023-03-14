@@ -541,16 +541,16 @@ def main(ctx_factory=cl.create_some_context,
     if adiabatic:
         temp_sigma = 0.
     """
-
-    if rank == 0:
-        print("\n#### Simluation setup data: ####")
-        print(f"\ttotal_pres_injection = {total_pres_inj}")
-        print(f"\ttotal_temp_injection = {total_temp_inj}")
-        print(f"\tvel_sigma = {vel_sigma}")
-        print(f"\ttemp_sigma = {temp_sigma}")
-        print(f"\tvel_sigma_injection = {vel_sigma_inj}")
-        print(f"\ttemp_sigma_injection = {temp_sigma_inj}")
-        print("#### Simluation setup data: ####")
+    if init_name == "ACTII":
+        if rank == 0:
+            print("\n#### Simluation setup data: ####")
+            print(f"\ttotal_pres_injection = {total_pres_inj}")
+            print(f"\ttotal_temp_injection = {total_temp_inj}")
+            print(f"\tvel_sigma = {vel_sigma}")
+            print(f"\ttemp_sigma = {temp_sigma}")
+            print(f"\tvel_sigma_injection = {vel_sigma_inj}")
+            print(f"\ttemp_sigma_injection = {temp_sigma_inj}")
+            print("#### Simluation setup data: ####")
 
     spark_center = np.zeros(shape=(dim,))
     spark_center[0] = spark_init_loc_x
@@ -558,18 +558,19 @@ def main(ctx_factory=cl.create_some_context,
     if dim == 3:
         spark_center[2] = spark_init_loc_z
 
-    if rank == 0 and use_ignition > 0:
-        print("\n#### Ignition control parameters ####")
-        print(f"spark center ({spark_center[0]},{spark_center[1]})")
-        print(f"spark FWHM {spark_diameter}")
-        print(f"spark strength {spark_strength}")
-        print(f"ignition time {spark_init_time}")
-        print(f"ignition duration {spark_duration}")
-        if use_ignition == 1:
-            print("spark ignition")
-        elif use_ignition == 2:
-            print("heat source ignition")
-        print("#### Ignition control parameters ####\n")
+    if init_name == "ACTII":
+        if rank == 0 and use_ignition > 0:
+            print("\n#### Ignition control parameters ####")
+            print(f"spark center ({spark_center[0]},{spark_center[1]})")
+            print(f"spark FWHM {spark_diameter}")
+            print(f"spark strength {spark_strength}")
+            print(f"ignition time {spark_init_time}")
+            print(f"ignition duration {spark_duration}")
+            if use_ignition == 1:
+                print("spark ignition")
+            elif use_ignition == 2:
+                print("heat source ignition")
+            print("#### Ignition control parameters ####\n")
 
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
@@ -888,15 +889,16 @@ def main(ctx_factory=cl.create_some_context,
 
     vel_inflow[0] = inlet_mach*sos
 
-    if rank == 0:
-        print("#### Simluation initialization data: ####")
-        print(f"\tinlet Mach number {inlet_mach}")
-        print(f"\tinlet gamma {inlet_gamma}")
-        print(f"\tinlet temperature {temp_inflow}")
-        print(f"\tinlet pressure {pres_inflow}")
-        print(f"\tinlet rho {rho_inflow}")
-        print(f"\tinlet velocity {vel_inflow[0]}")
-        #print(f"final inlet pressure {pres_inflow_final}")
+    if init_name == "ACTII":
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {inlet_mach}")
+            print(f"\tinlet gamma {inlet_gamma}")
+            print(f"\tinlet temperature {temp_inflow}")
+            print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet rho {rho_inflow}")
+            print(f"\tinlet velocity {vel_inflow[0]}")
+            #print(f"final inlet pressure {pres_inflow_final}")
 
     outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
                                        gamma=gamma,
@@ -946,14 +948,15 @@ def main(ctx_factory=cl.create_some_context,
 
     vel_outflow[0] = outlet_mach*math.sqrt(gamma*pres_outflow/rho_outflow)
 
-    if rank == 0:
-        print("\t********")
-        print(f"\toutlet Mach number {outlet_mach}")
-        print(f"\toutlet gamma {outlet_gamma}")
-        print(f"\toutlet temperature {temp_outflow}")
-        print(f"\toutlet pressure {pres_outflow}")
-        print(f"\toutlet rho {rho_outflow}")
-        print(f"\toutlet velocity {vel_outflow[0]}")
+    if init_name == "ACTII":
+        if rank == 0:
+            print("\t********")
+            print(f"\toutlet Mach number {outlet_mach}")
+            print(f"\toutlet gamma {outlet_gamma}")
+            print(f"\toutlet temperature {temp_outflow}")
+            print(f"\toutlet pressure {pres_outflow}")
+            print(f"\toutlet rho {rho_outflow}")
+            print(f"\toutlet velocity {vel_outflow[0]}")
 
     gamma_injection = gamma
     if nspecies > 0:
@@ -1011,20 +1014,21 @@ def main(ctx_factory=cl.create_some_context,
             sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
 
         vel_injection[0] = -mach_inj*sos
-
-        if rank == 0:
-            print("\t********")
-            print(f"\tinjector Mach number {mach_inj}")
-            print(f"\tinjector gamma {gamma_injection}")
-            print(f"\tinjector temperature {temp_injection}")
-            print(f"\tinjector pressure {pres_injection}")
-            print(f"\tinjector rho {rho_injection}")
-            print(f"\tinjector velocity {vel_injection[0]}")
-            print("#### Simluation initialization data: ####\n")
+        if init_name == "ACTII":
+            if rank == 0:
+                print("\t********")
+                print(f"\tinjector Mach number {mach_inj}")
+                print(f"\tinjector gamma {gamma_injection}")
+                print(f"\tinjector temperature {temp_injection}")
+                print(f"\tinjector pressure {pres_injection}")
+                print(f"\tinjector rho {rho_injection}")
+                print(f"\tinjector velocity {vel_injection[0]}")
+                print("#### Simluation initialization data: ####\n")
     else:
-        if rank == 0:
-            print("\t********")
-            print("\tnspecies=0, injection disabled")
+        if init_name == "ACTII":
+            if rank == 0:
+                print("\t********")
+                print("\tnspecies=0, injection disabled")
 
     # read geometry files
     geometry_bottom = None
@@ -1032,6 +1036,8 @@ def main(ctx_factory=cl.create_some_context,
 
     if init_name == "ACTII":
         if rank == 0:
+            print("\tInitializing ACTII domain.\n")
+
             from numpy import loadtxt
             geometry_bottom = loadtxt("data/nozzleBottom.dat",
                                       comments="#", unpack=False)
@@ -1040,6 +1046,7 @@ def main(ctx_factory=cl.create_some_context,
 
         geometry_bottom = comm.bcast(geometry_bottom, root=0)
         geometry_top = comm.bcast(geometry_top, root=0)
+
         bulk_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
                               P0=total_pres_inflow, T0=total_temp_inflow,
@@ -1057,6 +1064,7 @@ def main(ctx_factory=cl.create_some_context,
         fluid_init = partial(bulk_init, dcoll=dcoll)
 
     elif init_name == "Flash1D":
+        print("\tInitializing flame and shock (Flash1D) domain.\n")
         from y3prediction.flash_utils import Flash1D
         rho_bkrnd = flash_press/r/flash_temp
         c_bkrnd = math.sqrt(gamma*flash_press/rho_bkrnd)
@@ -1331,9 +1339,7 @@ def main(ctx_factory=cl.create_some_context,
         logger.info(f" - filter cutoff = {rhs_filter_cutoff}")
         logger.info(f" - filter order  = {rhs_filter_order}")
 
-    limiter_func = None
-    if use_species_limiter:
-        limiter_func = limit_fluid_state
+    limiter_func = limit_fluid_state if use_species_limiter else None
 
     def _create_fluid_state(cv, temperature_seed, smoothness=None):
         return make_fluid_state(cv=cv, gas_model=gas_model,
