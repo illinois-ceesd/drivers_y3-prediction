@@ -1,10 +1,12 @@
 #!/bin/bash
 
-# Runs the single node scalability (1, 2, 4) ranks
+# Runs the single node scalability on [s, n] ranks
 # Example use:
-# . scripts/single_scalability.sh -i -p ../
-# -i => optionally install the driver 
-# -p => indicate the path to top level of driver
+# . scripts/single_scalability.sh -i -s 1 -n 16 -p ../
+# -i => optionally install the driver (default=no)
+# -p => indicate path to driver top level (default=../)
+# -s => number of ranks to start with (default=1)
+# -n => number of ranks to end with (default=16)
 
 NONOPT_ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -19,8 +21,19 @@ while [[ $# -gt 0 ]]; do
             shift
             shift
             ;;
-        -i|--install)
-            INSTALL="YES"
+        -n|--nproc)
+            NUM_PROCS="$2"
+            shift 
+            shift
+            ;;
+        -s|--start)
+            NUM_PROCS_1="$2"
+            shift 
+            shift
+            ;;
+        -t|--testdir)
+            TEST_PATH="$2"
+            shift 
             shift
             ;;
         -o|--output)
@@ -33,9 +46,8 @@ while [[ $# -gt 0 ]]; do
             shift
             shift
             ;;
-        -t|--testdir)
-            TEST_PATH="$2"
-            shift 
+        -i|--install)
+            INSTALL="YES"
             shift
             ;;
         -*|--*)
@@ -54,6 +66,8 @@ TESTING_ENV_RESOURCE=${TESTING_ENV_RESOURCE:-""}
 CASENAME_ROOT=${CASENAME_ROOT:-""}
 LOG_PATH=${LOG_PATH:-"log_data"}
 DRIVER_PATH=${DRIVER_PATH:-"."}
+NUM_PROCS=${NUM_PROCS:-"4"}
+NUM_PROCS_1=${NUM_PROCS_1:-"1"}
 INSTALL=${INSTALL:-"NO"}
 TEST_PATH=${TEST_PATH:-"scalability_test"}
 
@@ -126,13 +140,13 @@ printf "Running parallel timing tests...\n"
 # test_directories="scalability_test"
 test_path=${TEST_PATH}
 test_name="prediction-scalability"
-
 printf "* Running ${test_name} test in ${test_path}.\n"
 running_casename_base="${CASENAME_ROOT}${test_name}"
 
 cd ${DRIVER_PATH}/${test_path}
 
-for nrank in 1 2 4; do
+nrank=${NUM_PROCS_1}
+while [ $nrank -le $NUM_PROCS ]; do
 
     if [[ "${nrank}" == "1" ]]; then
         msize="48"
@@ -158,7 +172,7 @@ for nrank in 1 2 4; do
     rm actii.msh
     ./mkmsh --size=${msize} --nelem=${nelem} --link
     cd ../
-
+    
     set -x
     $MPI_EXEC -n ${nrank} $PARALLEL_SPAWNER python -u -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
     return_code=$?
@@ -166,7 +180,6 @@ for nrank in 1 2 4; do
 
     mv viz_data viz_data_${nrank}
     mv restart_data restart_data_${nrank}
-
 
     if [[ $return_code -eq 0 ]]
     then
@@ -178,6 +191,8 @@ for nrank in 1 2 4; do
         echo "**  ${test_path}/${casename} failed."
         failed_tests="$failed_tests ${test_path}/${casename}"
     fi
+
+    nrank=$(( $nrank * 2 ))
 
 done
 
