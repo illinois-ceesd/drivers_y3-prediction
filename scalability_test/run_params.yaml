@@ -5,7 +5,7 @@ nviz: 1000
 nrestart: 1000
 nhealth: -1
 nstatus: -1
-ngarbage: 100
+ngarbage: 10
 viz_level: 1
 viz_interval_type: 0
 #viz_interval_type: 1
@@ -29,9 +29,8 @@ wall_material: 2
 ##############
 # model control
 ##############
-nlimit: 1
-use_species_limiter: 1
-use_av: 1
+use_species_limiter: True
+use_av: True
 alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
