@@ -253,16 +253,25 @@ class InitACTII:
         # the temperature smoothed
         #xc_left = zeros + 0.65163 + 0.0004
         #xc_right = zeros + 0.72163 - 0.0004
-        xc_left = zeros + 0.60628 + 0.0004
-        xc_right = zeros + 0.63578 - 0.0004
+        #xc_left = zeros + 0.60628 + 0.0010
+        #xc_right = zeros + 0.63578 - 0.0015
+        xc_left = zeros + 0.60628
+        xc_right = zeros + 0.63578
         yc_top = zeros - 0.006
         yc_bottom = zeros - 0.01
+        zc_fore = 0.0175 - 0.01
+        zc_aft = -0.0175 + 0.01
 
         left_edge = actx.np.greater(xpos, xc_left)
         right_edge = actx.np.less(xpos, xc_right)
         top_edge = actx.np.less(ypos, yc_top)
         bottom_edge = actx.np.greater(ypos, yc_bottom)
-        inside_block = left_edge*right_edge*top_edge*bottom_edge
+        fore_edge = ones
+        aft_edge = ones
+        if self._dim == 3:
+            fore_edge = actx.np.less(zpos, zc_fore)
+            aft_edge = actx.np.greater(zpos, zc_aft)
+        inside_block = left_edge*right_edge*top_edge*bottom_edge*fore_edge*aft_edge
         smooth_temperature = actx.np.where(inside_block, temperature,
                                            smooth_temperature)
 
@@ -274,8 +283,9 @@ class InitACTII:
         #xc_right = zeros + 0.742 + 0.000001
         #xc_left = zeros + 0.60628 + 0.0004
         #xc_right = zeros + 0.63578 - 0.0004
+        #yc_top = zeros - 0.0083245 + 0.0006
         yc_top = zeros - 0.0083245
-        if self._vel_sigma <= 0:
+        if self._temp_sigma <= 0:
             yc_top = zeros - 0.0099
         #yc_bottom = zeros - 0.0283245
         #xc_bottom = zeros + 0.70163
@@ -304,9 +314,95 @@ class InitACTII:
             smoothing_slant = smooth_step(actx, sigma*wall_dist)
             cavity_temperature = (wall_temperature +
                 (temperature - wall_temperature)*smoothing_slant)
-        temperature = actx.np.where(inside_cavity,
-                                    cavity_temperature,
-                                    smooth_temperature)
+        smooth_temperature = actx.np.where(inside_cavity,
+                                           cavity_temperature,
+                                           #cavity_temperature)
+                                           #smooth_temperature,
+                                           smooth_temperature)
+
+        # smooth the temperature at the upstream corner
+        xc_left = zeros + 0.60627
+        xc_right = xc_left + 0.0015
+        yc_bottom = zeros - 0.0083245
+        yc_top = yc_bottom + 0.0015
+        zc_aft = zeros - 0.0175 + 0.001
+        zc_fore = zeros + 0.0175 - 0.001
+
+        left_edge = actx.np.greater(xpos, xc_left)
+        right_edge = actx.np.less(xpos, xc_right)
+        top_edge = actx.np.less(ypos, yc_top)
+        bottom_edge = actx.np.greater(ypos, yc_bottom)
+        aft_edge = ones
+        fore_edge = ones
+        if self._dim == 3:
+            aft_edge = actx.np.greater(zpos, zc_aft)
+            fore_edge = actx.np.less(zpos, zc_fore)
+
+        inside_corner = left_edge*right_edge*top_edge*bottom_edge*aft_edge*fore_edge
+
+        # smooth the temperature at the cavity walls
+        corner_dist = actx.np.sqrt((ypos - yc_bottom)*(ypos - yc_bottom) +
+                              (xpos - xc_left)*(xpos - xc_left))
+        if self._temp_sigma > 0.:
+            sigma = self._temp_sigma
+            smoothing_corner = smooth_step(actx, sigma*corner_dist)
+            corner_temperature = (wall_temperature +
+                (temperature - wall_temperature)*smoothing_corner)
+        else:
+            sigma = 1500
+            smoothing_corner = smooth_step(actx, sigma*corner_dist)
+            corner_temperature = (wall_temperature +
+                (temperature - wall_temperature)*smoothing_corner)
+        smooth_temperature = actx.np.where(inside_corner,
+                                           corner_temperature,
+                                           smooth_temperature)
+
+        # smooth the temperature at the downstream corner
+        xc_right = zeros + 0.63578
+        xc_left = xc_right - 0.0015
+        yc_bottom = zeros - 0.0083245
+        yc_top = yc_bottom + 0.0015
+        zc_aft = zeros - 0.0175 + 0.001
+        zc_fore = zeros + 0.0175 - 0.001
+
+        left_edge = actx.np.greater(xpos, xc_left)
+        right_edge = actx.np.less(xpos, xc_right)
+        top_edge = actx.np.less(ypos, yc_top)
+        bottom_edge = actx.np.greater(ypos, yc_bottom)
+        aft_edge = ones
+        fore_edge = ones
+        if self._dim == 3:
+            aft_edge = actx.np.greater(zpos, zc_aft)
+            fore_edge = actx.np.less(zpos, zc_fore)
+
+        inside_corner = left_edge*right_edge*top_edge*bottom_edge*aft_edge*fore_edge
+
+        # smooth the temperature at the cavity walls
+        corner_dist = actx.np.sqrt((ypos - yc_bottom)*(ypos - yc_bottom) +
+                              (xpos - xc_right)*(xpos - xc_right))
+        wall_dist = (wall_theta*(ypos - yc_bottom) -
+                     wall_theta*(xpos - xc_right))
+        if self._temp_sigma > 0.:
+            sigma = self._temp_sigma
+            smoothing_corner = smooth_step(actx, sigma*corner_dist)
+            smoothing_slant = smooth_step(actx, sigma*wall_dist)
+            smoothing_top = smooth_step(actx, sigma*(ypos - yc_bottom))
+            smoothing_func = smoothing_corner
+            #smoothing_func = (smoothing_top + smoothing_slant)/2.
+            #smoothing_func = (smoothing_top*smoothing_slant*smoothing_corner)
+            corner_temperature = (wall_temperature +
+                (temperature - wall_temperature)*smoothing_func)
+        else:
+            sigma = 1500
+            smoothing_corner = smooth_step(actx, sigma*corner_dist)
+            corner_temperature = (wall_temperature +
+                (temperature - wall_temperature)*smoothing_corner)
+        smooth_temperature = actx.np.where(inside_corner,
+                                           corner_temperature,
+                                           #corner_temperature)
+                                           smooth_temperature)
+
+        temperature = smooth_temperature
 
         y = ones*self._mass_frac
         mass = eos.get_density(pressure=pressure, temperature=temperature,

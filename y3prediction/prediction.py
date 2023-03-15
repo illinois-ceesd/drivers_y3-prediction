@@ -1147,16 +1147,21 @@ def main(ctx_factory=cl.create_some_context,
     rhs_frfunc = partial(xmrfunc, alpha=rhs_filter_alpha,
                          filter_order=rhs_filter_order)
 
-    def filter_cv(cv):
+    def filter_cv(cv, filter_dd=dd_vol_fluid):
         return filter_modally(dcoll, soln_filter_cutoff, soln_frfunc, cv,
-                              dd=dd_vol_fluid)
+                              dd=filter_dd)
 
-    def filter_rhs(rhs):
+    def filter_fluid_rhs(rhs):
         return filter_modally(dcoll, rhs_filter_cutoff, rhs_frfunc, rhs,
                               dd=dd_vol_fluid)
 
+    def filter_wall_rhs(rhs):
+        return filter_modally(dcoll, rhs_filter_cutoff, rhs_frfunc, rhs,
+                              dd=dd_vol_wall)
+
     filter_cv_compiled = actx.compile(filter_cv)
-    filter_rhs_compiled = actx.compile(filter_rhs)
+    filter_rhs_fluid_compiled = actx.compile(filter_fluid_rhs)
+    filter_rhs_wall_compiled = actx.compile(filter_wall_rhs)
 
     if soln_nfilter >= 0 and rank == 0:
         logger.info("Solution filtering settings:")
@@ -2547,7 +2552,8 @@ def main(ctx_factory=cl.create_some_context,
 
         # Use a spectral filter on the RHS
         if use_rhs_filter:
-            fluid_rhs = filter_rhs_compiled(fluid_rhs)
+            fluid_rhs = filter_rhs_fluid_compiled(fluid_rhs)
+            wall_rhs = filter_rhs_wall_compiled(wall_rhs)
 
         return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
 
