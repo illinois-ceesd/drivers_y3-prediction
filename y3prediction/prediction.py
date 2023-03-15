@@ -1046,8 +1046,7 @@ def main(ctx_factory=cl.create_some_context,
 
         geometry_bottom = comm.bcast(geometry_bottom, root=0)
         geometry_top = comm.bcast(geometry_top, root=0)
-
-        bulk_init = InitACTII(dim=dim,
+        fluid_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
                               P0=total_pres_inflow, T0=total_temp_inflow,
                               temp_wall=temp_wall, temp_sigma=temp_sigma,
@@ -1061,7 +1060,6 @@ def main(ctx_factory=cl.create_some_context,
                               inj_vel_sigma=vel_sigma_inj,
                               inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
                               inj_mach=mach_inj, injection=use_injection)
-        fluid_init = partial(bulk_init, dcoll=dcoll)
 
     elif init_name == "Flash1D":
         print("\tInitializing flame and shock (Flash1D) domain.\n")
@@ -1412,6 +1410,13 @@ def main(ctx_factory=cl.create_some_context,
 
     compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
 
+    wall_mass = wall_insert_rho * wall_insert_mask
+    wall_cp = wall_insert_cp * wall_insert_mask
+    
+    if wall_surround_mask is not None:
+        wall_mass = wall_mass + wall_surround_rho * wall_surround_mask
+        wall_cp = wall_cp + wall_surround_cp * wall_surround_mask
+
     if restart_filename:
         if rank == 0:
             logger.info("Restarting soln.")
@@ -1446,15 +1451,13 @@ def main(ctx_factory=cl.create_some_context,
         # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
-        restart_cv = fluid_init(x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
-                                eos=eos, time=0)
+        if init_name == "ACTII":
+            restart_cv = fluid_init(dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
+                                    eos=eos, time=0)
+        else:
+            restart_cv = fluid_init(x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)),
+                                    eos=eos, time=0)            
         temperature_seed = 0*restart_cv.mass + init_temperature
-        wall_mass = wall_insert_rho * wall_insert_mask
-        wall_cp = wall_insert_cp * wall_insert_mask
-
-        if wall_surround_mask is not None:
-            wall_mass = wall_mass + wall_surround_rho * wall_surround_mask
-            wall_cp = wall_cp + wall_surround_cp * wall_surround_mask
 
         restart_wv = WallVars(
             mass=wall_mass,
@@ -2320,7 +2323,7 @@ def main(ctx_factory=cl.create_some_context,
                                          temperature_seed=tseed,
                                          smoothness=no_smoothness)
         wdv = create_wall_dependent_vars_compiled(wv)
-        cv = fluid_state.cv  # reset cv to limited version
+        cv = fluid_state.cv
         # This re-creation of the state resets *tseed* to current temp
         state = make_obj_array([cv, fluid_state.temperature, wv])
 
