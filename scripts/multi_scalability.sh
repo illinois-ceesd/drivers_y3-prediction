@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Runs the single node scalability on [s, n] ranks
+# Scalability driver runs a weak scaling test using a series
+# of meshes of increasing sizes on [s, n] ranks.
 # Example use:
 # . scripts/single_scalability.sh -i -s 1 -n 16 -p ../
 # -i => optionally install the driver (default=no)
@@ -85,13 +86,6 @@ cd ${LOG_PATH}
 LOG_PATH=$(pwd)
 cd -
 
-# Debugging - spew the env to stdout
-# printf "MIRGE environment:\n"
-# env | grep MIRGE
-# env | grep PYOPENCL
-# env | grep CACHE
-# env | grep CUDA
-
 # Set defaults for these in case they didn't get
 # set by the resource file.
 # At this level, MPI_EXEC, and PARALLEL_SPAWNER are all that
@@ -120,7 +114,8 @@ fi
 
 date
 
-# Demonstrate how to run multiple tests
+# Tracks success/fail of multiple runs
+# (i.e. one for each mesh size)
 declare -i numfail=0
 declare -i numsuccess=0
 succeeded_tests=""
@@ -129,15 +124,9 @@ if [[ ! -z ${CASENAME_ROOT} ]];then
     CASENAME_ROOT="${CASENAME_ROOT}_"
 fi
 
-#
-# This bit will run each "smoke_test" to generate the timing data
-# which will be stuffed into LOG_PATH. Any number of tests should
-# be allowed.
 # - The casename thing is a "nice to have" as it allows some control
 #   to caller for what the sqlite files are named.
-#
 printf "Running parallel timing tests...\n"
-# test_directories="scalability_test"
 test_path=${TEST_PATH}
 test_name="prediction-scalability"
 printf "* Running ${test_name} test in ${test_path}.\n"
@@ -163,6 +152,9 @@ while [ $nrank -le $NUM_PROCS ]; do
     elif [[ "${nrank}" == "16" ]]; then
         msize="12.3"
         nelem="383014"
+    elif [[ "${nrank}" == "32" ]]; then
+        msize="9.535"
+        nelem="768891"
     fi
 
     casename="${running_casename_base}_np${nrank}"

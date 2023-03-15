@@ -71,13 +71,6 @@ cd ${LOG_PATH}
 LOG_PATH=$(pwd)
 cd -
 
-# Debugging - spew the env to stdout
-# printf "MIRGE environment:\n"
-# env | grep MIRGE
-# env | grep PYOPENCL
-# env | grep CACHE
-# env | grep CUDA
-
 # Set defaults for these in case they didn't get
 # set by the resource file.
 # At this level, MPI_EXEC, and PARALLEL_SPAWNER are all that
@@ -106,7 +99,6 @@ fi
 
 date
 
-# Demonstrate how to run multiple tests
 declare -i numfail=0
 declare -i numsuccess=0
 succeeded_tests=""
@@ -115,15 +107,11 @@ if [[ ! -z ${CASENAME_ROOT} ]];then
     CASENAME_ROOT="${CASENAME_ROOT}_"
 fi
 
-#
-# This bit will run each "smoke_test" to generate the timing data
-# which will be stuffed into LOG_PATH. Any number of tests should
-# be allowed.
 # - The casename thing is a "nice to have" as it allows some control
 #   to caller for what the sqlite files are named.
 #
 printf "Running parallel timing tests...\n"
-# test_directories="scalability_test"
+
 test_path=${TEST_PATH}
 test_name="prediction-scalability"
 
