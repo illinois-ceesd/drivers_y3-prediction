@@ -2,7 +2,7 @@
 #BSUB -nnodes 1
 #BSUB -G uiuc
 #BSUB -W 360
-#BSUB -J flash10.out
+#BSUB -J flash10
 #BSUB -q pbatch
 #BSUB -o flash10.out
 
