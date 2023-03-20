@@ -1,7 +1,13 @@
 #!/bin/bash
 
 # Scalability driver runs a weak scaling test using a series
-# of meshes of increasing sizes.
+# of meshes of increasing sizes on [s, n] ranks.
+# Example use:
+# . scripts/single_scalability.sh -i -s 1 -n 16 -p ../
+# -i => optionally install the driver (default=no)
+# -p => indicate path to driver top level (default=../)
+# -s => number of ranks to start with (default=1)
+# -n => number of ranks to end with (default=16)
 
 NONOPT_ARGS=()
 while [[ $# -gt 0 ]]; do

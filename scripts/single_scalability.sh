@@ -1,17 +1,11 @@
 #!/bin/bash
 
-# . scripts/smoke_test.sh <resource file> <top level directory>
-#
-# Arg1: Testing resource file
-# Arg2: Top level path to driver
+# Runs the single node scalability (1, 2, 4) ranks
+# Example use:
+# . scripts/single_scalability.sh -i -p ../
+# -i => optionally install the driver 
+# -p => indicate the path to top level of driver
 
-# Testing resource file sets stuff like:
-# PYOPENCL_CTX
-# PYOPENCL_TEST
-# MIRGE_HOME (path to mirgecom installation)
-# MIRGE_MPI_EXEC (important on Porter and Lassen)
-# MIRGE_PARALLEL_SPAWNER (important on Porter and Lassen)
-# XDG_CACHE_HOME
 NONOPT_ARGS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -25,6 +19,10 @@ while [[ $# -gt 0 ]]; do
             shift
             shift
             ;;
+        -i|--install)
+            INSTALL="YES"
+            shift
+            ;;
         -o|--output)
             LOG_PATH="$2"
             shift 
@@ -33,6 +31,11 @@ while [[ $# -gt 0 ]]; do
         -p|--path)
             DRIVER_PATH="$2"
             shift
+            shift
+            ;;
+        -t|--testdir)
+            TEST_PATH="$2"
+            shift 
             shift
             ;;
         -*|--*)
@@ -51,6 +54,8 @@ TESTING_ENV_RESOURCE=${TESTING_ENV_RESOURCE:-""}
 CASENAME_ROOT=${CASENAME_ROOT:-""}
 LOG_PATH=${LOG_PATH:-"log_data"}
 DRIVER_PATH=${DRIVER_PATH:-"."}
+INSTALL=${INSTALL:-"NO"}
+TEST_PATH=${TEST_PATH:-"scalability_test"}
 
 if [[ ! -z "${CASENAME_ROOT}" ]]; then
     printf "Casename file prefix: ${CASENAME_ROOT}\n"
@@ -65,13 +70,6 @@ mkdir -p ${LOG_PATH}
 cd ${LOG_PATH}
 LOG_PATH=$(pwd)
 cd -
-
-# Debugging - spew the env to stdout
-# printf "MIRGE environment:\n"
-# env | grep MIRGE
-# env | grep PYOPENCL
-# env | grep CACHE
-# env | grep CUDA
 
 # Set defaults for these in case they didn't get
 # set by the resource file.
@@ -91,9 +89,16 @@ DRIVER_PATH=$(pwd)
 
 printf "Driver directory: ${DRIVER_PATH}\n"
 
+if [ "${INSTALL}" == "YES" ]; then
+    printf "Installing driver...\n"
+
+    python -m pip install -e .
+
+    printf "Driver installed.\n"
+fi
+
 date
 
-# Demonstrate how to run multiple tests
 declare -i numfail=0
 declare -i numsuccess=0
 succeeded_tests=""
@@ -102,16 +107,12 @@ if [[ ! -z ${CASENAME_ROOT} ]];then
     CASENAME_ROOT="${CASENAME_ROOT}_"
 fi
 
-#
-# This bit will run each "smoke_test" to generate the timing data
-# which will be stuffed into LOG_PATH. Any number of tests should
-# be allowed.
 # - The casename thing is a "nice to have" as it allows some control
 #   to caller for what the sqlite files are named.
 #
 printf "Running parallel timing tests...\n"
-# test_directories="scalability_test"
-test_path="scalability_test"
+
+test_path=${TEST_PATH}
 test_name="prediction-scalability"
 
 printf "* Running ${test_name} test in ${test_path}.\n"
