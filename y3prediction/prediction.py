@@ -494,7 +494,7 @@ def main(ctx_factory=cl.create_some_context,
             print(f"\tSyncd garbage collection every {ngarbage} steps.")
             # gc.disable()
         else:
-            print(f"\tUsing Python automatic garbage collection.")
+            print("\tUsing Python automatic garbage collection.")
         if constant_cfl == 1:
             print(f"\tConstant cfl mode, current_cfl = {current_cfl}")
         else:
