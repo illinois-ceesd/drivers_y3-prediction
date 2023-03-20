@@ -146,9 +146,18 @@ while [ $nrank -le $NUM_PROCS ]; do
     elif [[ "${nrank}" == "16" ]]; then
         msize="12.3"
         nelem="383014"
-    elif [[ "" == "" ]]; then
-        msize="9.526"
-        nelem="770806"
+    elif [[ "${nrank}" == "32" ]]; then
+        msize="9.535"
+        nelem="768891"
+    elif [[ "${nrank}" == "64" ]]; then
+        msize="7.45"
+        nelem="1536571"
+    elif [[ "${nrank}" == "128" ]]; then
+        msize="5.8545"
+        nelem="3071835"
+    elif [[ "${nrank}" == "256" ]]; then
+        msize="4.61"
+        nelem="6142150"
     fi
 
     casename="${running_casename_base}_np${nrank}"
