@@ -38,7 +38,7 @@ cd ${TOP_PATH}
 TOP_PATH=$(pwd)
 printf "Driver directory: ${TOP_PATH}\n"
 
-python -m pip install .
+python -m pip install -e .
 
 date
 
