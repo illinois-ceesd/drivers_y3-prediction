@@ -25,6 +25,7 @@ THE SOFTWARE.
 """
 import logging
 import sys
+import gc
 import numpy as np
 import pyopencl as cl
 import numpy.linalg as la  # noqa
@@ -194,7 +195,7 @@ def main(ctx_factory=cl.create_some_context,
     comm.Barrier()
 
     logmgr = initialize_logmgr(use_logmgr,
-        filename=logname, mode="wo", mpi_comm=comm)
+        filename=logname, mode="wu", mpi_comm=comm)
 
     if use_profiling:
         queue = cl.CommandQueue(cl_ctx,
@@ -299,14 +300,10 @@ def main(ctx_factory=cl.create_some_context,
     sponge_x0 = configurate("sponge_x0", input_data, 0.9)
 
     # artificial viscosity control
-    #    0 - none
-    #    1 - physical viscosity based, div(velocity) indicator
-    use_av = configurate("use_av", input_data, 0)
+    use_av = configurate("use_av", input_data, False)
 
     # species limiter
-    #    0 - none
-    #    1 - limit in on call to make_fluid_state
-    use_species_limiter = configurate("use_species_limiter", input_data, 0)
+    use_species_limiter = configurate("use_species_limiter", input_data, False)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -411,7 +408,6 @@ def main(ctx_factory=cl.create_some_context,
         print(f"Shock capturing parameters: alpha {alpha_sc}, "
               f"s0 {s0_sc}, kappa {kappa_sc}")
 
-    # use_av=1 specific parameters
     # flow stagnation temperature
     static_temp = 2076.43
     # steepness of the smoothed function
@@ -421,21 +417,26 @@ def main(ctx_factory=cl.create_some_context,
     gamma_sc = 1.5
 
     if rank == 0:
-        if use_av == 0:
-            print("Artificial viscosity disabled")
-        else:
+        if use_av:
             print("Artificial viscosity using modified physical viscosity")
             print("Using velocity divergence indicator")
             print(f"Shock capturing parameters: alpha {alpha_sc}, "
                   f"gamma_sc {gamma_sc}"
                   f"theta_sc {theta_sc}, beta_sc {beta_sc}, Pr 0.75, "
                   f"stagnation temperature {static_temp}")
+        else:
+            print("Artificial viscosity disabled")
 
     if rank == 0:
         print("\n#### Simluation control data: ####")
         print(f"\tnrestart = {nrestart}")
         print(f"\tnhealth = {nhealth}")
         print(f"\tnstatus = {nstatus}")
+        if ngarbage >= 0:
+            print(f"\tSyncd garbage collection every {ngarbage} steps.")
+            # gc.disable()
+        else:
+            print("\tUsing Python automatic garbage collection.")
         if constant_cfl == 1:
             print(f"\tConstant cfl mode, current_cfl = {current_cfl}")
         else:
@@ -598,7 +599,7 @@ def main(ctx_factory=cl.create_some_context,
 
     # don't allow limiting on flows without species
     if nspecies == 0:
-        use_species_limiter = 0
+        use_species_limiter = False
         use_injection = False
 
     # Turn off combustion unless EOS supports it
@@ -635,7 +636,7 @@ def main(ctx_factory=cl.create_some_context,
         elif eos_type == 1:
             print("\tPyrometheus EOS")
 
-        if use_species_limiter == 1:
+        if use_species_limiter:
             print("\nSpecies mass fractions limited to [0:1]")
 
     transport_alpha = 0.6
@@ -2223,7 +2224,6 @@ def main(ctx_factory=cl.create_some_context,
                 from warnings import warn
                 warn("Running gc.collect() to work around memory growth issue "
                      "https://github.com/illinois-ceesd/mirgecom/issues/839")
-                import gc
                 gc.collect()
 
         # Filter *first* because this will be most straightfwd to
