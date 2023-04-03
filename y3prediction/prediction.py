@@ -79,19 +79,21 @@ from mirgecom.boundary import (
 )
 from mirgecom.diffusion import (
     diffusion_operator,
-    DirichletDiffusionBoundary
+    DirichletDiffusionBoundary,
+    NeumannDiffusionBoundary
 )
 #from mirgecom.initializers import (Uniform, PlanarDiscontinuity)
 from mirgecom.eos import IdealSingleGas, PyrometheusMixture
 from mirgecom.transport import (SimpleTransport,
                                 PowerLawTransport,
-                                ArtificialViscosityTransportDiv)
+                                ArtificialViscosityTransportDiv,
+                                ArtificialViscosityTransportDiv2)
 from mirgecom.gas_model import GasModel, make_fluid_state
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     coupled_grad_t_operator,
     coupled_ns_heat_operator
 )
-from mirgecom.navierstokes import grad_cv_operator
+from mirgecom.navierstokes import grad_cv_operator, grad_t_operator
 # driver specific utilties
 from y3prediction.utils import (
     getIsentropicPressure,
@@ -138,6 +140,58 @@ class _FluidOxDiffCommTag:
 
 
 class _WallOxDiffCommTag:
+    pass
+
+
+class _SmoothDiffCommTag:
+    pass
+
+
+class _SmoothCharDiffCommTag:
+    pass
+
+
+class _SmoothCharDiffFluidCommTag:
+    pass
+
+
+class _SmoothCharDiffWallCommTag:
+    pass
+
+
+class _BetaDiffCommTag:
+    pass
+
+
+class _BetaDiffWallCommTag:
+    pass
+
+
+class _BetaDiffFluidCommTag:
+    pass
+
+
+class _KappaDiffCommTag:
+    pass
+
+
+class _KappaDiffWallCommTag:
+    pass
+
+
+class _KappaDiffFluidCommTag:
+    pass
+
+
+class _MuDiffCommTag:
+    pass
+
+
+class _MuDiffWallCommTag:
+    pass
+
+
+class _MuDiffFluidCommTag:
     pass
 
 
@@ -260,6 +314,13 @@ def main(ctx_factory=cl.create_some_context,
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
+    av2_mu0 = configurate("av_mu0", input_data, 0.1)
+    av2_beta0 = configurate("av_beta0", input_data, 6.0)
+    av2_kappa0 = configurate("av_kappa0", input_data, 1.0)
+    av2_prandtl0 = configurate("av_prandtl0", input_data, 0.9)
+    smooth_char_length = configurate("smooth_char_length", input_data, 5)
+    smooth_char_length_alpha = configurate("smooth_char_length_alpha",
+                                           input_data, 0.025)
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
@@ -301,6 +362,7 @@ def main(ctx_factory=cl.create_some_context,
     # artificial viscosity control
     #    0 - none
     #    1 - physical viscosity based, div(velocity) indicator
+    #    2 - physical viscosity based, indicators and diffusion for all transport
     use_av = configurate("use_av", input_data, 0)
 
     # species limiter
@@ -423,13 +485,24 @@ def main(ctx_factory=cl.create_some_context,
     if rank == 0:
         if use_av == 0:
             print("Artificial viscosity disabled")
-        else:
+        elif use_av == 1:
             print("Artificial viscosity using modified physical viscosity")
             print("Using velocity divergence indicator")
             print(f"Shock capturing parameters: alpha {alpha_sc}, "
                   f"gamma_sc {gamma_sc}"
                   f"theta_sc {theta_sc}, beta_sc {beta_sc}, Pr 0.75, "
                   f"stagnation temperature {static_temp}")
+        elif use_av == 2:
+            print("Artificial viscosity using modified transport properties")
+            print("\t mu, beta, kappa")
+            # MJA update this
+            print(f"Shock capturing parameters: alpha {alpha_sc}, "
+                  f"gamma_sc {gamma_sc}"
+                  f"theta_sc {theta_sc}, beta_sc {beta_sc}, Pr 0.75, "
+                  f"stagnation temperature {static_temp}")
+        else:
+            error_message = "Unknown artifical viscosity model {}".format(use_av)
+            raise RuntimeError(error_message)
 
     if rank == 0:
         print("\n#### Simluation control data: ####")
@@ -709,10 +782,15 @@ def main(ctx_factory=cl.create_some_context,
             species_diffusivity=spec_diffusivity)
 
     transport_model = physical_transport_model
-    if use_av:
+    if use_av == 1:
         transport_model = ArtificialViscosityTransportDiv(
             physical_transport=physical_transport_model,
             av_mu=alpha_sc, av_prandtl=0.75)
+    elif use_av == 2:
+        transport_model = ArtificialViscosityTransportDiv2(
+            physical_transport=physical_transport_model,
+            av_mu=av2_mu0, av_beta=av2_beta0, av_kappa=av2_kappa0,
+            av_prandtl=av2_prandtl0)
 
     #
     # stagnation tempertuare 2076.43 K
@@ -1085,9 +1163,77 @@ def main(ctx_factory=cl.create_some_context,
     wall_surround_mask = mask_from_elements(
         wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
 
+    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
+    inflow_bnd = dd_vol_fluid.trace("inflow")
+    outflow_bnd = dd_vol_fluid.trace("outflow")
+    inj_bnd = dd_vol_fluid.trace("injection")
+    flow_bnd = dd_vol_fluid.trace("flow")
+    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
+
     from grudge.dt_utils import characteristic_lengthscales
     char_length = characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid)
     char_length_wall = characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall)
+
+    # smoothing the char_length, as input into artitifical viscosity
+    # the characteristic length is element based, make a node-based version
+    xpos = actx.thaw(dcoll.nodes(dd_vol_fluid))[0]
+    xpos_wall = actx.thaw(dcoll.nodes(dd_vol_wall))[0]
+    smoothed_char_length = char_length + 0.*xpos
+    smoothed_char_length_wall = char_length_wall + 0.*xpos_wall
+    href = smoothed_char_length
+    smoothness_diffusivity = smooth_char_length_alpha*href*href/current_dt
+    href = smoothed_char_length_wall
+    smoothness_diffusivity_wall = smooth_char_length_alpha*href*href/current_dt
+
+    # regular boundaries
+    smooth_neumann = NeumannDiffusionBoundary(0)
+    fluid_smoothness_boundaries = {
+        flow_bnd.domain_tag: smooth_neumann,
+        wall_bnd.domain_tag: smooth_neumann,
+    }
+    wall_smoothness_boundaries = {
+        wall_ffld_bnd.domain_tag: smooth_neumann,
+    }
+
+    # interface boundaries
+    pairwise_diff = {
+        (dd_vol_fluid, dd_vol_wall):
+            (smoothed_char_length, smoothed_char_length_wall)}
+    pairwise_diff_tpairs = inter_volume_trace_pairs(
+        dcoll, pairwise_diff, comm_tag=_SmoothCharDiffCommTag)
+    diff_tpairs = pairwise_diff_tpairs[dd_vol_fluid, dd_vol_wall]
+
+    wall_smoothness_boundaries.update({
+        tpair.dd.domain_tag:
+        DirichletDiffusionBoundary(
+            op.project(dcoll, tpair.dd,
+                       tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
+        for tpair in diff_tpairs})
+
+    reverse_diff_tpairs = pairwise_diff_tpairs[dd_vol_wall, dd_vol_fluid]
+    fluid_smoothness_boundaries.update({
+        tpair.dd.domain_tag:
+        DirichletDiffusionBoundary(
+            op.project(dcoll, tpair.dd,
+                       tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
+        for tpair in reverse_diff_tpairs})
+
+    for i in range(smooth_char_length):
+        smoothed_char_length = smoothed_char_length + \
+            diffusion_operator(
+                dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
+                smoothed_char_length,
+                quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                comm_tag=(_SmoothCharDiffFluidCommTag, i))*current_dt
+
+        smoothed_char_length_wall = smoothed_char_length_wall + \
+            diffusion_operator(
+                dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
+                smoothed_char_length_wall,
+                quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                comm_tag=(_SmoothCharDiffWallCommTag, i))*current_dt
+
+    #smoothed_char_length = force_evaluation(actx, smoothed_char_length)
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -1179,30 +1325,41 @@ def main(ctx_factory=cl.create_some_context,
     if use_species_limiter:
         limiter_func = limit_fluid_state
 
-    def _create_fluid_state(cv, temperature_seed, smoothness=None):
+    ########################################
+    # Helper functions for building states #
+    ########################################
+
+    def _create_fluid_state(cv, temperature_seed, smoothness_mu=None,
+                            smoothness_beta=None, smoothness_kappa=None):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
-                                smoothness=smoothness,
+                                smoothness_mu=smoothness_mu,
+                                smoothness_beta=smoothness_beta,
+                                smoothness_kappa=smoothness_kappa,
                                 limiter_func=limiter_func,
                                 limiter_dd=dd_vol_fluid)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
-    def update_dv(cv, temperature, smoothness):
+    def update_dv(cv, temperature, smoothness_mu, smoothness_beta, smoothness_kappa):
         from mirgecom.eos import MixtureDependentVars, GasDependentVars
         if eos_type == 0:
             return GasDependentVars(
                 temperature=temperature,
                 pressure=eos.pressure(cv, temperature),
                 speed_of_sound=eos.sound_speed(cv, temperature),
-                smoothness=smoothness)
+                smoothness_mu=smoothness_mu,
+                smoothness_beta=smoothness_beta,
+                smoothness_kappa=smoothness_kappa)
         else:
             return MixtureDependentVars(
                 temperature=temperature,
                 pressure=eos.pressure(cv, temperature),
                 speed_of_sound=eos.sound_speed(cv, temperature),
                 species_enthalpies=eos.species_enthalpies(cv, temperature),
-                smoothness=smoothness)
+                smoothness_mu=smoothness_mu,
+                smoothness_beta=smoothness_beta,
+                smoothness_kappa=smoothness_kappa)
 
     def update_tv(cv, dv):
         return gas_model.transport.transport_vars(cv, dv, eos)
@@ -1210,10 +1367,6 @@ def main(ctx_factory=cl.create_some_context,
     def update_fluid_state(cv, dv, tv):
         from mirgecom.gas_model import ViscousFluidState
         return ViscousFluidState(cv, dv, tv)
-
-    update_dv_compiled = actx.compile(update_dv)
-    update_tv_compiled = actx.compile(update_tv)
-    update_fluid_state_compiled = actx.compile(update_fluid_state)
 
     def _create_wall_dependent_vars(wv):
         return wall_model.dependent_vars(wv)
@@ -1234,6 +1387,7 @@ def main(ctx_factory=cl.create_some_context,
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
 
+    # smoothness used with av = 1 or 2
     def compute_smoothness(cv, dv, grad_cv):
 
         from mirgecom.fluid import velocity_gradient
@@ -1242,13 +1396,144 @@ def main(ctx_factory=cl.create_some_context,
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         r = gas_model.eos.gas_const(cv)
         c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
-        indicator = -gamma_sc*char_length*div_v/c_star
+        href = smoothed_char_length
+        indicator = -gamma_sc*href*div_v/c_star
 
         smoothness = actx.np.log(
             1 + actx.np.exp(theta_sc*(indicator - beta_sc)))/theta_sc
-        return smoothness*gamma_sc*char_length
+        return smoothness*gamma_sc*href
 
     compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
+
+    def lmax(s):
+        b = 100
+        return (s/np.pi*actx.np.arctan(b*s) +
+                0.5*s - 1/np.pi*actx.np.arctan(b) + 0.5)
+
+    def lmin(s):
+        return s - lmax(s)
+
+    # smoothness used fore beta with av = 3
+    def compute_smoothness_beta(cv, dv, grad_cv):
+
+        from mirgecom.fluid import velocity_gradient
+        div_v = np.trace(velocity_gradient(cv, grad_cv))
+
+        gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
+        r = gas_model.eos.gas_const(cv)
+        c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
+        href = smoothed_char_length
+        indicator = -href*div_v/c_star
+
+        # limit the indicator range
+        # multiply by href, since we won't have access to it inside transport
+        indicator_min = 0.01
+        indicator_max = 2/actx.np.sqrt(gamma - 1)
+        smoothness = (lmin(lmax(indicator - indicator_min) - indicator_max)
+                      + indicator_max)*href
+
+        return smoothness
+
+    compute_smoothness_beta_compiled = actx.compile(compute_smoothness_beta) # noqa
+
+    # smoothness used fore beta with av = 3
+    def compute_smoothness_kappa(cv, dv, grad_t):
+        grad_t_mag = actx.np.sqrt(np.dot(grad_t, grad_t))
+        href = smoothed_char_length
+        indicator = href*grad_t_mag/static_temp
+
+        # limit the indicator range
+        # multiply by href, since we won't have access to it inside transport
+        #indicator_min = 1.0
+        #indicator_min = 0.01
+        #indicator_min = 0.000001
+        indicator_min = 0.0
+        indicator_max = 2
+        smoothness = (lmin(lmax(indicator - indicator_min) - indicator_max)
+                      + indicator_max)*href
+
+        return smoothness
+
+    compute_smoothness_kappa_compiled = actx.compile(compute_smoothness_kappa) # noqa
+
+    # smoothness used fore beta with av = 3
+    def compute_smoothness_mu(cv, dv, grad_cv):
+
+        from mirgecom.fluid import velocity_gradient
+        vel_grad = velocity_gradient(cv, grad_cv)
+
+        gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
+        r = gas_model.eos.gas_const(cv)
+        c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
+
+        vmax = actx.np.sqrt(np.dot(cv.velocity, cv.velocity) +
+                            2*c_star/(gamma - 1))
+        href = smoothed_char_length
+
+        # just the determinant
+        # scaled_grad = vel_grad/vmax
+        #indicator = href*actx.np.abs(scaled_grad[0][1]*scaled_grad[1][0])
+
+        # Frobenius norm
+        indicator = href*actx.np.sqrt(vel_grad[0][1]*vel_grad[0][1] +
+                                      vel_grad[1][0]*vel_grad[1][0])/vmax
+
+        # limit the indicator range
+        # multiply by href, since we won't have access to it inside transport
+        #indicator_min = 1.0
+        indicator_min = 0.0
+        indicator_max = 2
+        smoothness = (lmin(lmax(indicator - indicator_min) - indicator_max)
+                      + indicator_max)*href
+
+        return smoothness
+
+    compute_smoothness_mu_compiled = actx.compile(compute_smoothness_mu) # noqa
+
+    # compiled wrapper for grad_cv_operator
+    def _grad_cv_operator(fluid_state, time):
+        return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
+                                boundaries=fluid_boundaries,
+                                dd=dd_vol_fluid,
+                                state=fluid_state,
+                                time=time,
+                                quadrature_tag=quadrature_tag)
+
+    grad_cv_operator_compiled = actx.compile(_grad_cv_operator) # noqa
+
+    def get_production_rates(cv, temperature):
+        return eos.get_production_rates(cv, temperature)
+
+    compute_production_rates = actx.compile(get_production_rates)
+
+    def grad_t_operator_coupled(t, fluid_state, wall_kappa, wall_temperature):
+        fluid_grad_t, wall_grad_t = coupled_grad_t_operator(
+            dcoll,
+            gas_model,
+            dd_vol_fluid, dd_vol_wall,
+            fluid_boundaries, wall_boundaries,
+            fluid_state, wall_kappa, wall_temperature,
+            time=t,
+            quadrature_tag=quadrature_tag)
+        return make_obj_array([fluid_grad_t, wall_grad_t])
+
+    grad_t_operator_coupled_compiled = actx.compile(grad_t_operator_coupled)
+
+    def grad_t_operator_fluid(fluid_state, time):
+        return grad_t_operator(
+            dcoll=dcoll,
+            gas_model=gas_model,
+            dd=dd_vol_fluid,
+            boundaries=fluid_boundaries,
+            state=fluid_state,
+            time=time,
+            quadrature_tag=quadrature_tag)
+
+    grad_t_operator_fluid_compiled = actx.compile(grad_t_operator_fluid)
+
+    ##################################
+    # Set up flow initial conditions #
+    ##################################
 
     if restart_filename:
         if rank == 0:
@@ -1256,6 +1541,9 @@ def main(ctx_factory=cl.create_some_context,
         temperature_seed = restart_data["temperature_seed"]
         restart_cv = restart_data["cv"]
         restart_wv = restart_data["wv"]
+        restart_av_smu = restart_data["av_smu"]
+        restart_av_sbeta = restart_data["av_sbeta"]
+        restart_av_skappa = restart_data["av_skappa"]
         if restart_order != order:
             restart_dcoll = create_discretization_collection(
                 actx,
@@ -1275,6 +1563,9 @@ def main(ctx_factory=cl.create_some_context,
                 restart_dcoll.discr_from_dd(dd_vol_wall)
             )
             restart_cv = fluid_connection(restart_data["cv"])
+            restart_av_smu = fluid_connection(restart_data["av_smu"])
+            restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
+            restart_av_skappa = fluid_connection(restart_data["av_skappa"])
             temperature_seed = fluid_connection(restart_data["temperature_seed"])
             restart_wv = wall_connection(restart_data["wv"])
 
@@ -1288,6 +1579,19 @@ def main(ctx_factory=cl.create_some_context,
             dcoll=dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)), eos=eos,
             time=0)
         temperature_seed = 0*restart_cv.mass + init_temperature
+
+        # create a fluid state so we can compute grad_t and grad_cv
+        restart_fluid_state = create_fluid_state(cv=restart_cv,
+                                                 temperature_seed=temperature_seed)
+        restart_av_smu = 0.*restart_cv.mass
+        restart_av_sbeta = 0.*restart_cv.mass
+        restart_av_skappa = 0.*restart_cv.mass
+
+        # Ideally we would compute the smoothness variables here,
+        # but we need the boundary conditions (and hence the target state) first,
+        # so we defer until after those are setup
+
+        # initialize the wall
         wall_mass = (
             wall_insert_rho * wall_insert_mask
             + wall_surround_rho * wall_surround_mask)
@@ -1298,6 +1602,10 @@ def main(ctx_factory=cl.create_some_context,
             mass=wall_mass,
             energy=wall_mass * wall_cp * temp_wall,
             ox_mass=0*wall_mass)
+
+    ##################################
+    # Set up flow target state       #
+    ##################################
 
     if target_filename:
         if rank == 0:
@@ -1316,55 +1624,30 @@ def main(ctx_factory=cl.create_some_context,
                 target_dcoll.discr_from_dd(dd_vol_fluid)
             )
             target_cv = fluid_connection(target_data["cv"])
+            target_av_smu = fluid_connection(target_data["av_smu"])
+            target_av_sbeta = fluid_connection(target_data["av_sbeta"])
+            target_av_skappa = fluid_connection(target_data["av_skappa"])
         else:
             target_cv = target_data["cv"]
+            target_av_smu = target_data["av_smu"]
+            target_av_sbeta = target_data["av_sbeta"]
+            target_av_skappa = target_data["av_skappa"]
     else:
         # Set the current state from time 0
         target_cv = restart_cv
+        target_av_smu = restart_av_smu
+        target_av_sbeta = restart_av_sbeta
+        target_av_skappa = restart_av_skappa
 
-    no_smoothness = force_evaluation(actx, 0.*restart_cv.mass)
-    smoothness = no_smoothness
-    target_smoothness = smoothness
-
-    restart_cv = force_evaluation(actx, restart_cv)
     target_cv = force_evaluation(actx, target_cv)
-    temperature_seed = force_evaluation(actx, temperature_seed)
 
-    current_fluid_state = create_fluid_state(restart_cv, temperature_seed,
-                                             smoothness=smoothness)
-    target_fluid_state = create_fluid_state(target_cv, temperature_seed,
-                                            smoothness=target_smoothness)
-    current_wv = force_evaluation(actx, restart_wv)
-    #current_wv = get_wv(restart_wv)
+    target_fluid_state = create_fluid_state(cv=target_cv,
+                                            temperature_seed=temperature_seed,
+                                            smoothness_mu=target_av_smu,
+                                            smoothness_beta=target_av_sbeta,
+                                            smoothness_kappa=target_av_skappa)
 
-    # use dummy boundaries to setup the smoothness state for the target
-    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
-    inflow_bnd = dd_vol_fluid.trace("inflow")
-    outflow_bnd = dd_vol_fluid.trace("outflow")
-    inj_bnd = dd_vol_fluid.trace("injection")
-    flow_bnd = dd_vol_fluid.trace("flow")
-    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
-
-    if use_injection:
-        target_boundaries = {
-            flow_bnd.domain_tag:  # pylint: disable=no-member
-            DummyBoundary(),
-            wall_bnd.domain_tag:  # pylint: disable=no-member
-            IsothermalWallBoundary()
-        }
-    else:
-        target_boundaries = {
-            inflow_bnd.domain_tag:   # pylint: disable=no-member
-            DummyBoundary(),
-            outflow_bnd.domain_tag:  # pylint: disable=no-member
-            DummyBoundary(),
-            inj_bnd.domain_tag:      # pylint: disable=no-member
-            IsothermalWallBoundary(),
-            wall_bnd.domain_tag:     # pylint: disable=no-member
-            IsothermalWallBoundary()
-        }
-
-    def _grad_cv_operator_target(fluid_state, time):
+    def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
                                 dd=dd_vol_fluid,
                                 boundaries=target_boundaries,
@@ -1372,20 +1655,61 @@ def main(ctx_factory=cl.create_some_context,
                                 time=time,
                                 quadrature_tag=quadrature_tag)
 
-    grad_cv_operator_target_compiled = actx.compile(_grad_cv_operator_target) # noqa
+    grad_cv_operator_target_compiled = actx.compile(grad_cv_operator_target) # noqa
 
-    if use_av:
-        target_grad_cv = grad_cv_operator_target_compiled(
-            target_fluid_state, time=0.)
-        target_smoothness = compute_smoothness_compiled(
-            cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+    def grad_t_operator_target(fluid_state, time):
+        return grad_t_operator(
+            dcoll=dcoll,
+            gas_model=gas_model,
+            dd=dd_vol_fluid,
+            boundaries=target_boundaries,
+            state=fluid_state,
+            time=time,
+            quadrature_tag=quadrature_tag)
 
-        target_fluid_state = create_fluid_state(cv=target_cv,
-                                          temperature_seed=temperature_seed,
-                                          smoothness=target_smoothness)
+    grad_t_operator_target_compiled = actx.compile(grad_t_operator_target)
 
-    stepper_state = make_obj_array([current_fluid_state.cv,
-                                    temperature_seed, current_wv])
+    # use dummy boundaries to update the smoothness state for the target
+    if use_av > 0:
+        if use_injection:
+            target_boundaries = {
+                flow_bnd.domain_tag:  # pylint: disable=no-member
+                DummyBoundary(),
+                wall_bnd.domain_tag:  # pylint: disable=no-member
+                IsothermalWallBoundary()
+            }
+        else:
+            target_boundaries = {
+                inflow_bnd.domain_tag:   # pylint: disable=no-member
+                DummyBoundary(),
+                outflow_bnd.domain_tag:  # pylint: disable=no-member
+                DummyBoundary(),
+                inj_bnd.domain_tag:      # pylint: disable=no-member
+                IsothermalWallBoundary(),
+                wall_bnd.domain_tag:     # pylint: disable=no-member
+                IsothermalWallBoundary()
+            }
+
+            target_grad_cv = grad_cv_operator_target_compiled(
+                target_fluid_state, time=0.)
+            if use_av == 1:
+                target_av_smu = compute_smoothness_compiled(
+                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+            elif use_av == 2:
+                target_grad_t = grad_t_operator_target_compiled(
+                    target_fluid_state, time=0.)
+
+                target_av_sbeta = compute_smoothness_beta_compiled(
+                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+                target_av_skappa = compute_smoothness_kappa_compiled(
+                    cv=target_cv, dv=target_fluid_state.dv, grad_t=target_grad_t)
+                target_av_smu = compute_smoothness_mu_compiled(
+                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+
+            target_fluid_state = create_fluid_state(
+                cv=target_cv, temperature_seed=temperature_seed,
+                smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
+                smoothness_kappa=target_av_skappa)
 
     ##################################
     # Set up the boundary conditions #
@@ -1462,34 +1786,50 @@ def main(ctx_factory=cl.create_some_context,
         wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
     }
 
-    # compiled wrapper for grad_cv_operator
-    def _grad_cv_operator(fluid_state, time):
-        return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
-                                boundaries=fluid_boundaries,
-                                dd=dd_vol_fluid,
-                                state=fluid_state,
-                                time=time,
-                                quadrature_tag=quadrature_tag)
+    # finish initializing the smoothness for non-restarts
+    if not restart_filename:
+        grad_cv = grad_cv_operator_compiled(restart_fluid_state, time=0.)
 
-    grad_cv_operator_compiled = actx.compile(_grad_cv_operator) # noqa
+        if use_av == 1:
+            restart_av_smu = compute_smoothness_compiled(
+                cv=restart_fluid_state.cv,
+                dv=restart_fluid_state.dv,
+                grad_cv=grad_cv)
+        if use_av == 2:
+            restart_av_smu = compute_smoothness_mu_compiled(
+                cv=restart_fluid_state.cv,
+                dv=restart_fluid_state.dv,
+                grad_cv=grad_cv)
+            restart_av_sbeta = compute_smoothness_beta_compiled(
+                cv=restart_fluid_state.cv,
+                dv=restart_fluid_state.dv,
+                grad_cv=grad_cv)
+            grad_t = grad_t_operator_fluid_compiled(restart_fluid_state, time=0.)
+            restart_av_skappa = compute_smoothness_kappa_compiled(
+                cv=restart_fluid_state.cv,
+                dv=restart_fluid_state.dv,
+                grad_t=grad_t)
 
-    def get_production_rates(cv, temperature):
-        return eos.get_production_rates(cv, temperature)
+    restart_cv = force_evaluation(actx, restart_cv)
+    temperature_seed = force_evaluation(actx, temperature_seed)
+    restart_av_smu = force_evaluation(actx, restart_av_smu)
+    restart_av_sbeta = force_evaluation(actx, restart_av_sbeta)
+    restart_av_skappa = force_evaluation(actx, restart_av_skappa)
 
-    compute_production_rates = actx.compile(get_production_rates)
+    # set the initial data used by the simulation
+    current_fluid_state = create_fluid_state(cv=restart_cv,
+                                             temperature_seed=temperature_seed,
+                                             smoothness_mu=restart_av_smu,
+                                             smoothness_beta=restart_av_sbeta,
+                                             smoothness_kappa=restart_av_skappa)
+    current_wv = force_evaluation(actx, restart_wv)
 
-    def _grad_t_operator(t, fluid_state, wall_kappa, wall_temperature):
-        fluid_grad_t, wall_grad_t = coupled_grad_t_operator(
-            dcoll,
-            gas_model,
-            dd_vol_fluid, dd_vol_wall,
-            fluid_boundaries, wall_boundaries,
-            fluid_state, wall_kappa, wall_temperature,
-            time=t,
-            quadrature_tag=quadrature_tag)
-        return make_obj_array([fluid_grad_t, wall_grad_t])
-
-    grad_t_operator = actx.compile(_grad_t_operator)
+    stepper_state = make_obj_array([current_fluid_state.cv,
+                                    temperature_seed,
+                                    current_fluid_state.dv.smoothness_mu,
+                                    current_fluid_state.dv.smoothness_beta,
+                                    current_fluid_state.dv.smoothness_kappa,
+                                    current_wv])
 
     ####################
     # Ignition Sources #
@@ -1783,7 +2123,6 @@ def main(ctx_factory=cl.create_some_context,
 
         cv = fluid_state.cv
         dv = fluid_state.dv
-        mu = fluid_state.viscosity
 
         # basic viz quantities, things here are difficult (or impossible) to compute
         # in post-processing
@@ -1818,9 +2157,10 @@ def main(ctx_factory=cl.create_some_context,
                                  ("production_rates", production_rates)]
                 fluid_viz_fields.extend(fluid_viz_ext)
 
-            if use_av:
-                fluid_viz_ext = [("mu", mu)]
-                fluid_viz_fields.extend(fluid_viz_ext)
+            fluid_viz_ext = [("mu", fluid_state.viscosity),
+                             ("beta", fluid_state.bulk_viscosity),
+                             ("kappa", fluid_state.thermal_conductivity)]
+            fluid_viz_fields.extend(fluid_viz_ext)
 
             if nparts > 1:
                 fluid_viz_ext = [("rank", rank)]
@@ -1849,6 +2189,10 @@ def main(ctx_factory=cl.create_some_context,
             viz_ext = [("Re", cell_Re),
                        ("Pe_mass", cell_Pe_mass),
                        ("Pe_heat", cell_Pe_heat)]
+            """
+            viz_ext = [("char_length", char_length + 0.*cell_Re),
+                      ("char_length_smooth", smoothed_char_length)]
+                      """
             fluid_viz_fields.extend(viz_ext)
 
             cell_alpha = wall_model.thermal_diffusivity(
@@ -1857,6 +2201,21 @@ def main(ctx_factory=cl.create_some_context,
             viz_ext = [
                        ("alpha", cell_alpha)]
             wall_viz_fields.extend(viz_ext)
+
+            cfl_fluid_inv = char_length / (fluid_state.wavespeed)
+            nu = fluid_state.viscosity/fluid_state.mass_density
+            cfl_fluid_visc = char_length*char_length / nu
+            #cfl_fluid_spec_diff
+            fluid_diffusivity = (fluid_state.thermal_conductivity/cv.mass /
+                                 eos.heat_capacity_cp(cv, dv.temperature))
+            cfl_fluid_heat_diff = (char_length*char_length/fluid_diffusivity)
+
+            viz_ext = [
+                       ("cfl_fluid_inv", current_dt/cfl_fluid_inv),
+                       ("cfl_fluid_visc", current_dt/cfl_fluid_visc),
+                       #("cfl_fluid_spec_diff", cfl_fluid_spec_diff),
+                       ("cfl_fluid_heat_diff", current_dt/cfl_fluid_heat_diff)]
+            fluid_viz_fields.extend(viz_ext)
 
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
@@ -1875,7 +2234,7 @@ def main(ctx_factory=cl.create_some_context,
             grad_v = velocity_gradient(cv, grad_cv)
             grad_y = species_mass_fraction_gradient(cv, grad_cv)
 
-            grad_temperature = grad_t_operator(
+            grad_temperature = grad_t_operator_coupled_compiled(
                 dv.temperature, fluid_state, wall_kappa, wall_temperature)
             fluid_grad_temperature = grad_temperature[0]
             wall_grad_temperature = grad_temperature[1]
@@ -1912,12 +2271,15 @@ def main(ctx_factory=cl.create_some_context,
             print(f"******** Writing Restart File at step {step}, "
                   f"sim time {t:1.6e} s ********")
 
-        cv, tseed, wv = state
+        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
         restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
         if restart_fname != restart_filename:
             restart_data = {
                 "volume_to_local_mesh_data": volume_to_local_mesh_data,
                 "cv": cv,
+                "av_smu": av_smu,
+                "av_sbeta": av_sbeta,
+                "av_skappa": av_skappa,
                 "temperature_seed": tseed,
                 "nspecies": nspecies,
                 "wv": wv,
@@ -2235,14 +2597,16 @@ def main(ctx_factory=cl.create_some_context,
         # understand and move. For this to work, this routine
         # must pass back the filtered CV in the state.
         if check_step(step=step, interval=soln_nfilter):
-            cv, tseed, wv = state
+            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
             cv = filter_cv_compiled(cv)
-            state = make_obj_array([cv, tseed, wv])
+            state = make_obj_array([cv, tseed, av_smu, av_sbeta, av_skappa, wv])
 
-        cv, tseed, wv = state
+        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
         fluid_state = create_fluid_state(cv=cv,
                                          temperature_seed=tseed,
-                                         smoothness=no_smoothness)
+                                         smoothness_mu=av_smu,
+                                         smoothness_beta=av_sbeta,
+                                         smoothness_kappa=av_skappa)
         wdv = create_wall_dependent_vars_compiled(wv)
         cv = fluid_state.cv  # reset cv to limited version
 
@@ -2261,35 +2625,13 @@ def main(ctx_factory=cl.create_some_context,
             next_dump_number = step
 
             # This re-creation of the state resets *tseed* to current temp
-            state = make_obj_array([cv, fluid_state.temperature, wv])
+            state = make_obj_array([cv, fluid_state.temperature,
+                                    av_smu, av_sbeta, av_skappa, wv])
 
             if any([do_viz, do_restart, do_health, do_status]):
 
-                if use_av:
-                    # recompute the dv to have the correct smoothness
-                    if do_viz:
-                        # use the divergence to compute the smoothness field
-                        grad_cv = grad_cv_operator_compiled(fluid_state,
-                                                            time=t)
-                        # limited cv here to compute smoothness
-                        smoothness = compute_smoothness_compiled(
-                            cv=cv, dv=fluid_state.dv,
-                            grad_cv=grad_cv)
-
-                        # unlimited cv here as that is what gets written
-                        dv_new = update_dv_compiled(
-                            cv=cv, temperature=fluid_state.temperature,
-                            smoothness=smoothness)
-                        tv_new = update_tv_compiled(cv=cv, dv=dv_new)
-                        fluid_state = update_fluid_state_compiled(
-                            cv=cv, dv=dv_new, tv=tv_new)
-
-                #print(wv)
-                #wv = force_evaluation(actx, wv)
-                #print(wv)
                 # pass through, removes a bunch of tagging to avoid recomplie
                 wv = get_wv(wv)
-                #print(wv)
 
                 if not force_eval:
                     fluid_state = force_evaluation(actx, fluid_state)
@@ -2402,29 +2744,39 @@ def main(ctx_factory=cl.create_some_context,
         return state, dt
 
     def unfiltered_rhs(t, state):
-        cv, tseed, wv = state
+        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
-                                       smoothness=no_smoothness,
+                                       smoothness_mu=av_smu,
+                                       smoothness_beta=av_sbeta,
+                                       smoothness_kappa=av_skappa,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
         cv = fluid_state.cv  # reset cv to the limited version
 
-        if use_av:
+        if use_av > 0:
             # use the divergence to compute the smoothness field
             grad_fluid_cv = grad_cv_operator(
                 dcoll, gas_model, fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag,
-                comm_tag=_SmoothnessCVGradCommTag)
-            smoothness = compute_smoothness(cv=cv, dv=fluid_state.dv,
-                                            grad_cv=grad_fluid_cv)
+                time=t, quadrature_tag=quadrature_tag)
 
-            dv_new = update_dv(cv=cv, temperature=fluid_state.temperature,
-                               smoothness=smoothness)
-            tv_new = update_tv(cv=cv, dv=dv_new)
-            fluid_state = update_fluid_state(cv=cv, dv=dv_new, tv=tv_new)
+        if use_av == 1:
+            smoothness_mu = compute_smoothness(cv=cv, dv=fluid_state.dv,
+                                               grad_cv=grad_fluid_cv)
+        if use_av == 2:
+            grad_fluid_t = grad_t_operator(
+                dcoll, gas_model, fluid_boundaries, fluid_state,
+                dd=dd_vol_fluid,
+                time=t, quadrature_tag=quadrature_tag)
+
+            smoothness_beta = compute_smoothness_beta(cv=cv, dv=fluid_state.dv,
+                                                      grad_cv=grad_fluid_cv)
+            smoothness_kappa = compute_smoothness_kappa(cv=cv, dv=fluid_state.dv,
+                                                        grad_t=grad_fluid_t)
+            smoothness_mu = compute_smoothness_mu(cv=cv, dv=fluid_state.dv,
+                                                  grad_cv=grad_fluid_cv)
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
@@ -2467,11 +2819,181 @@ def main(ctx_factory=cl.create_some_context,
             ignition_rhs = ignition_source(x_vec=x_vec, state=fluid_state,
                                            eos=gas_model.eos, time=t)/current_dt
 
+        av_smu_rhs = 0*cv.mass
+        av_sbeta_rhs = 0*cv.mass
+        av_skappa_rhs = 0*cv.mass
+        av_smu_wall = 0*wv.mass
+        av_sbeta_wall = 0*wv.mass
+        av_skappa_wall = 0*wv.mass
+        av_smu_wall_rhs = 0*wv.mass
+        av_sbeta_wall_rhs = 0*wv.mass
+        av_skappa_wall_rhs = 0*wv.mass
+        #eta = 1.e-10
+        # work good for shock 1d
+        tau = 1.e-6
+        eta = 0.1*tau
+        epsilon_diff = eta/tau
+        #epsilon_diff = 0.
+
+        if use_av > 0:
+            # regular boundaries for smoothness mu
+            smooth_neumann = NeumannDiffusionBoundary(0)
+            fluid_av_smu_boundaries = {
+                flow_bnd.domain_tag: smooth_neumann,
+                wall_bnd.domain_tag: smooth_neumann,
+            }
+            wall_av_smu_boundaries = {
+                wall_ffld_bnd.domain_tag: smooth_neumann,
+            }
+
+            # interface boundaries for smoothness mu
+            pairwise_diff_smu = {
+                (dd_vol_fluid, dd_vol_wall):
+                    (av_smu, av_smu_wall)}
+            pairwise_diff_smu_tpairs = inter_volume_trace_pairs(
+                dcoll, pairwise_diff_smu, comm_tag=_MuDiffCommTag)
+            diff_smu_tpairs = pairwise_diff_smu_tpairs[dd_vol_fluid, dd_vol_wall]
+
+            wall_av_smu_boundaries.update({
+                tpair.dd.domain_tag:
+                NeumannDiffusionBoundary(0)
+                for tpair in diff_smu_tpairs})
+
+            reverse_diff_smu_tpairs = pairwise_diff_smu_tpairs[dd_vol_wall,
+                                                               dd_vol_fluid]
+
+            fluid_av_smu_boundaries.update({
+                tpair.dd.domain_tag:
+                NeumannDiffusionBoundary(0)
+                for tpair in reverse_diff_smu_tpairs})
+
+            # av mu
+            av_smu_rhs = (
+                diffusion_operator(
+                    dcoll, epsilon_diff, fluid_av_smu_boundaries, av_smu,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    comm_tag=_MuDiffFluidCommTag
+                ) + 1/tau * (smoothness_mu - av_smu)
+            )
+
+            # reverse in the wall for matching
+            av_smu_wall_rhs = (
+                diffusion_operator(
+                    dcoll, 0., wall_av_smu_boundaries, av_smu_wall,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                    comm_tag=_MuDiffWallCommTag
+                )
+            )
+
+        if use_av == 2:
+            # av beta
+
+            # regular boundaries for smoothness beta
+            smooth_neumann = NeumannDiffusionBoundary(0)
+            fluid_av_sbeta_boundaries = {
+                flow_bnd.domain_tag: smooth_neumann,
+                wall_bnd.domain_tag: smooth_neumann,
+            }
+            wall_av_sbeta_boundaries = {
+                wall_ffld_bnd.domain_tag: smooth_neumann,
+            }
+
+            # interface boundaries for smoothness beta
+            pairwise_diff_sbeta = {
+                (dd_vol_fluid, dd_vol_wall):
+                    (av_sbeta, av_sbeta_wall)}
+            pairwise_diff_sbeta_tpairs = inter_volume_trace_pairs(
+                dcoll, pairwise_diff_sbeta, comm_tag=_BetaDiffCommTag)
+            diff_sbeta_tpairs = pairwise_diff_sbeta_tpairs[dd_vol_fluid, dd_vol_wall]
+
+            wall_av_sbeta_boundaries.update({
+                tpair.dd.domain_tag:
+                NeumannDiffusionBoundary(0)
+                for tpair in diff_sbeta_tpairs})
+
+            reverse_diff_sbeta_tpairs = pairwise_diff_sbeta_tpairs[dd_vol_wall,
+                                                                   dd_vol_fluid]
+
+            fluid_av_sbeta_boundaries.update({
+                tpair.dd.domain_tag:
+                NeumannDiffusionBoundary(0)
+                for tpair in reverse_diff_sbeta_tpairs})
+
+            av_sbeta_rhs = (
+                diffusion_operator(
+                    dcoll, epsilon_diff, fluid_av_sbeta_boundaries, av_sbeta,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    comm_tag=_BetaDiffFluidCommTag
+                ) + 1/tau * (smoothness_beta - av_sbeta)
+            )
+
+            # reverse in the wall for matching
+            av_sbeta_wall_rhs = (
+                diffusion_operator(
+                    dcoll, 0., wall_av_sbeta_boundaries, av_sbeta_wall,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                    comm_tag=_BetaDiffWallCommTag
+                )
+            )
+
+            # av kappa
+            # regular boundaries for smoothness kappa
+            smooth_neumann = NeumannDiffusionBoundary(0)
+            fluid_av_skappa_boundaries = {
+                flow_bnd.domain_tag: smooth_neumann,
+                wall_bnd.domain_tag: smooth_neumann,
+            }
+            wall_av_skappa_boundaries = {
+                wall_ffld_bnd.domain_tag: smooth_neumann,
+            }
+
+            # interface boundaries for smoothness kappa
+            pairwise_diff_skappa = {
+                (dd_vol_fluid, dd_vol_wall):
+                    (av_skappa, av_skappa_wall)}
+            pairwise_diff_skappa_tpairs = inter_volume_trace_pairs(
+                dcoll, pairwise_diff_skappa, comm_tag=_KappaDiffCommTag)
+            diff_skappa_tpairs = pairwise_diff_skappa_tpairs[dd_vol_fluid,
+                                                             dd_vol_wall]
+
+            wall_av_skappa_boundaries.update({
+                tpair.dd.domain_tag:
+                NeumannDiffusionBoundary(0)
+                for tpair in diff_skappa_tpairs})
+
+            reverse_diff_skappa_tpairs = pairwise_diff_skappa_tpairs[dd_vol_wall,
+                                                                     dd_vol_fluid]
+
+            fluid_av_skappa_boundaries.update({
+                tpair.dd.domain_tag:
+                NeumannDiffusionBoundary(0)
+                for tpair in reverse_diff_skappa_tpairs})
+
+            av_skappa_rhs = (
+                diffusion_operator(
+                    dcoll, epsilon_diff, fluid_av_skappa_boundaries, av_skappa,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    comm_tag=_KappaDiffFluidCommTag
+                ) + 1/tau * (smoothness_kappa - av_skappa)
+            )
+
+            # reverse in the wall for matching
+            av_skappa_wall_rhs = (
+                diffusion_operator(
+                    dcoll, 0., wall_av_skappa_boundaries, av_skappa_wall,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                    comm_tag=_KappaDiffWallCommTag
+                )
+            )
+
         sponge_rhs = 0*cv
         if use_sponge:
             sponge_rhs = _sponge_source(cv=cv)
 
         fluid_rhs = ns_rhs + chem_rhs + sponge_rhs + ignition_rhs
+        # only here to get the wall diffusion nodes into the dag
+        wall_energy_rhs = wall_energy_rhs + av_smu_wall_rhs*0. + \
+                          av_sbeta_wall_rhs*0. + av_skappa_wall_rhs*0.
 
         #wall_mass_rhs = -wall_model.mass_loss_rate(wv)
         # wall mass loss
@@ -2541,21 +3063,24 @@ def main(ctx_factory=cl.create_some_context,
 
             fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
-        return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
+        return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
+                               av_sbeta_rhs, av_skappa_rhs, wall_rhs])
 
     unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
     def my_rhs(t, state):
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
-        fluid_rhs, tseed_rhs, wall_rhs = unfiltered_rhs_compiled(t, state)
+        fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, av_skappa_rhs, wall_rhs = \
+            unfiltered_rhs_compiled(t, state)
 
         # Use a spectral filter on the RHS
         if use_rhs_filter:
             fluid_rhs = filter_rhs_fluid_compiled(fluid_rhs)
             wall_rhs = filter_rhs_wall_compiled(wall_rhs)
 
-        return make_obj_array([fluid_rhs, tseed_rhs, wall_rhs])
+        return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
+                               av_sbeta_rhs, av_skappa_rhs, wall_rhs])
 
     """
     current_dt = get_sim_timestep(dcoll, current_state, current_t, current_dt,
@@ -2571,25 +3096,17 @@ def main(ctx_factory=cl.create_some_context,
                       force_eval=force_eval,
                       state=stepper_state,
                       compile_rhs=False)
-    current_cv, tseed, current_wv = stepper_state
+    current_cv, tseed, current_av_smu, current_av_sbeta, \
+        current_av_skappa, current_wv = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,
-                                             no_smoothness)
+                                             smoothness_mu=current_av_smu,
+                                             smoothness_beta=current_av_sbeta,
+                                             smoothness_kappa=current_av_skappa)
     current_wdv = create_wall_dependent_vars_compiled(current_wv)
 
     # Dump the final data
     if rank == 0:
         logger.info("Checkpointing final state ...")
-
-    if use_av:
-        # use the divergence to compute the smoothness field
-        current_grad_cv = grad_cv_operator_compiled(
-            fluid_state=current_fluid_state, time=current_t)
-        smoothness = compute_smoothness_compiled(
-            cv=current_cv, dv=current_fluid_state.dv, grad_cv=current_grad_cv)
-
-        current_fluid_state = create_fluid_state(cv=current_cv,
-                                           temperature_seed=tseed,
-                                           smoothness=smoothness)
 
     final_dv = current_fluid_state.dv
     ts_field_fluid, cfl, dt = my_get_timestep(dcoll=dcoll,
