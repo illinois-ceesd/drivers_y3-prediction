@@ -1240,27 +1240,6 @@ def main(ctx_factory=cl.create_some_context,
 
         return make_obj_array([smooth_href_fluid, smooth_href_wall])
 
-    """
-    compute_smoothed_char_length_compiled = \
-        actx.compile(compute_smoothed_char_length)
-    compute_smoothed_char_length_wall_compiled = \
-        actx.compile(compute_smoothed_char_length_wall)
-    """
-
-    """
-    smoothed_char_length = force_evaluation(actx,
-        compute_smoothed_char_length_compiled(smoothed_char_length))
-    smoothed_char_length_wall = force_evaluation(actx,
-        compute_smoothed_char_length_wall_compiled(smoothed_char_length_wall))
-    """
-
-    """
-    smoothed_char_length = \
-        compute_smoothed_char_length(smoothed_char_length)
-    smoothed_char_length_wall = \
-        compute_smoothed_char_length_wall(smoothed_char_length_wall)
-
-    """
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
     smoothed_char_length, smoothed_char_length_wall = \
