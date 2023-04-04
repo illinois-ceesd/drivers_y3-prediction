@@ -1240,20 +1240,22 @@ def main(ctx_factory=cl.create_some_context,
                     comm_tag=(_SmoothCharDiffWallCommTag, i))*current_dt
         return length
 
+    """
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
-    """
     compute_smoothed_char_length_wall_compiled = \
         actx.compile(compute_smoothed_char_length_wall)
     """
 
+    """
     smoothed_char_length = force_evaluation(actx,
         compute_smoothed_char_length_compiled(smoothed_char_length))
-    """
     smoothed_char_length_wall = force_evaluation(actx,
         compute_smoothed_char_length_wall_compiled(smoothed_char_length_wall))
     """
 
+    smoothed_char_length = \
+        compute_smoothed_char_length(smoothed_char_length)
     smoothed_char_length_wall = \
         compute_smoothed_char_length_wall(smoothed_char_length_wall)
 
@@ -2212,9 +2214,11 @@ def main(ctx_factory=cl.create_some_context,
                        ("Pe_mass", cell_Pe_mass),
                        ("Pe_heat", cell_Pe_heat)]
             fluid_viz_fields.extend(viz_ext)
+            """
             viz_ext = [("char_length", char_length + 0.*cell_Re),
                       ("char_length_smooth", smoothed_char_length)]
             fluid_viz_fields.extend(viz_ext)
+            """
 
             cell_alpha = wall_model.thermal_diffusivity(
                 wv.mass, wall_temperature, wall_kappa)
@@ -2271,6 +2275,7 @@ def main(ctx_factory=cl.create_some_context,
                            for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
+            """
             if use_av == 1:
                 smoothness_mu = compute_smoothness_compiled(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
@@ -2287,6 +2292,7 @@ def main(ctx_factory=cl.create_some_context,
                            ("smoothness_beta", smoothness_beta),
                            ("smoothness_kappa", smoothness_kappa)]
                 fluid_viz_fields.extend(viz_ext)
+            """
 
             viz_ext = [("grad_temperature", wall_grad_temperature)]
             wall_viz_fields.extend(viz_ext)
