@@ -1218,22 +1218,37 @@ def main(ctx_factory=cl.create_some_context,
                        tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
         for tpair in reverse_diff_tpairs})
 
-    for i in range(smooth_char_length):
-        smoothed_char_length = smoothed_char_length + \
-            diffusion_operator(
-                dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
-                smoothed_char_length,
-                quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                comm_tag=(_SmoothCharDiffFluidCommTag, i))*current_dt
+    def compute_smoothed_char_length(char_length):
+        length = char_length
+        for i in range(smooth_char_length):
+            length = length + \
+                diffusion_operator(
+                    dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
+                    length,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    comm_tag=(_SmoothCharDiffFluidCommTag, i))*current_dt
+        return length
 
-        smoothed_char_length_wall = smoothed_char_length_wall + \
-            diffusion_operator(
-                dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
-                smoothed_char_length_wall,
-                quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                comm_tag=(_SmoothCharDiffWallCommTag, i))*current_dt
+    def compute_smoothed_char_length_wall(char_length):
+        for i in range(smooth_char_length):
+            length = char_length
+            length = length + \
+                diffusion_operator(
+                    dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
+                    length,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                    comm_tag=(_SmoothCharDiffWallCommTag, i))*current_dt
+        return length
 
-    #smoothed_char_length = force_evaluation(actx, smoothed_char_length)
+    compute_smoothed_char_length_compiled = \
+        actx.compile(compute_smoothed_char_length)
+    compute_smoothed_char_length_wall_compiled = \
+        actx.compile(compute_smoothed_char_length_wall)
+
+    smoothed_char_length = force_evaluation(actx,
+        compute_smoothed_char_length_compiled(smoothed_char_length))
+    smoothed_char_length_wall = force_evaluation(actx,
+        compute_smoothed_char_length_wall_compiled(smoothed_char_length_wall))
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -2251,6 +2266,23 @@ def main(ctx_factory=cl.create_some_context,
                            for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
+            if use_av == 1:
+                smoothness_mu = compute_smoothness_compiled(
+                    cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
+                viz_ext = [("smoothness_mu", smoothness_mu)]
+                fluid_viz_fields.extend(viz_ext)
+            if use_av == 2:
+                smoothness_beta = compute_smoothness_beta_compiled(
+                    cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
+                smoothness_kappa = compute_smoothness_kappa_compiled(
+                    cv=cv, dv=fluid_state.dv, grad_t=fluid_grad_temperature)
+                smoothness_mu = compute_smoothness_mu_compiled(
+                    cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
+                viz_ext = [("smoothness_mu", smoothness_mu),
+                           ("smoothness_beta", smoothness_beta),
+                           ("smoothness_kappa", smoothness_kappa)]
+                fluid_viz_fields.extend(viz_ext)
+
             viz_ext = [("grad_temperature", wall_grad_temperature)]
             wall_viz_fields.extend(viz_ext)
 
@@ -2763,20 +2795,20 @@ def main(ctx_factory=cl.create_some_context,
                 time=t, quadrature_tag=quadrature_tag)
 
         if use_av == 1:
-            smoothness_mu = compute_smoothness(cv=cv, dv=fluid_state.dv,
-                                               grad_cv=grad_fluid_cv)
+            smoothness_mu = compute_smoothness_compiled(
+                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
         if use_av == 2:
             grad_fluid_t = grad_t_operator(
                 dcoll, gas_model, fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
                 time=t, quadrature_tag=quadrature_tag)
 
-            smoothness_beta = compute_smoothness_beta(cv=cv, dv=fluid_state.dv,
-                                                      grad_cv=grad_fluid_cv)
-            smoothness_kappa = compute_smoothness_kappa(cv=cv, dv=fluid_state.dv,
-                                                        grad_t=grad_fluid_t)
-            smoothness_mu = compute_smoothness_mu(cv=cv, dv=fluid_state.dv,
-                                                  grad_cv=grad_fluid_cv)
+            smoothness_beta = compute_smoothness_beta(
+                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
+            smoothness_kappa = compute_smoothness_kappa(
+                cv=cv, dv=fluid_state.dv, grad_t=grad_fluid_t)
+            smoothness_mu = compute_smoothness_mu(
+                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
@@ -2833,7 +2865,11 @@ def main(ctx_factory=cl.create_some_context,
         tau = 1.e-6
         eta = 0.1*tau
         epsilon_diff = eta/tau
-        #epsilon_diff = 0.
+        epsilon_diff = 0.
+
+        smoothness_alpha = 0.1
+        href = smoothed_char_length
+        epsilon_diff = smoothness_alpha*href*href/current_dt
 
         if use_av > 0:
             # regular boundaries for smoothness mu
