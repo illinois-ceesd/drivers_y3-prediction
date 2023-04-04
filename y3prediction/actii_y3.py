@@ -259,8 +259,8 @@ class InitACTII:
         xc_right = zeros + 0.63578
         yc_top = zeros - 0.006
         yc_bottom = zeros - 0.01
-        zc_fore = 0.0175 - 0.01
-        zc_aft = -0.0175 + 0.01
+        zc_fore = 0.0175 - 0.001
+        zc_aft = -0.0175 + 0.001
 
         left_edge = actx.np.greater(xpos, xc_left)
         right_edge = actx.np.less(xpos, xc_right)
@@ -308,7 +308,8 @@ class InitACTII:
             smoothing_slant = smooth_step(actx, sigma*wall_dist)
             cavity_temperature = (wall_temperature +
                 (temperature - wall_temperature) *
-                 smoothing_front*smoothing_bottom*smoothing_slant)
+                 #smoothing_front*smoothing_bottom*smoothing_slant)
+                 fore_edge*aft_edge*smoothing_front*smoothing_bottom*smoothing_slant)
         else:
             sigma = 1500
             smoothing_slant = smooth_step(actx, sigma*wall_dist)
