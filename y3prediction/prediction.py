@@ -1486,8 +1486,16 @@ def main(ctx_factory=cl.create_some_context,
         #indicator = href*actx.np.abs(scaled_grad[0][1]*scaled_grad[1][0])
 
         # Frobenius norm
-        indicator = href*actx.np.sqrt(vel_grad[0][1]*vel_grad[0][1] +
-                                      vel_grad[1][0]*vel_grad[1][0])/vmax
+        if dim == 2:
+            indicator = href*actx.np.sqrt(vel_grad[0][1]*vel_grad[0][1] +
+                                          vel_grad[1][0]*vel_grad[1][0])/vmax
+        else:
+            indicator = href*actx.np.sqrt(vel_grad[0][1]*vel_grad[0][1] +
+                                          vel_grad[0][2]*vel_grad[0][2] +
+                                          vel_grad[1][0]*vel_grad[1][0] +
+                                          vel_grad[1][2]*vel_grad[1][2] +
+                                          vel_grad[2][0]*vel_grad[2][0] +
+                                          vel_grad[2][1]*vel_grad[2][1])/vmax
 
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
