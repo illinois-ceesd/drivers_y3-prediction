@@ -1242,13 +1242,20 @@ def main(ctx_factory=cl.create_some_context,
 
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
+    """
     compute_smoothed_char_length_wall_compiled = \
         actx.compile(compute_smoothed_char_length_wall)
+    """
 
     smoothed_char_length = force_evaluation(actx,
         compute_smoothed_char_length_compiled(smoothed_char_length))
+    """
     smoothed_char_length_wall = force_evaluation(actx,
         compute_smoothed_char_length_wall_compiled(smoothed_char_length_wall))
+    """
+
+    smoothed_char_length_wall = \
+        compute_smoothed_char_length_wall(smoothed_char_length_wall)
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -2204,17 +2211,15 @@ def main(ctx_factory=cl.create_some_context,
             viz_ext = [("Re", cell_Re),
                        ("Pe_mass", cell_Pe_mass),
                        ("Pe_heat", cell_Pe_heat)]
-            """
+            fluid_viz_fields.extend(viz_ext)
             viz_ext = [("char_length", char_length + 0.*cell_Re),
                       ("char_length_smooth", smoothed_char_length)]
-                      """
             fluid_viz_fields.extend(viz_ext)
 
             cell_alpha = wall_model.thermal_diffusivity(
                 wv.mass, wall_temperature, wall_kappa)
 
-            viz_ext = [
-                       ("alpha", cell_alpha)]
+            viz_ext = [("alpha", cell_alpha)]
             wall_viz_fields.extend(viz_ext)
 
             cfl_fluid_inv = char_length / (fluid_state.wavespeed)
