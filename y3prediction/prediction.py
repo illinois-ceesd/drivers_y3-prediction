@@ -321,6 +321,7 @@ def main(ctx_factory=cl.create_some_context,
     smooth_char_length = configurate("smooth_char_length", input_data, 5)
     smooth_char_length_alpha = configurate("smooth_char_length_alpha",
                                            input_data, 0.025)
+    smoothness_alpha = configurate("smoothness_alpha", input_data, 0.1)
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
@@ -1177,8 +1178,8 @@ def main(ctx_factory=cl.create_some_context,
     # put the lengths on the nodes vs elements
     xpos = actx.thaw(dcoll.nodes(dd_vol_fluid))[0]
     xpos_wall = actx.thaw(dcoll.nodes(dd_vol_wall))[0]
-    char_length_nodes = char_length + 0.*xpos
-    char_length_wall_nodes = char_length_wall + 0.*xpos_wall
+    char_length_nodes = char_length + actx.zeros_like(xpos)
+    char_length_wall_nodes = char_length_wall + actx.zeros_like(xpos_wall)
 
     def compute_smoothed_char_length(href_fluid, href_wall):
 
@@ -1242,9 +1243,13 @@ def main(ctx_factory=cl.create_some_context,
 
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
+
     smoothed_char_length, smoothed_char_length_wall = \
         compute_smoothed_char_length_compiled(char_length_nodes,
                                               char_length_wall_nodes)
+
+    smoothed_char_length = force_evaluation(actx, smoothed_char_length)
+    #smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -1263,7 +1268,7 @@ def main(ctx_factory=cl.create_some_context,
         ])
 
         # limit the sum to 1.0
-        aux = cv.mass*0.0
+        aux = actx.zeros_like(cv.mass)
         for i in range(0, nspecies):
             aux = aux + spec_lim[i]
         spec_lim = spec_lim/aux
@@ -1597,14 +1602,14 @@ def main(ctx_factory=cl.create_some_context,
         restart_cv = bulk_init(
             dcoll=dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)), eos=eos,
             time=0)
-        temperature_seed = 0*restart_cv.mass + init_temperature
+        temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
 
         # create a fluid state so we can compute grad_t and grad_cv
         restart_fluid_state = create_fluid_state(cv=restart_cv,
                                                  temperature_seed=temperature_seed)
-        restart_av_smu = 0.*restart_cv.mass
-        restart_av_sbeta = 0.*restart_cv.mass
-        restart_av_skappa = 0.*restart_cv.mass
+        restart_av_smu = actx.zeros_like(restart_cv.mass)
+        restart_av_sbeta = actx.zeros_like(restart_cv.mass)
+        restart_av_skappa = actx.zeros_like(restart_cv.mass)
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -1620,7 +1625,7 @@ def main(ctx_factory=cl.create_some_context,
         restart_wv = WallVars(
             mass=wall_mass,
             energy=wall_mass * wall_cp * temp_wall,
-            ox_mass=0*wall_mass)
+            ox_mass=actx.zeros_like(wall_mass))
 
     ##################################
     # Set up flow target state       #
@@ -2209,7 +2214,7 @@ def main(ctx_factory=cl.create_some_context,
                        ("Pe_mass", cell_Pe_mass),
                        ("Pe_heat", cell_Pe_heat)]
             fluid_viz_fields.extend(viz_ext)
-            viz_ext = [("char_length", char_length + 0.*cell_Re),
+            viz_ext = [("char_length", char_length_nodes),
                       ("char_length_smooth", smoothed_char_length)]
             fluid_viz_fields.extend(viz_ext)
 
@@ -2814,7 +2819,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
-        tseed_rhs = 0*fluid_state.temperature
+        tseed_rhs = actx.zeros_like(fluid_state.temperature)
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
@@ -2843,33 +2848,27 @@ def main(ctx_factory=cl.create_some_context,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
-        chem_rhs = 0*cv
+        chem_rhs = actx.zeros_like(cv)
         if use_combustion:  # conditionals evaluated only once at compile time
             chem_rhs =  \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
 
-        ignition_rhs = 0*cv
+        ignition_rhs = actx.zeros_like(cv)
         if use_ignition > 0:
             ignition_rhs = ignition_source(x_vec=x_vec, state=fluid_state,
                                            eos=gas_model.eos, time=t)/current_dt
 
-        av_smu_rhs = 0*cv.mass
-        av_sbeta_rhs = 0*cv.mass
-        av_skappa_rhs = 0*cv.mass
-        av_smu_wall = 0*wv.mass
-        av_sbeta_wall = 0*wv.mass
-        av_skappa_wall = 0*wv.mass
-        av_smu_wall_rhs = 0*wv.mass
-        av_sbeta_wall_rhs = 0*wv.mass
-        av_skappa_wall_rhs = 0*wv.mass
-        #eta = 1.e-10
+        av_smu_rhs = actx.zeros_like(cv.mass)
+        av_sbeta_rhs = actx.zeros_like(cv.mass)
+        av_skappa_rhs = actx.zeros_like(cv.mass)
+        av_smu_wall = actx.zeros_like(wv.mass)
+        av_sbeta_wall = actx.zeros_like(wv.mass)
+        av_skappa_wall = actx.zeros_like(wv.mass)
+        av_smu_wall_rhs = actx.zeros_like(wv.mass)
+        av_sbeta_wall_rhs = actx.zeros_like(wv.mass)
+        av_skappa_wall_rhs = actx.zeros_like(wv.mass)
         # work good for shock 1d
         tau = 1.e-6
-        eta = 0.1*tau
-        epsilon_diff = eta/tau
-        epsilon_diff = 0.
-
-        smoothness_alpha = 0.1
         href = smoothed_char_length
         epsilon_diff = smoothness_alpha*href*href/current_dt
 
@@ -3024,7 +3023,7 @@ def main(ctx_factory=cl.create_some_context,
                 )
             )
 
-        sponge_rhs = 0*cv
+        sponge_rhs = actx.zeros_like(cv)
         if use_sponge:
             sponge_rhs = _sponge_source(cv=cv)
 
@@ -3035,18 +3034,18 @@ def main(ctx_factory=cl.create_some_context,
 
         #wall_mass_rhs = -wall_model.mass_loss_rate(wv)
         # wall mass loss
-        wall_mass_rhs = 0.*wv.mass
+        wall_mass_rhs = actx.zeros_like(wv.mass)
         if use_wall_mass:
             wall_mass_rhs = -wall_model.mass_loss_rate(
                 mass=wv.mass, ox_mass=wv.ox_mass,
                 temperature=wdv.temperature)
 
         # wall oxygen diffusion
-        #wall_ox_mass_rhs = 0.*wv.ox_mass
-        wall_ox_mass_rhs = 0.*wv.mass
+        #wall_ox_mass_rhs = actx.zeros_like(wv.ox_mass)
+        wall_ox_mass_rhs = actx.zeros_like(wv.mass)
         if use_wall_ox:
             if nspecies == 0:
-                fluid_ox_mass = cv.mass*0.
+                fluid_ox_mass = actx.zeros_like(cv.mass)
             elif nspecies > 3:
                 fluid_ox_mass = cv.species_mass[i_ox]
             else:
