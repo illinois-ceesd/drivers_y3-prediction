@@ -1162,6 +1162,8 @@ def main(ctx_factory=cl.create_some_context,
         wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
     wall_surround_mask = mask_from_elements(
         wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
+    force_evaluation(actx, wall_insert_mask)
+    force_evaluation(actx, wall_surround_mask)
 
     wall_bnd = dd_vol_fluid.trace("isothermal_wall")
     inflow_bnd = dd_vol_fluid.trace("inflow")
@@ -1171,14 +1173,19 @@ def main(ctx_factory=cl.create_some_context,
     wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     from grudge.dt_utils import characteristic_lengthscales
-    char_length = characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid)
-    char_length_wall = characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall)
+    char_length_fluid = force_evaluation(
+        actx, characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
+    char_length_wall = force_evaluation(
+        actx, characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
 
+    fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
+    wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
     # put the lengths on the nodes vs elements
-    xpos = actx.thaw(dcoll.nodes(dd_vol_fluid))[0]
-    xpos_wall = actx.thaw(dcoll.nodes(dd_vol_wall))[0]
-    char_length_nodes = char_length + 0.*xpos
-    char_length_wall_nodes = char_length_wall + 0.*xpos_wall
+    xpos_fluid = fluid_nodes[0]
+    xpos_wall = wall_nodes[0]
+
+    char_length_fluid_nodes = char_length_fluid + actx.zeros_like(xpos_fluid)
+    char_length_wall_nodes = char_length_wall + actx.zeros_like(xpos_wall)
 
     def compute_smoothed_char_length(href_fluid, href_wall):
 
@@ -1242,9 +1249,14 @@ def main(ctx_factory=cl.create_some_context,
 
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
-    smoothed_char_length, smoothed_char_length_wall = \
-        compute_smoothed_char_length_compiled(char_length_nodes,
-                                              char_length_wall_nodes)
+
+    use_smoothed_charlen = False
+    if use_smoothed_charlen:
+        smoothed_char_length, smoothed_char_length_wall = \
+            compute_smoothed_char_length_compiled(char_length_nodes,
+                                                  char_length_wall_nodes)
+        char_len_fluid_nodes = force_evaluation(actx, smoothed_char_length)
+        char_len_wall_nodes = force_evaluation(actx, smoothed_char_length_wall)
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -1398,6 +1410,9 @@ def main(ctx_factory=cl.create_some_context,
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
 
+    if rank == 0:
+        logger.info("Smoothness functions processing")
+
     # smoothness used with av = 1 or 2
     def compute_smoothness(cv, dv, grad_cv):
 
@@ -1407,7 +1422,7 @@ def main(ctx_factory=cl.create_some_context,
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         r = gas_model.eos.gas_const(cv)
         c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
-        href = smoothed_char_length
+        href = char_length_fluid_nodes
         indicator = -gamma_sc*href*div_v/c_star
 
         smoothness = actx.np.log(
@@ -1433,7 +1448,7 @@ def main(ctx_factory=cl.create_some_context,
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         r = gas_model.eos.gas_const(cv)
         c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
-        href = smoothed_char_length
+        href = char_length_fluid_nodes
         indicator = -href*div_v/c_star
 
         # limit the indicator range
@@ -1450,7 +1465,7 @@ def main(ctx_factory=cl.create_some_context,
     # smoothness used fore beta with av = 3
     def compute_smoothness_kappa(cv, dv, grad_t):
         grad_t_mag = actx.np.sqrt(np.dot(grad_t, grad_t))
-        href = smoothed_char_length
+        href = char_length_fluid_nodes
         indicator = href*grad_t_mag/static_temp
 
         # limit the indicator range
@@ -1479,7 +1494,7 @@ def main(ctx_factory=cl.create_some_context,
 
         vmax = actx.np.sqrt(np.dot(cv.velocity, cv.velocity) +
                             2*c_star/(gamma - 1))
-        href = smoothed_char_length
+        href = char_length_fluid_nodes
 
         # just the determinant
         # scaled_grad = vel_grad/vmax
@@ -1508,6 +1523,9 @@ def main(ctx_factory=cl.create_some_context,
         return smoothness
 
     compute_smoothness_mu_compiled = actx.compile(compute_smoothness_mu) # noqa
+
+    if rank == 0:
+        logger.info("Grad CV Operator processing")
 
     # compiled wrapper for grad_cv_operator
     def _grad_cv_operator(fluid_state, time):
@@ -1549,6 +1567,9 @@ def main(ctx_factory=cl.create_some_context,
             quadrature_tag=quadrature_tag)
 
     grad_t_operator_fluid_compiled = actx.compile(grad_t_operator_fluid)
+
+    if rank == 0:
+        logger.info("Initial flow conditions processing")
 
     ##################################
     # Set up flow initial conditions #
@@ -1595,16 +1616,16 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
-            dcoll=dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)), eos=eos,
-            time=0)
-        temperature_seed = 0*restart_cv.mass + init_temperature
+            dcoll=dcoll, x_vec=fluid_nodes, eos=eos, time=0)
+        temperature_seed = init_temperature + actx.zeros_like(xpos_fluid)
+        restart_cv = force_evaluation(actx, restart_cv)
 
         # create a fluid state so we can compute grad_t and grad_cv
         restart_fluid_state = create_fluid_state(cv=restart_cv,
                                                  temperature_seed=temperature_seed)
-        restart_av_smu = 0.*restart_cv.mass
-        restart_av_sbeta = 0.*restart_cv.mass
-        restart_av_skappa = 0.*restart_cv.mass
+        restart_av_smu = actx.zeros_like(restart_cv.mass)
+        restart_av_sbeta = actx.zeros_like(restart_cv.mass)
+        restart_av_skappa = actx.zeros_like(restart_cv.mass)
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -1665,6 +1686,9 @@ def main(ctx_factory=cl.create_some_context,
                                             smoothness_mu=target_av_smu,
                                             smoothness_beta=target_av_sbeta,
                                             smoothness_kappa=target_av_skappa)
+
+    if rank == 0:
+        logger.info("More gradient processing")
 
     def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
@@ -1729,6 +1753,9 @@ def main(ctx_factory=cl.create_some_context,
                 cv=target_cv, temperature_seed=temperature_seed,
                 smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
                 smoothness_kappa=target_av_skappa)
+
+    if rank == 0:
+        logger.info("BC Setup processing")
 
     ##################################
     # Set up the boundary conditions #
@@ -1879,6 +1906,8 @@ def main(ctx_factory=cl.create_some_context,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
+    if rank == 0:
+        logger.info("Sponges processsing")
     ##################
     # Sponge Sources #
     ##################
@@ -1889,7 +1918,7 @@ def main(ctx_factory=cl.create_some_context,
     from y3prediction.utils import InitSponge
     sponge_init = InitSponge(x0=sponge_x0, thickness=sponge_thickness,
                              amplitude=sponge_amp)
-    x_vec = actx.thaw(dcoll.nodes(dd_vol_fluid))
+    x_vec = fluid_nodes
 
     def _sponge_sigma(x_vec):
         return sponge_init(x_vec=x_vec)
@@ -2037,6 +2066,9 @@ def main(ctx_factory=cl.create_some_context,
 
         if use_profiling:
             logmgr.add_watches(["pyopencl_array_time.max"])
+
+    if rank == 0:
+        logger.info("Viz & utilities processsing")
 
     fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
     wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
@@ -2187,18 +2219,18 @@ def main(ctx_factory=cl.create_some_context,
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
-            cell_Re = (cv.mass*cv.speed*char_length /
+            cell_Re = (cv.mass*cv.speed*char_length_fluid_nodes /
                 fluid_state.viscosity)
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
             alpha_heat = fluid_state.thermal_conductivity/cp/fluid_state.viscosity
-            cell_Pe_heat = char_length*cv.speed/alpha_heat
+            cell_Pe_heat = char_length_fluid_nodes*cv.speed/alpha_heat
             from mirgecom.viscous import get_local_max_species_diffusivity
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
                     fluid_state.species_diffusivity
                 )
-            cell_Pe_mass = char_length*cv.speed/d_alpha_max
+            cell_Pe_mass = char_length_fluid_nodes*cv.speed/d_alpha_max
             # these are useful if our transport properties
             # are not constant on the mesh
             # prandtl
@@ -2209,8 +2241,9 @@ def main(ctx_factory=cl.create_some_context,
                        ("Pe_mass", cell_Pe_mass),
                        ("Pe_heat", cell_Pe_heat)]
             fluid_viz_fields.extend(viz_ext)
-            viz_ext = [("char_length", char_length + 0.*cell_Re),
-                      ("char_length_smooth", smoothed_char_length)]
+            viz_ext = [("char_length", char_length_fluid_nodes)]
+            # viz_ext = [("char_length", char_length_fluid_nodes + actx.zeros_like(cell_Re),
+            #          ("char_length_smooth", smoothed_char_length)]
             fluid_viz_fields.extend(viz_ext)
 
             cell_alpha = wall_model.thermal_diffusivity(
@@ -2219,13 +2252,13 @@ def main(ctx_factory=cl.create_some_context,
             viz_ext = [("alpha", cell_alpha)]
             wall_viz_fields.extend(viz_ext)
 
-            cfl_fluid_inv = char_length / (fluid_state.wavespeed)
+            cfl_fluid_inv = char_length_fluid_nodes / (fluid_state.wavespeed)
             nu = fluid_state.viscosity/fluid_state.mass_density
-            cfl_fluid_visc = char_length*char_length / nu
+            cfl_fluid_visc = (char_length_fluid_nodes**2) / nu
             #cfl_fluid_spec_diff
             fluid_diffusivity = (fluid_state.thermal_conductivity/cv.mass /
                                  eos.heat_capacity_cp(cv, dv.temperature))
-            cfl_fluid_heat_diff = (char_length*char_length/fluid_diffusivity)
+            cfl_fluid_heat_diff = (char_length_fluid_nodes**2) / fluid_diffusivity
 
             viz_ext = [
                        ("cfl_fluid_inv", current_dt/cfl_fluid_inv),
@@ -2269,7 +2302,7 @@ def main(ctx_factory=cl.create_some_context,
             fluid_viz_fields.extend(viz_ext)
 
             if use_av == 1:
-                smoothness_mu = compute_smoothness_compiled(
+                smoothness_mu = compute_smoothness(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
                 viz_ext = [("smoothness_mu", smoothness_mu)]
                 fluid_viz_fields.extend(viz_ext)
@@ -2423,8 +2456,8 @@ def main(ctx_factory=cl.create_some_context,
                 )
 
         return (
-            char_length / (fluid_state.wavespeed
-            + ((nu + d_alpha_max) / char_length))
+            char_length_fluid_nodes
+            / (fluid_state.wavespeed + ((nu + d_alpha_max) / char_length_fluid_nodes))
         )
 
     def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
@@ -2442,7 +2475,7 @@ def main(ctx_factory=cl.create_some_context,
         """
 
         return (
-            char_length_wall*char_length_wall
+            char_length_wall_nodes**2
             / (
                 wall_time_scale
                 * actx.np.maximum(
@@ -2618,6 +2651,8 @@ def main(ctx_factory=cl.create_some_context,
     #check_time = _check_time
 
     def my_pre_step(step, t, dt, state):
+
+        state = force_evaluation(actx, state)
 
         if check_step(step=step, interval=ngarbage):
             with gc_timer.start_sub_timer():
@@ -2797,9 +2832,9 @@ def main(ctx_factory=cl.create_some_context,
                 time=t, quadrature_tag=quadrature_tag)
 
         if use_av == 1:
-            smoothness_mu = compute_smoothness_compiled(
+            smoothness_mu = compute_smoothness(
                 cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
-        if use_av == 2:
+        elif use_av == 2:
             grad_fluid_t = grad_t_operator(
                 dcoll, gas_model, fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
@@ -2814,7 +2849,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
-        tseed_rhs = 0*fluid_state.temperature
+        tseed_rhs = actx.zeros_like(fluid_state.temperature)
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
@@ -2870,7 +2905,7 @@ def main(ctx_factory=cl.create_some_context,
         epsilon_diff = 0.
 
         smoothness_alpha = 0.1
-        href = smoothed_char_length
+        href = char_length_fluid_nodes
         epsilon_diff = smoothness_alpha*href*href/current_dt
 
         if use_av > 0:
@@ -3107,6 +3142,8 @@ def main(ctx_factory=cl.create_some_context,
     unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
     def my_rhs(t, state):
+        
+        state = force_evaluation(actx, state)
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
         fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, av_skappa_rhs, wall_rhs = \
