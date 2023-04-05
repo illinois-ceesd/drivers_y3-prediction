@@ -318,6 +318,9 @@ def main(ctx_factory=cl.create_some_context,
     av2_beta0 = configurate("av_beta0", input_data, 6.0)
     av2_kappa0 = configurate("av_kappa0", input_data, 1.0)
     av2_prandtl0 = configurate("av_prandtl0", input_data, 0.9)
+    av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
+    av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
+    av2_beta_s0 = configurate("av2_beta_s0", input_data, 0.01)
     smooth_char_length = configurate("smooth_char_length", input_data, 5)
     smooth_char_length_alpha = configurate("smooth_char_length_alpha",
                                            input_data, 0.025)
@@ -1443,9 +1446,8 @@ def main(ctx_factory=cl.create_some_context,
 
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
-        indicator_min = 0.01
         indicator_max = 2/actx.np.sqrt(gamma - 1)
-        smoothness = (lmin(lmax(indicator - indicator_min) - indicator_max)
+        smoothness = (lmin(lmax(indicator - av2_beta_s0) - indicator_max)
                       + indicator_max)*href
 
         return smoothness
@@ -1463,9 +1465,8 @@ def main(ctx_factory=cl.create_some_context,
         #indicator_min = 1.0
         #indicator_min = 0.01
         #indicator_min = 0.000001
-        indicator_min = 0.0
         indicator_max = 2
-        smoothness = (lmin(lmax(indicator - indicator_min) - indicator_max)
+        smoothness = (lmin(lmax(indicator - av2_kappa_s0) - indicator_max)
                       + indicator_max)*href
 
         return smoothness
@@ -1505,9 +1506,8 @@ def main(ctx_factory=cl.create_some_context,
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
         #indicator_min = 1.0
-        indicator_min = 0.0
         indicator_max = 2
-        smoothness = (lmin(lmax(indicator - indicator_min) - indicator_max)
+        smoothness = (lmin(lmax(indicator - av2_mu_s0) - indicator_max)
                       + indicator_max)*href
 
         return smoothness
