@@ -164,7 +164,11 @@ while [ $nrank -le $NUM_PROCS ]; do
     elif [[ "${nrank}" == "256" ]]; then
         msize="4.61"
         nelem="6142150"
+    elif [[ "${nrank}" == "512" ]]; then
+        msize="3.6389"
+        nelem="12283032"
     fi
+
 
     casename="${running_casename_base}_np${nrank}"
     printf "** Running ${casename} on ${nrank} ranks.\n"
