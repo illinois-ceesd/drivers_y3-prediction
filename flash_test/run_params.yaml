@@ -1,8 +1,8 @@
 # params to vary
 init_name: Flash1D
-order:  8
+order:  2
 mu: 1.e-3
-mesh_size: 0.002
+mesh_size: 0.0002
 current_dt: 1.e-9
 nviz: 1000
 # everything else
@@ -12,7 +12,7 @@ viz_level: 3
 nrestart: 1000
 mesh_angle: 0
 periodic: False
-bl_ratio: 3.0
+bl_ratio: 4.0
 interface_ratio: 1.0
 transfinite: True
 nhealth: 100
