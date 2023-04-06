@@ -1272,7 +1272,6 @@ def main(ctx_factory=cl.create_some_context,
     char_len_wall_nodes = char_len_wall_nodes + actx.zeros_like(char_len_wall_nodes)
 
     smoothed_char_length = force_evaluation(actx, smoothed_char_length)
-    #smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -3148,9 +3147,9 @@ def main(ctx_factory=cl.create_some_context,
                 quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                 comm_tag=_FluidOxDiffCommTag)
 
-            # I know we don't like this pattern, but this one may be *needed*
+            # Do not change: this "0*" pattern is *needed* here
             fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
-            # fluid_rhs = fluid_rhs + actx.zeros_like(fluid_dummy_ox_mass_rhs)
+            # NO: fluid_rhs = fluid_rhs + actx.zeros_like(fluid_dummy_ox_mass_rhs)
 
         return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
                                av_sbeta_rhs, av_skappa_rhs, wall_rhs])
