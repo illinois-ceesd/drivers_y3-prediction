@@ -325,6 +325,7 @@ def main(ctx_factory=cl.create_some_context,
     smooth_char_length_alpha = configurate("smooth_char_length_alpha",
                                            input_data, 0.025)
     smoothness_alpha = configurate("smoothness_alpha", input_data, 0.1)
+    smoothness_tau = configurate("smoothness_tau", input_data, 100.)
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
@@ -1160,6 +1161,12 @@ def main(ctx_factory=cl.create_some_context,
     dd_vol_fluid = DOFDesc(VolumeDomainTag("fluid"), DISCR_TAG_BASE)
     dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
 
+    x_vec_fluid = actx.thaw(dcoll.nodes(dd_vol_fluid))
+    x_vec_wall = actx.thaw(dcoll.nodes(dd_vol_wall))
+
+    x_vec_fluid = force_evaluation(actx, x_vec_fluid)
+    x_vec_wall = force_evaluation(actx, x_vec_wall)
+
     wall_vol_discr = dcoll.discr_from_dd(dd_vol_wall)
     wall_tag_to_elements = volume_to_local_mesh_data["wall"][1]
     wall_insert_mask = mask_from_elements(
@@ -1175,12 +1182,17 @@ def main(ctx_factory=cl.create_some_context,
     wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     from grudge.dt_utils import characteristic_lengthscales
-    char_length = characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid)
-    char_length_wall = characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall)
+    char_length = force_evaluation(actx,
+        characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
+    char_length_wall = force_evaluation(actx,
+        characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
 
     # put the lengths on the nodes vs elements
-    xpos = actx.thaw(dcoll.nodes(dd_vol_fluid))[0]
-    xpos_wall = actx.thaw(dcoll.nodes(dd_vol_wall))[0]
+    xpos = x_vec_fluid[0]
+    xpos_wall = x_vec_wall[0]
+    xpos = force_evaluation(actx, xpos)
+    xpos_wall = force_evaluation(actx, xpos_wall)
+
     char_length_nodes = char_length + actx.zeros_like(xpos)
     char_length_wall_nodes = char_length_wall + actx.zeros_like(xpos_wall)
 
@@ -1600,7 +1612,7 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
-            dcoll=dcoll, x_vec=actx.thaw(dcoll.nodes(dd_vol_fluid)), eos=eos,
+            dcoll=dcoll, x_vec=x_vec_fluid, eos=eos,
             time=0)
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
 
@@ -1894,13 +1906,12 @@ def main(ctx_factory=cl.create_some_context,
     from y3prediction.utils import InitSponge
     sponge_init = InitSponge(x0=sponge_x0, thickness=sponge_thickness,
                              amplitude=sponge_amp)
-    x_vec = actx.thaw(dcoll.nodes(dd_vol_fluid))
 
     def _sponge_sigma(x_vec):
         return sponge_init(x_vec=x_vec)
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
-    sponge_sigma = get_sponge_sigma(x_vec)
+    sponge_sigma = get_sponge_sigma(x_vec_fluid)
 
     def _sponge_source(cv):
         """Create sponge source."""
@@ -2855,7 +2866,7 @@ def main(ctx_factory=cl.create_some_context,
 
         ignition_rhs = actx.zeros_like(cv)
         if use_ignition > 0:
-            ignition_rhs = ignition_source(x_vec=x_vec, state=fluid_state,
+            ignition_rhs = ignition_source(x_vec=x_vec_fluid, state=fluid_state,
                                            eos=gas_model.eos, time=t)/current_dt
 
         av_smu_rhs = actx.zeros_like(cv.mass)
@@ -2868,7 +2879,7 @@ def main(ctx_factory=cl.create_some_context,
         av_sbeta_wall_rhs = actx.zeros_like(wv.mass)
         av_skappa_wall_rhs = actx.zeros_like(wv.mass)
         # work good for shock 1d
-        tau = 1.e-6
+        tau = current_dt/smoothness_tau
         href = smoothed_char_length
         epsilon_diff = smoothness_alpha*href*href/current_dt
 
