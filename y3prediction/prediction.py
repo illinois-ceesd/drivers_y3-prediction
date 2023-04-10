@@ -324,6 +324,10 @@ def main(ctx_factory=cl.create_some_context,
     smooth_char_length = configurate("smooth_char_length", input_data, 5)
     smooth_char_length_alpha = configurate("smooth_char_length_alpha",
                                            input_data, 0.025)
+    use_smoothed_char_length = False
+    if smooth_char_length > 0:
+        use_smoothed_char_length = True
+
     smoothness_alpha = configurate("smoothness_alpha", input_data, 0.1)
     smoothness_tau = configurate("smoothness_tau", input_data, 0.01)
 
@@ -488,6 +492,14 @@ def main(ctx_factory=cl.create_some_context,
     gamma_sc = 1.5
 
     if rank == 0:
+        if use_smoothed_char_length:
+            print("Smoothing characteristic length for use in artificial viscosity")
+            print(f"smoothing_alpha {smooth_char_length_alpha}")
+
+        if use_av > 0:
+            print("Artificial viscosity {smoothness_alpha=}")
+            print("Artificial viscosity {smoothness_tau=}")
+
         if use_av == 0:
             print("Artificial viscosity disabled")
         elif use_av == 1:
@@ -501,9 +513,11 @@ def main(ctx_factory=cl.create_some_context,
             print("Artificial viscosity using modified transport properties")
             print("\t mu, beta, kappa")
             # MJA update this
-            print(f"Shock capturing parameters: alpha {alpha_sc}, "
-                  f"gamma_sc {gamma_sc}"
-                  f"theta_sc {theta_sc}, beta_sc {beta_sc}, Pr 0.75, "
+            print(f"Shock capturing parameters:"
+                  f"\tav_mu {av2_mu0}"
+                  f"\tav_beta {av2_beta0}"
+                  f"\tav_kappa {av2_kappa0}"
+                  f"\tav_prantdl {av2_prandtl0}"
                   f"stagnation temperature {static_temp}")
         else:
             error_message = "Unknown artifical viscosity model {}".format(use_av)
@@ -1208,6 +1222,18 @@ def main(ctx_factory=cl.create_some_context,
             wall_ffld_bnd.domain_tag: smooth_neumann,
         }
 
+        from grudge.discretization import filter_part_boundaries
+        fluid_smoothness_boundaries.update({
+             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+             for dd_bdry in filter_part_boundaries(
+                 dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
+
+        wall_smoothness_boundaries.update({
+             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+             for dd_bdry in filter_part_boundaries(
+                 dcoll, volume_dd=dd_vol_wall, neighbor_volume_dd=dd_vol_fluid)})
+
+        """
         # interface boundaries
         pairwise_diff = {
             (dd_vol_fluid, dd_vol_wall):
@@ -1230,6 +1256,7 @@ def main(ctx_factory=cl.create_some_context,
                 op.project(dcoll, tpair.dd,
                            tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
             for tpair in reverse_diff_tpairs})
+            """
 
         smooth_href_fluid = href_fluid
         for i in range(smooth_char_length):
@@ -1254,7 +1281,6 @@ def main(ctx_factory=cl.create_some_context,
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
 
-    use_smoothed_char_length = True
     smoothed_char_length_fluid = char_length_fluid
     smoothed_char_length_wall = char_length_wall
     if use_smoothed_char_length:
@@ -2880,12 +2906,6 @@ def main(ctx_factory=cl.create_some_context,
         av_smu_rhs = actx.zeros_like(cv.mass)
         av_sbeta_rhs = actx.zeros_like(cv.mass)
         av_skappa_rhs = actx.zeros_like(cv.mass)
-        av_smu_wall = actx.zeros_like(wv.mass)
-        av_sbeta_wall = actx.zeros_like(wv.mass)
-        av_skappa_wall = actx.zeros_like(wv.mass)
-        av_smu_wall_rhs = actx.zeros_like(wv.mass)
-        av_sbeta_wall_rhs = actx.zeros_like(wv.mass)
-        av_skappa_wall_rhs = actx.zeros_like(wv.mass)
         # work good for shock 1d
         tau = current_dt/smoothness_tau
         epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
@@ -2893,164 +2913,49 @@ def main(ctx_factory=cl.create_some_context,
         if use_av > 0:
             # regular boundaries for smoothness mu
             smooth_neumann = NeumannDiffusionBoundary(0)
-            fluid_av_smu_boundaries = {
+            fluid_av_boundaries = {
                 flow_bnd.domain_tag: smooth_neumann,
                 wall_bnd.domain_tag: smooth_neumann,
             }
-            wall_av_smu_boundaries = {
-                wall_ffld_bnd.domain_tag: smooth_neumann,
-            }
 
-            # interface boundaries for smoothness mu
-            pairwise_diff_smu = {
-                (dd_vol_fluid, dd_vol_wall):
-                    (av_smu, av_smu_wall)}
-            pairwise_diff_smu_tpairs = inter_volume_trace_pairs(
-                dcoll, pairwise_diff_smu, comm_tag=_MuDiffCommTag)
-            diff_smu_tpairs = pairwise_diff_smu_tpairs[dd_vol_fluid, dd_vol_wall]
-
-            wall_av_smu_boundaries.update({
-                tpair.dd.domain_tag:
-                NeumannDiffusionBoundary(0)
-                for tpair in diff_smu_tpairs})
-
-            reverse_diff_smu_tpairs = pairwise_diff_smu_tpairs[dd_vol_wall,
-                                                               dd_vol_fluid]
-
-            fluid_av_smu_boundaries.update({
-                tpair.dd.domain_tag:
-                NeumannDiffusionBoundary(0)
-                for tpair in reverse_diff_smu_tpairs})
+            from grudge.discretization import filter_part_boundaries
+            fluid_av_boundaries.update({
+                 dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+                 for dd_bdry in filter_part_boundaries(
+                     dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
 
             # av mu
             av_smu_rhs = (
                 diffusion_operator(
-                    dcoll, epsilon_diff, fluid_av_smu_boundaries, av_smu,
+                    dcoll, epsilon_diff, fluid_av_boundaries, av_smu,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_MuDiffFluidCommTag
                 ) + 1/tau * (smoothness_mu - av_smu)
             )
 
-            # reverse in the wall for matching
-            av_smu_wall_rhs = (
-                diffusion_operator(
-                    dcoll, 0., wall_av_smu_boundaries, av_smu_wall,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                    comm_tag=_MuDiffWallCommTag
+            if use_av == 2:
+                av_sbeta_rhs = (
+                    diffusion_operator(
+                        dcoll, epsilon_diff, fluid_av_boundaries, av_sbeta,
+                        quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                        comm_tag=_BetaDiffFluidCommTag
+                    ) + 1/tau * (smoothness_beta - av_sbeta)
                 )
-            )
 
-        if use_av == 2:
-            # av beta
-
-            # regular boundaries for smoothness beta
-            smooth_neumann = NeumannDiffusionBoundary(0)
-            fluid_av_sbeta_boundaries = {
-                flow_bnd.domain_tag: smooth_neumann,
-                wall_bnd.domain_tag: smooth_neumann,
-            }
-            wall_av_sbeta_boundaries = {
-                wall_ffld_bnd.domain_tag: smooth_neumann,
-            }
-
-            # interface boundaries for smoothness beta
-            pairwise_diff_sbeta = {
-                (dd_vol_fluid, dd_vol_wall):
-                    (av_sbeta, av_sbeta_wall)}
-            pairwise_diff_sbeta_tpairs = inter_volume_trace_pairs(
-                dcoll, pairwise_diff_sbeta, comm_tag=_BetaDiffCommTag)
-            diff_sbeta_tpairs = pairwise_diff_sbeta_tpairs[dd_vol_fluid, dd_vol_wall]
-
-            wall_av_sbeta_boundaries.update({
-                tpair.dd.domain_tag:
-                NeumannDiffusionBoundary(0)
-                for tpair in diff_sbeta_tpairs})
-
-            reverse_diff_sbeta_tpairs = pairwise_diff_sbeta_tpairs[dd_vol_wall,
-                                                                   dd_vol_fluid]
-
-            fluid_av_sbeta_boundaries.update({
-                tpair.dd.domain_tag:
-                NeumannDiffusionBoundary(0)
-                for tpair in reverse_diff_sbeta_tpairs})
-
-            av_sbeta_rhs = (
-                diffusion_operator(
-                    dcoll, epsilon_diff, fluid_av_sbeta_boundaries, av_sbeta,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                    comm_tag=_BetaDiffFluidCommTag
-                ) + 1/tau * (smoothness_beta - av_sbeta)
-            )
-
-            # reverse in the wall for matching
-            av_sbeta_wall_rhs = (
-                diffusion_operator(
-                    dcoll, 0., wall_av_sbeta_boundaries, av_sbeta_wall,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                    comm_tag=_BetaDiffWallCommTag
+                av_skappa_rhs = (
+                    diffusion_operator(
+                        dcoll, epsilon_diff, fluid_av_boundaries, av_skappa,
+                        quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                        comm_tag=_KappaDiffFluidCommTag
+                    ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
-            )
-
-            # av kappa
-            # regular boundaries for smoothness kappa
-            smooth_neumann = NeumannDiffusionBoundary(0)
-            fluid_av_skappa_boundaries = {
-                flow_bnd.domain_tag: smooth_neumann,
-                wall_bnd.domain_tag: smooth_neumann,
-            }
-            wall_av_skappa_boundaries = {
-                wall_ffld_bnd.domain_tag: smooth_neumann,
-            }
-
-            # interface boundaries for smoothness kappa
-            pairwise_diff_skappa = {
-                (dd_vol_fluid, dd_vol_wall):
-                    (av_skappa, av_skappa_wall)}
-            pairwise_diff_skappa_tpairs = inter_volume_trace_pairs(
-                dcoll, pairwise_diff_skappa, comm_tag=_KappaDiffCommTag)
-            diff_skappa_tpairs = pairwise_diff_skappa_tpairs[dd_vol_fluid,
-                                                             dd_vol_wall]
-
-            wall_av_skappa_boundaries.update({
-                tpair.dd.domain_tag:
-                NeumannDiffusionBoundary(0)
-                for tpair in diff_skappa_tpairs})
-
-            reverse_diff_skappa_tpairs = pairwise_diff_skappa_tpairs[dd_vol_wall,
-                                                                     dd_vol_fluid]
-
-            fluid_av_skappa_boundaries.update({
-                tpair.dd.domain_tag:
-                NeumannDiffusionBoundary(0)
-                for tpair in reverse_diff_skappa_tpairs})
-
-            av_skappa_rhs = (
-                diffusion_operator(
-                    dcoll, epsilon_diff, fluid_av_skappa_boundaries, av_skappa,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                    comm_tag=_KappaDiffFluidCommTag
-                ) + 1/tau * (smoothness_kappa - av_skappa)
-            )
-
-            # reverse in the wall for matching
-            av_skappa_wall_rhs = (
-                diffusion_operator(
-                    dcoll, 0., wall_av_skappa_boundaries, av_skappa_wall,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                    comm_tag=_KappaDiffWallCommTag
-                )
-            )
 
         sponge_rhs = actx.zeros_like(cv)
         if use_sponge:
             sponge_rhs = _sponge_source(cv=cv)
 
         fluid_rhs = ns_rhs + chem_rhs + sponge_rhs + ignition_rhs
-        # only here to get the wall diffusion nodes into the dag
-        wall_energy_rhs = wall_energy_rhs + av_smu_wall_rhs*0. + \
-                          av_sbeta_wall_rhs*0. + av_skappa_wall_rhs*0.
 
-        #wall_mass_rhs = -wall_model.mass_loss_rate(wv)
         # wall mass loss
         wall_mass_rhs = actx.zeros_like(wv.mass)
         if use_wall_mass:
@@ -3059,7 +2964,6 @@ def main(ctx_factory=cl.create_some_context,
                 temperature=wdv.temperature)
 
         # wall oxygen diffusion
-        #wall_ox_mass_rhs = actx.zeros_like(wv.ox_mass)
         wall_ox_mass_rhs = actx.zeros_like(wv.mass)
         if use_wall_ox:
             if nspecies == 0:
