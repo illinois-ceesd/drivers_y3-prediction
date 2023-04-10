@@ -34,7 +34,7 @@ def main():
 
           python_requires="~=3.8",
 
-          install_requires=["mirgecom"],
+          #install_requires=["mirgecom"],
 
           include_package_data=True,)
 
