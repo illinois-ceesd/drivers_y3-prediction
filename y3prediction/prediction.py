@@ -1584,7 +1584,7 @@ def main(ctx_factory=cl.create_some_context,
             quadrature_tag=quadrature_tag)
         return make_obj_array([fluid_grad_t, wall_grad_t])
 
-    grad_t_operator_coupled_compiled = actx.compile(grad_t_operator_coupled)
+    #grad_t_operator_coupled_compiled = actx.compile(grad_t_operator_coupled)
 
     def grad_t_operator_fluid(fluid_state, time):
         return grad_t_operator(
@@ -2298,14 +2298,16 @@ def main(ctx_factory=cl.create_some_context,
             grad_v = velocity_gradient(cv, grad_cv)
             grad_y = species_mass_fraction_gradient(cv, grad_cv)
 
+            """
             grad_temperature = grad_t_operator_coupled_compiled(
                 dv.temperature, fluid_state, wall_kappa, wall_temperature)
             fluid_grad_temperature = grad_temperature[0]
             wall_grad_temperature = grad_temperature[1]
+            """
 
             #viz_ext = [("rhs", ns_rhs),
             viz_ext = [("sponge_sigma", sponge_sigma),
-                       ("grad_temperature", fluid_grad_temperature),
+                       #("grad_temperature", fluid_grad_temperature),
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
@@ -2323,17 +2325,22 @@ def main(ctx_factory=cl.create_some_context,
             if use_av == 2:
                 smoothness_beta = compute_smoothness_beta_compiled(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
+                """
                 smoothness_kappa = compute_smoothness_kappa_compiled(
                     cv=cv, dv=fluid_state.dv, grad_t=fluid_grad_temperature)
+                    """
                 smoothness_mu = compute_smoothness_mu_compiled(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
                 viz_ext = [("smoothness_mu", smoothness_mu),
-                           ("smoothness_beta", smoothness_beta),
-                           ("smoothness_kappa", smoothness_kappa)]
+                           ("smoothness_beta", smoothness_beta)]
+                """
+                           #("smoothness_beta", smoothness_beta),
+                           #("smoothness_kappa", smoothness_kappa)]
+                           """
                 fluid_viz_fields.extend(viz_ext)
 
-            viz_ext = [("grad_temperature", wall_grad_temperature)]
-            wall_viz_fields.extend(viz_ext)
+            #viz_ext = [("grad_temperature", wall_grad_temperature)]
+            #wall_viz_fields.extend(viz_ext)
 
         write_visfile(
             dcoll, fluid_viz_fields, fluid_visualizer,
