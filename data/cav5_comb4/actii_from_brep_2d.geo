@@ -71,6 +71,12 @@ Else
     cavity_factor=6;
 EndIf
 
+If(Exists(nozzlefac))
+    nozzle_factor=nozzlefac;
+Else
+    nozzle_factor=6;
+EndIf
+
 // horizontal injection
 cavityAngle=45;
 inj_h=4.;  // height of injector (bottom) from floor
@@ -80,7 +86,7 @@ inj_l = 20; // length of injector
 bigsize = basesize*4;     // the biggest mesh size 
 inletsize = basesize*2;   // background mesh size upstream of the nozzle
 isosize = basesize/iso_factor;       // background mesh size in the isolator
-nozzlesize = basesize/12;       // background mesh size in the nozzle
+nozzlesize = basesize/nozzle_factor;       // background mesh size in the nozzle
 cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
 shearsize = isosize/shear_factor; // background mesh size in the shear region
 samplesize = basesize/sample_factor;       // background mesh size in the sample

@@ -1,10 +1,12 @@
 ##############
 # run control
 ##############
-nviz: 5
-nrestart: 10
-nhealth: 3
-nstatus: 2
+mesh_filename: data/actii_2d.msh
+use_1d_part: True
+nviz: 100
+nrestart: 5000
+nhealth: 1
+nstatus: 1
 viz_level: 2
 viz_interval_type: 0
 #viz_interval_type: 1
@@ -13,56 +15,47 @@ t_viz_interval: 1.e-9
 constant_cfl: 0
 #constant_cfl: 1
 current_cfl: 0.05
-current_dt: 2.0e-10
-t_final: 4.e-9
+current_dt: 2.5e-9
+t_final: 1.e-4
 
 ##############
 # wall model
 ##############
-wall_time_scale: 100
+wall_time_scale: 1
 wall_penalty_amount: 0
-wall_material: 2
+wall_material: 0
+use_wall_mass: False
+use_wall_ox: False
 
 ##############
 # model control
 ##############
-nlimit: 1
-use_species_limiter: 1
-smooth_char_length_alpha: 0.025
-smooth_char_length: 5
-smoothness_alpha: 1.e-12
-smoothness_tau: 1.e-12
-use_av: 2
+nlimit: 100
+use_species_limiter: 0
+use_av: 1
 alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
-av2_mu0: 0.1
-av2_beta0: 6.0
-av2_kappa0: 1.0
-av2_prandtl0: 0.9
-order:  2
+order:  8
+use_rhs_filter: True
+rhs_filter_cutoff: 3
+dimen: 2
+use_injection: False
+noslip: True
+adiabatic: False
+mu: 5.0e-4
 
 ##############
 # equation of state
 ##############
-#nspecies:  7
-nspecies:  0
+eos_type: 0
+nspecies: 0
 pyro_temp_iter: 1
 pyro_temp_tol: 1.
-#transport: 1
 transport: 0
 
-##############
-# ignition parameters
-##############
-use_ignition: 2
-ignition_loc_x: 0.68
-ignition_loc_y: -0.01
-ignition_init_time: 5.e-8
-ignition_strength: 600
-ignition_duration: 1.e-8
-ignition_diameter: 0.02
 integrator: compiled_lsrk54
+#integrator: euler
 #health_pres_min: 2828
 #health_pres_max: 274259
 
@@ -70,6 +63,11 @@ integrator: compiled_lsrk54
 # initialization
 ##############
 vel_sigma: 500
-temp_sigma: 1250
+temp_sigma: 750
+#vel_sigma: 0
+#temp_sigma: 0
 vel_sigma_inj: 5000
 temp_sigma_inj: 5000
+sponge_sigma: 10
+sponge_x0: 0.89
+sponge_thickness: 0.04

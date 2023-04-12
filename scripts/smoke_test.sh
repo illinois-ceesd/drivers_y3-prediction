@@ -50,7 +50,7 @@ failed_tests=""
 
 printf "Running serial tests...\n"
 # serial_test_names="smoke_test smoke_test_3d smoke_test_ks"
-serial_test_names="smoke_test_ks_3d"
+serial_test_names="smoke_test smoke_test_ks"
 for test_name in $serial_test_names
 do
     test_path=${test_name}
@@ -85,7 +85,7 @@ date
 printf "Serial tests done.\n"
 printf "Running parallel tests.\n"
 
-parallel_test_names="smoke_test_ks_3d"
+parallel_test_names="smoke_test_ks"
 for test_name in $parallel_test_names
 do
     test_path=${test_name}
@@ -94,9 +94,22 @@ do
     cd ${TOP_PATH}/${test_path}
     
     # Create 3d mesh unless already there
+<<<<<<< HEAD
     cd data
     ./mkmsh --size=30.5 --nelem=47908 --link  # will not overwrite if it exists
     cd ../
+=======
+    if [ "${test_name}" == "smoke_test_ks_3d" ]; then
+        cd data 
+        rm actii.msh
+        if [[ -f "actii_47908.msh" ]]; then
+            ln -s actii_47908.msh actii.msh
+        else
+            ./mkmsh --size=30.5 --link  # will not overwrite if it exists
+        fi
+        cd ../
+    fi
+>>>>>>> main
 
     # Run the case
     $MPI_EXEC -n 2 $PARALLEL_SPAWNER python -u -m mpi4py driver.py -i run_params.yaml --log --lazy

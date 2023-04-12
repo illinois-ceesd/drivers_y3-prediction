@@ -396,71 +396,71 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
         if transfinite:
             transfinite_string = \
-            f"""
-            Transfinite Curve {{1, 3}} = {0.1} / {size};
-            Transfinite Curve {{5, 6}} = {0.02} / {size};
-            Transfinite Curve {{-2, 4, 7}} = {0.02} / {size} Using Bump 1/{bl_ratio};
-            Transfinite Surface {{1, 2}} Right;
-            Mesh.MeshSizeExtendFromBoundary = 0;
-            Mesh.MeshSizeFromPoints = 0;
-            Mesh.MeshSizeFromCurvature = 0;
-            Mesh.Algorithm = 5;
-            Mesh.OptimizeNetgen = 1;
-            Mesh.Smoothing = 0;
-            """
+                f"""
+                Transfinite Curve {{1, 3}} = {0.1} / {size};
+                Transfinite Curve {{5, 6}} = {0.02} / {size};
+                Transfinite Curve {{-2, 4, 7}}={0.02}/{size} Using Bump 1/{bl_ratio};
+                Transfinite Surface {{1, 2}} Right;
+                Mesh.MeshSizeExtendFromBoundary = 0;
+                Mesh.MeshSizeFromPoints = 0;
+                Mesh.MeshSizeFromCurvature = 0;
+                Mesh.Algorithm = 5;
+                Mesh.OptimizeNetgen = 1;
+                Mesh.Smoothing = 0;
+                """
             my_string = my_string + transfinite_string
         else:
             mesh_tail = \
-            f"""
-            // Create distance field from curves, excludes cavity
-            Field[1] = Distance;
-            Field[1].CurvesList = {{1,3}};
-            Field[1].NumPointsPerCurve = 100000;
+                f"""
+                // Create distance field from curves, excludes cavity
+                Field[1] = Distance;
+                Field[1].CurvesList = {{1,3}};
+                Field[1].NumPointsPerCurve = 100000;
 
-            //Create threshold field that varrries element size near boundaries
-            Field[2] = Threshold;
-            Field[2].InField = 1;
-            Field[2].SizeMin = {size} / {bl_ratio};
-            Field[2].SizeMax = {size};
-            Field[2].DistMin = 0.0002;
-            Field[2].DistMax = 0.005;
-            Field[2].StopAtDistMax = 1;
+                //Create threshold field that varrries element size near boundaries
+                Field[2] = Threshold;
+                Field[2].InField = 1;
+                Field[2].SizeMin = {size} / {bl_ratio};
+                Field[2].SizeMax = {size};
+                Field[2].DistMin = 0.0002;
+                Field[2].DistMax = 0.005;
+                Field[2].StopAtDistMax = 1;
 
-            //  background mesh size
-            Field[3] = Box;
-            Field[3].XMin = 0.;
-            Field[3].XMax = 1.0;
-            Field[3].YMin = -1.0;
-            Field[3].YMax = 1.0;
-            Field[3].VIn = {size};
+                //  background mesh size
+                Field[3] = Box;
+                Field[3].XMin = 0.;
+                Field[3].XMax = 1.0;
+                Field[3].YMin = -1.0;
+                Field[3].YMax = 1.0;
+                Field[3].VIn = {size};
 
-            // Create distance field from curves, excludes cavity
-            Field[4] = Distance;
-            Field[4].CurvesList = {{2}};
-            Field[4].NumPointsPerCurve = 100000;
+                // Create distance field from curves, excludes cavity
+                Field[4] = Distance;
+                Field[4].CurvesList = {{2}};
+                Field[4].NumPointsPerCurve = 100000;
 
-            //Create threshold field that varrries element size near boundaries
-            Field[5] = Threshold;
-            Field[5].InField = 4;
-            Field[5].SizeMin = {size} / {interface_ratio};
-            Field[5].SizeMax = {size};
-            Field[5].DistMin = 0.0002;
-            Field[5].DistMax = 0.005;
-            Field[5].StopAtDistMax = 1;
+                //Create threshold field that varrries element size near boundaries
+                Field[5] = Threshold;
+                Field[5].InField = 4;
+                Field[5].SizeMin = {size} / {interface_ratio};
+                Field[5].SizeMax = {size};
+                Field[5].DistMin = 0.0002;
+                Field[5].DistMax = 0.005;
+                Field[5].StopAtDistMax = 1;
 
-            // take the minimum of all defined meshing fields
-            Field[100] = Min;
-            Field[100].FieldsList = {{2, 3, 5}};
-            Background Field = 100;
+                // take the minimum of all defined meshing fields
+                Field[100] = Min;
+                Field[100].FieldsList = {{2, 3, 5}};
+                Background Field = 100;
 
-            Mesh.MeshSizeExtendFromBoundary = 0;
-            Mesh.MeshSizeFromPoints = 0;
-            Mesh.MeshSizeFromCurvature = 0;
+                Mesh.MeshSizeExtendFromBoundary = 0;
+                Mesh.MeshSizeFromPoints = 0;
+                Mesh.MeshSizeFromCurvature = 0;
 
-            Mesh.Algorithm = 5;
-            Mesh.OptimizeNetgen = 1;
-            Mesh.Smoothing = 100;
-            """
+                Mesh.Algorithm = 5;
+                Mesh.OptimizeNetgen = 1;
+                Mesh.Smoothing = 100;
+                """
             my_string = my_string + mesh_tail
 
         # print(my_string)
