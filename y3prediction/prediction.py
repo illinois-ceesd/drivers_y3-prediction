@@ -1889,7 +1889,7 @@ def main(ctx_factory=cl.create_some_context,
 
     wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
-    def _grad_cv_operator_target(fluid_state, time):
+    def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
                                 dd=dd_vol_fluid,
                                 boundaries=target_boundaries,
