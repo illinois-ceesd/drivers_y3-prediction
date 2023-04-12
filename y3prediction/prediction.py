@@ -2796,6 +2796,15 @@ def main(ctx_factory=cl.create_some_context,
         return state, dt
 
     def my_post_step(step, t, dt, state):
+
+        if step == 1:
+            with gc_timer.start_sub_timer():
+                import gc
+                gc.collect()
+                # Freeze the objects that are still alive so they will not
+                # be considered in future gc collections.
+                gc.freeze()
+
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
