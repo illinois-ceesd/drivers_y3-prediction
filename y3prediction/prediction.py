@@ -1233,31 +1233,6 @@ def main(ctx_factory=cl.create_some_context,
              for dd_bdry in filter_part_boundaries(
                  dcoll, volume_dd=dd_vol_wall, neighbor_volume_dd=dd_vol_fluid)})
 
-        """
-        # interface boundaries
-        pairwise_diff = {
-            (dd_vol_fluid, dd_vol_wall):
-                (href_fluid, href_wall)}
-        pairwise_diff_tpairs = inter_volume_trace_pairs(
-            dcoll, pairwise_diff, comm_tag=_SmoothCharDiffCommTag)
-        diff_tpairs = pairwise_diff_tpairs[dd_vol_fluid, dd_vol_wall]
-
-        wall_smoothness_boundaries.update({
-            tpair.dd.domain_tag:
-            DirichletDiffusionBoundary(
-                op.project(dcoll, tpair.dd,
-                           tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
-            for tpair in diff_tpairs})
-
-        reverse_diff_tpairs = pairwise_diff_tpairs[dd_vol_wall, dd_vol_fluid]
-        fluid_smoothness_boundaries.update({
-            tpair.dd.domain_tag:
-            DirichletDiffusionBoundary(
-                op.project(dcoll, tpair.dd,
-                           tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
-            for tpair in reverse_diff_tpairs})
-            """
-
         smooth_href_fluid = href_fluid
         for i in range(smooth_char_length):
             smooth_href_fluid = smooth_href_fluid + \
@@ -1278,15 +1253,69 @@ def main(ctx_factory=cl.create_some_context,
 
         return make_obj_array([smooth_href_fluid, smooth_href_wall])
 
+    smoothness_diffusivity2 = \
+        smooth_char_length_alpha*char_length_fluid**2/current_dt
+    smoothness_diffusivity_wall2 = \
+        smooth_char_length_alpha*char_length_wall**2/current_dt
+
+    from grudge.discretization import filter_part_boundaries
+    def compute_smoothed_char_length2(href_fluid, href_wall):
+
+        # regular boundaries
+        smooth_neumann = NeumannDiffusionBoundary(0)
+        fluid_smoothness_boundaries = {
+            flow_bnd.domain_tag: smooth_neumann,
+            wall_bnd.domain_tag: smooth_neumann,
+        }
+        wall_smoothness_boundaries = {
+            wall_ffld_bnd.domain_tag: smooth_neumann,
+        }
+
+        fluid_smoothness_boundaries.update({
+             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+             for dd_bdry in filter_part_boundaries(
+                 dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
+
+        wall_smoothness_boundaries.update({
+             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+             for dd_bdry in filter_part_boundaries(
+                 dcoll, volume_dd=dd_vol_wall, neighbor_volume_dd=dd_vol_fluid)})
+
+        smooth_href_fluid_rhs = diffusion_operator(
+            dcoll, smoothness_diffusivity2, fluid_smoothness_boundaries,
+            href_fluid,
+            quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+            comm_tag=(_SmoothCharDiffFluidCommTag, i))*current_dt
+
+        smooth_href_wall_rhs = diffusion_operator(
+                dcoll, smoothness_diffusivity_wall2, wall_smoothness_boundaries,
+                href_wall,
+                quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                comm_tag=(_SmoothCharDiffWallCommTag, i))*current_dt
+
+        return make_obj_array([smooth_href_fluid_rhs, smooth_href_wall_rhs])
+
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
+    compute_smoothed_char_length2_compiled = \
+        actx.compile(compute_smoothed_char_length2)
 
     smoothed_char_length_fluid = char_length_fluid
     smoothed_char_length_wall = char_length_wall
     if use_smoothed_char_length:
-        smoothed_char_length_fluid, smoothed_char_length_wall = \
-            compute_smoothed_char_length_compiled(char_length_fluid,
-                                                  char_length_wall)
+        try2 = True
+        if try2:
+            for i in range(smooth_char_length):
+                [smoothed_char_length_fluid_rhs, smoothed_char_length_wall_rhs] = \
+                    compute_smoothed_char_length2_compiled(smoothed_char_length_fluid,
+                                                           smoothed_char_length_wall)
+                smoothed_char_length_fluid = smoothed_char_length_fluid + smoothed_char_length_fluid_rhs
+                smoothed_char_length_wall = smoothed_char_length_wall + smoothed_char_length_wall_rhs
+        else:
+            smoothed_char_length_fluid, smoothed_char_length_wall = \
+                compute_smoothed_char_length_compiled(char_length_fluid,
+                                                      char_length_wall)
+
 
     smoothed_char_length_fluid = force_evaluation(actx, smoothed_char_length_fluid)
     smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
@@ -1862,7 +1891,7 @@ def main(ctx_factory=cl.create_some_context,
                 cv=restart_fluid_state.cv,
                 dv=restart_fluid_state.dv,
                 grad_cv=grad_cv)
-        if use_av == 2:
+        elif use_av == 2:
             restart_av_smu = compute_smoothness_mu_compiled(
                 cv=restart_fluid_state.cv,
                 dv=restart_fluid_state.dv,
@@ -2231,6 +2260,8 @@ def main(ctx_factory=cl.create_some_context,
             if nparts > 1:
                 fluid_viz_ext = [("rank", rank)]
                 fluid_viz_fields.extend(fluid_viz_ext)
+                wall_viz_ext = [("rank", rank)]
+                wall_viz_fields.extend(wall_viz_ext)
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
@@ -2322,7 +2353,7 @@ def main(ctx_factory=cl.create_some_context,
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
                 viz_ext = [("smoothness_mu", smoothness_mu)]
                 fluid_viz_fields.extend(viz_ext)
-            if use_av == 2:
+            elif use_av == 2:
                 smoothness_beta = compute_smoothness_beta_compiled(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
                 """
@@ -2856,7 +2887,7 @@ def main(ctx_factory=cl.create_some_context,
         if use_av == 1:
             smoothness_mu = compute_smoothness(
                 cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
-        if use_av == 2:
+        elif use_av == 2:
             grad_fluid_t = grad_t_operator(
                 dcoll, gas_model, fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
