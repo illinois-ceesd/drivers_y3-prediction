@@ -301,9 +301,10 @@ class Flash1D:
         # modify the velocity in the near wall region to match the
         # noslip boundaries
         sigma = self._vel_sigma
-        smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
-        smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
-        velocity[0] = velocity[0]*smoothing_top*smoothing_bottom
+        if sigma > 0:
+            smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
+            smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
+            velocity[0] = velocity[0]*smoothing_top*smoothing_bottom
 
         mass = eos.get_density(pressure, temperature, species_mass_fractions=y)
         specmass = mass * y if y is not None else None
