@@ -316,9 +316,9 @@ def main(ctx_factory=cl.create_some_context,
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
     av2_mu0 = configurate("av_mu0", input_data, 0.1)
-    av2_beta0 = configurate("av_beta0", input_data, 6.0)
-    av2_kappa0 = configurate("av_kappa0", input_data, 1.0)
-    av2_prandtl0 = configurate("av_prandtl0", input_data, 0.9)
+    av2_beta0 = configurate("av2_beta0", input_data, 6.0)
+    av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
+    av2_prandtl0 = configurate("av2_prandtl0", input_data, 0.9)
     av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
     av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
     av2_beta_s0 = configurate("av2_beta_s0", input_data, 0.01)
@@ -1210,7 +1210,7 @@ def main(ctx_factory=cl.create_some_context,
     smoothness_diffusivity_wall = \
         smooth_char_length_alpha*char_length_wall**2/current_dt
 
-    def compute_smoothed_char_length(href_fluid, href_wall):
+    def compute_smoothed_char_length(href_fluid, href_wall, comm_ind):
         # regular boundaries
         smooth_neumann = NeumannDiffusionBoundary(0)
         fluid_smoothness_boundaries = {
@@ -1235,13 +1235,13 @@ def main(ctx_factory=cl.create_some_context,
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
             href_fluid,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-            comm_tag=(_SmoothCharDiffFluidCommTag, i))*current_dt
+            comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
 
         smooth_href_wall_rhs = diffusion_operator(
                 dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
                 href_wall,
                 quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                comm_tag=(_SmoothCharDiffWallCommTag, i))*current_dt
+                comm_tag=(_SmoothCharDiffWallCommTag, comm_ind))*current_dt
 
         return make_obj_array([smooth_href_fluid_rhs, smooth_href_wall_rhs])
 
@@ -1254,7 +1254,7 @@ def main(ctx_factory=cl.create_some_context,
         for i in range(smooth_char_length):
             [smoothed_char_length_fluid_rhs, smoothed_char_length_wall_rhs] = \
                 compute_smoothed_char_length_compiled(smoothed_char_length_fluid,
-                                                      smoothed_char_length_wall)
+                                                      smoothed_char_length_wall, i)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
             smoothed_char_length_wall = smoothed_char_length_wall + \
