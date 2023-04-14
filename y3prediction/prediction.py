@@ -1436,7 +1436,7 @@ def main(ctx_factory=cl.create_some_context,
     smoothed_char_length_fluid = char_length_fluid
     smoothed_char_length_wall = char_length_wall
     if use_smoothed_char_length:
-        for i in range(smooth_char_length):
+        for _i in range(smooth_char_length):
             [smoothed_char_length_fluid_rhs, smoothed_char_length_wall_rhs] = \
                 compute_smoothed_char_length_compiled(smoothed_char_length_fluid,
                                                       smoothed_char_length_wall)

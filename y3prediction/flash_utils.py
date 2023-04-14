@@ -210,6 +210,8 @@ class Flash1D:
         self._p_unburned = pressure_unburned
         self._y_burned = species_mass_fractions_burned
         self._y_unburned = species_mass_fractions_unburned
+        self._y_shocked = species_mass_fractions_shocked
+        self._y_unshocked = species_mass_fractions_unshocked
 
     def __call__(self, x_vec, eos, *, time=0.0):
         """Create the mixture state at locations *x_vec*.
