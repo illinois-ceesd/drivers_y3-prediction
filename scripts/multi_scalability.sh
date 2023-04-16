@@ -179,7 +179,7 @@ while [ $nrank -le $NUM_PROCS ]; do
     cd ../
     
     set -x
-    $MPI_EXEC -n ${nrank} $PARALLEL_SPAWNER python -u -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
+    $MPI_EXEC -n ${nrank} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
     return_code=$?
     set +x
 

@@ -3,7 +3,7 @@
 #BSUB -G uiuc
 #BSUB -W 120
 #BSUB -J scale4
-#BSUB -q pdebug
+#BSUB -q pbatch
 #BSUB -o scal4.txt
 
 source ../emirge/config/activate_env.sh

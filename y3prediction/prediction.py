@@ -1263,6 +1263,7 @@ def main(ctx_factory=cl.create_some_context,
     use_smoothed_char_length = True
     smoothed_char_length_fluid = char_length_fluid
     smoothed_char_length_wall = char_length_wall
+
     if use_smoothed_char_length:
         smoothed_char_length_fluid, smoothed_char_length_wall = \
             compute_smoothed_char_length_compiled(char_length_fluid,
@@ -1372,8 +1373,8 @@ def main(ctx_factory=cl.create_some_context,
     # Helper functions for building states #
     ########################################
 
-    def _create_fluid_state(cv, temperature_seed, smoothness_mu=None,
-                            smoothness_beta=None, smoothness_kappa=None):
+    def _create_fluid_state(cv, temperature_seed, smoothness_mu,
+                            smoothness_beta, smoothness_kappa):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
                                 smoothness_mu=smoothness_mu,
@@ -1638,11 +1639,13 @@ def main(ctx_factory=cl.create_some_context,
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
 
         # create a fluid state so we can compute grad_t and grad_cv
-        restart_fluid_state = create_fluid_state(cv=restart_cv,
-                                                 temperature_seed=temperature_seed)
         restart_av_smu = actx.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.zeros_like(restart_cv.mass)
+        restart_fluid_state = create_fluid_state(
+            cv=restart_cv, temperature_seed=temperature_seed,
+            smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+            smoothness_kappa=restart_av_skappa)
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -2246,7 +2249,7 @@ def main(ctx_factory=cl.create_some_context,
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
-                    fluid_state.species_diffusivity
+                    fluid_state.species_diffusivity)
 
             cell_Pe_mass = char_length_fluid*cv.speed/d_alpha_max
 
@@ -2493,7 +2496,7 @@ def main(ctx_factory=cl.create_some_context,
         """
 
         return (
-            char_len_wall_nodes**2
+            char_length_wall**2
             / (
                 wall_time_scale
                 * actx.np.maximum(
@@ -3169,7 +3172,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # precludes a pre-compiled timestepper
         # don't know if we should do this
-        #state = force_evaluation(actx, state)
+        state = force_evaluation(actx, state)
 
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
