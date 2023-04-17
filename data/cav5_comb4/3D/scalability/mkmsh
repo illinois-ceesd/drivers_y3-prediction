@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # SIZE=${1}
-# NCPUS=$(getconf _NPROCESSORS_ONLN)
-NCPUS="1"
+NCPUS=$(getconf _NPROCESSORS_ONLN)
+[[ $NCPUS -gt 16 ]] && NCPUS=16
+
+#NCPUS="1"
 SIZE="6.4"
 INJRAT="2"
 BLRAT="4"
