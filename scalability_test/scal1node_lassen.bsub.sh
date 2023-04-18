@@ -1,7 +1,7 @@
 #!/bin/bash
 #BSUB -nnodes 1
 #BSUB -G uiuc
-#BSUB -W 120
+#BSUB -W 180
 #BSUB -J scale4
 #BSUB -q pbatch
 #BSUB -o scal4.txt

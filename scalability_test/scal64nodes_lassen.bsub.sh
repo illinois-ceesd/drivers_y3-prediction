@@ -1,7 +1,7 @@
 #!/bin/bash
 #BSUB -nnodes 64
 #BSUB -G uiuc
-#BSUB -W 120
+#BSUB -W 180
 #BSUB -J scale256
 #BSUB -q pbatch
 #BSUB -o scal256.txt
