@@ -1187,9 +1187,6 @@ def main(ctx_factory=cl.create_some_context,
     wall_surround_mask = mask_from_elements(
         wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
 
-    force_evaluation(actx, wall_insert_mask)
-    force_evaluation(actx, wall_surround_mask)
-
     wall_bnd = dd_vol_fluid.trace("isothermal_wall")
     inflow_bnd = dd_vol_fluid.trace("inflow")
     outflow_bnd = dd_vol_fluid.trace("outflow")
@@ -1205,6 +1202,7 @@ def main(ctx_factory=cl.create_some_context,
 
     fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
     wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
+
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
     xpos_wall = wall_nodes[0]
@@ -1215,6 +1213,9 @@ def main(ctx_factory=cl.create_some_context,
         smooth_char_length_alpha*char_length_fluid**2/current_dt
     smoothness_diffusivity_wall = \
         smooth_char_length_alpha*char_length_wall**2/current_dt
+
+    smoothness_diffusivity = force_evaluation(actx, smoothness_diffusivity)
+    smoothness_diffusivity_wall = force_evaluation(actx, smoothness_diffusivity_wall)
 
     def compute_smoothed_char_length(href_fluid, href_wall, comm_ind):
         # regular boundaries
@@ -1938,7 +1939,6 @@ def main(ctx_factory=cl.create_some_context,
     from y3prediction.utils import InitSponge
     sponge_init = InitSponge(x0=sponge_x0, thickness=sponge_thickness,
                              amplitude=sponge_amp)
-    x_vec = fluid_nodes
 
     def _sponge_sigma(x_vec):
         return sponge_init(x_vec=x_vec)
