@@ -120,19 +120,17 @@ if [[ ! -f ${OUTPUT}_${NELEM}.msh ]]; then
     set +x
     date
 
-    if [ -f "tmp.msh" ]; then
-        NCELLS=$(grep -cP '^[0-9]+\s4\b(?!.*")' tmp.msh)
-        if [[ "${NCELLS}" == "0" ]]; then
-            printf "Mesh creation failed.\n"
-            exit 1
-        fi
-        mv tmp.msh ${OUTPUT}_${NCELLS}.msh
-        printf "Created ${OUTPUT}_${NCELLS}.msh with ${NCELLS} tets.\n"
-        if [[ "${MKLINK}" == "true" ]]; then
-            ln -s ${OUTPUT}_${NCELLS}.msh ${OUTPUT}.msh
-        fi
-    else
-        printf "Mesh creation failed."
+date
+set -x
+rm -f tmp.msh
+gmsh -setnumber size ${SIZE} -setnumber blratio ${BLRAT} -setnumber cavityfac ${CAVFAC} -setnumber isofac ${ISOFAC} -setnumber samplefac ${SAMPFAC} -setnumber injectorfac ${INJFAC} -setnumber blratiocavity ${BLCAVRAT} -setnumber blratioinjector ${BLINJRAT} -setnumber blratiosample ${BLSAMPRAT} -setnumber blratiosurround ${BLSURRRAT} -setnumber shearfac ${SHEARFAC} -o tmp.msh -nopopup -format msh2 ./actii_from_brep.geo -3 -nt ${NCPUS}
+set +x
+date
+
+if [ -f "tmp.msh" ]; then
+    NCELLS=$(grep -E '^[0-9]+\s4\b' tmp.msh | grep -v '"' | wc -l)
+    if [[ "${NCELLS}" == "0" ]]; then
+        printf "Mesh creation failed.\n"
         exit 1
     fi
 else

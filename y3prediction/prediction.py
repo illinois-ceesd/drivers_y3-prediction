@@ -1395,7 +1395,7 @@ def main(ctx_factory=cl.create_some_context,
     smoothness_diffusivity_wall = \
         smooth_char_length_alpha*char_length_wall**2/current_dt
 
-    def compute_smoothed_char_length(href_fluid, href_wall, comm_index):
+    def compute_smoothed_char_length(href_fluid, href_wall, comm_ind):
         # regular boundaries
         smooth_neumann = NeumannDiffusionBoundary(0)
         fluid_smoothness_boundaries = {
@@ -1420,13 +1420,13 @@ def main(ctx_factory=cl.create_some_context,
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
             href_fluid,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-            comm_tag=(_SmoothCharDiffFluidCommTag, comm_index))*current_dt
+            comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
 
         smooth_href_wall_rhs = diffusion_operator(
                 dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
                 href_wall,
                 quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                comm_tag=(_SmoothCharDiffWallCommTag, comm_index))*current_dt
+                comm_tag=(_SmoothCharDiffWallCommTag, comm_ind))*current_dt
 
         return make_obj_array([smooth_href_fluid_rhs, smooth_href_wall_rhs])
 

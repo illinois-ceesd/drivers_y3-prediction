@@ -78,3 +78,11 @@ jobs:
             cd smoke_test_ks
             ./run_lazy.sh
 
+        - name: Kitchen sink 3D smoke test
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test_ks_3d/data
+            ln -s actii_23892.msh actii.msh
+            cd ..
+            ./run_lazy.sh
+

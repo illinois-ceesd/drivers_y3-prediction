@@ -17,5 +17,5 @@ jsrun_cmd="jsrun -g 1 -a 1 -n 1"
 export XDG_CACHE_ROOT="/tmp/$USER/xdg-scratch"
 export POCL_CACHE_ROOT="/tmp/$USER/pocl-cache"
 $jsrun_cmd js_task_info
-$jsrun_cmd bash -c 'POCL_CACHE_DIR=$POCL_CACHE_ROOT/$$ XDG_CACHE_HOME=$XDG_CACHE_ROOT/$$ python -O -u -m mpi4py ./driver.py -i run_params.yaml --lazy --log > mirge-0.out'
+$jsrun_cmd bash -c 'POCL_CACHE_DIR=$POCL_CACHE_ROOT/$OMPI_COMM_WORLD_RANK XDG_CACHE_HOME=$XDG_CACHE_ROOT/$OMPI_COMM_WORLD_RANK python -O -u -m mpi4py ./driver.py -i run_params.yaml --lazy --log > mirge-0.out'
 
