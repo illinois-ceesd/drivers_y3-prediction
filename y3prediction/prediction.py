@@ -1369,6 +1369,11 @@ def main(ctx_factory=cl.create_some_context,
             wall_vol_discr, actx, wall_tag_to_elements["wall"])
         wall_surround_mask = None
 
+    # initialize the wall heat capacity
+    wall_cp = wall_insert_cp * wall_insert_mask
+    if wall_surround_mask is not None:
+        wall_cp = wall_cp + wall_surround_cp * wall_surround_mask
+
     if init_name == "ACTII":
         wall_bnd = dd_vol_fluid.trace("isothermal_wall")
         flow_bnd = dd_vol_fluid.trace("flow")
@@ -1818,17 +1823,9 @@ def main(ctx_factory=cl.create_some_context,
 
         # initialize the wall
         wall_mass = wall_insert_rho * wall_insert_mask
-        wall_cp = wall_insert_cp * wall_insert_mask
 
         if wall_surround_mask is not None:
             wall_mass = wall_mass + wall_surround_rho * wall_surround_mask
-            wall_cp = wall_cp + wall_surround_cp * wall_surround_mask
-            wall_mass = (
-                wall_insert_rho * wall_insert_mask
-                + wall_surround_rho * wall_surround_mask)
-            wall_cp = (
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask)
 
         restart_wv = WallVars(
             mass=wall_mass,
