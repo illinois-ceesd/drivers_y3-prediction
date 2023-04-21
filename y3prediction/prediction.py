@@ -311,9 +311,9 @@ def main(ctx_factory=cl.create_some_context,
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
-    av2_mu0 = configurate("av_mu0", input_data, 0.1)
-    av2_beta0 = configurate("av_beta0", input_data, 6.0)
-    av2_kappa0 = configurate("av_kappa0", input_data, 1.0)
+    av2_mu0 = configurate("av2_mu0", input_data, 0.1)
+    av2_beta0 = configurate("av2_beta0", input_data, 6.0)
+    av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
     av2_prandtl0 = configurate("av_prandtl0", input_data, 0.9)
     av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
     av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
@@ -568,12 +568,12 @@ def main(ctx_factory=cl.create_some_context,
             print("Artificial viscosity using modified transport properties")
             print("\t mu, beta, kappa")
             # MJA update this
-            print(f"Shock capturing parameters:"
-                  f"\tav_mu {av2_mu0}"
-                  f"\tav_beta {av2_beta0}"
-                  f"\tav_kappa {av2_kappa0}"
-                  f"\tav_prantdl {av2_prandtl0}"
-                  f"stagnation temperature {static_temp}")
+            print(f"Shock capturing parameters:\n"
+                  f"\tav_mu {av2_mu0}\n"
+                  f"\tav_beta {av2_beta0}\n"
+                  f"\tav_kappa {av2_kappa0}\n"
+                  f"\tav_prantdl {av2_prandtl0}\n"
+                  f"\tstagnation temperature {static_temp}\n")
         else:
             error_message = "Unknown artifical viscosity model {}".format(use_av)
             raise RuntimeError(error_message)
@@ -1625,7 +1625,7 @@ def main(ctx_factory=cl.create_some_context,
     compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
 
     def lmax(s):
-        b = 100
+        b = 1000
         return (s/np.pi*actx.np.arctan(b*s) +
                 0.5*s - 1/np.pi*actx.np.arctan(b) + 0.5)
 
@@ -2401,7 +2401,7 @@ def main(ctx_factory=cl.create_some_context,
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
-                viz_ext.extend(("grad_v_z", grad_v[2]))
+                viz_ext.extend([("grad_v_z", grad_v[2])])
 
             viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
                            for i in range(nspecies))

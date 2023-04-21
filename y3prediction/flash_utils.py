@@ -322,14 +322,176 @@ class Flash1D:
                               momentum=mom, species_mass=specmass)
 
 
-def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
-                   transfinite=False, use_gmsh=False,
-                   left_boundary_loc=-1, right_boundary_loc=1,
-                   bottom_boundary_loc=-1, top_boundary_loc=1):
+def get_flash_mesh_2d(size, bl_ratio, interface_ratio, angle=0.,
+                   transfinite=False,
+                   left_boundary_loc=0.,
+                   bottom_boundary_loc=-0.01,
+                   aft_boundary_loc=-0.01):
     """Generate a grid using `gmsh`.
 
     """
 
+    dim = 2
+    height = 0.02
+    fluid_length = 0.1
+    wall_length = 0.02
+    bottom_inflow = np.zeros(shape=(dim,))
+    top_inflow = np.zeros(shape=(dim,))
+    bottom_interface = np.zeros(shape=(dim,))
+    top_interface = np.zeros(shape=(dim,))
+    bottom_wall = np.zeros(shape=(dim,))
+    top_wall = np.zeros(shape=(dim,))
+
+    # rotate the mesh around the bottom-left corner
+    theta = angle/180.*np.pi/2.
+    bottom_inflow = [left_boundary_loc, bottom_boundary_loc, aft_boundary_loc]
+    top_inflow[0] = bottom_inflow[0] - height*np.sin(theta)
+    top_inflow[1] = bottom_inflow[1] + height*np.cos(theta)
+
+    bottom_interface[0] = bottom_inflow[0] + fluid_length*np.cos(theta)
+    bottom_interface[1] = bottom_inflow[1] + fluid_length*np.sin(theta)
+    top_interface[0] = top_inflow[0] + fluid_length*np.cos(theta)
+    top_interface[1] = top_inflow[1] + fluid_length*np.sin(theta)
+
+    bottom_wall[0] = bottom_interface[0] + wall_length*np.cos(theta)
+    bottom_wall[1] = bottom_interface[1] + wall_length*np.sin(theta)
+    top_wall[0] = top_interface[0] + wall_length*np.cos(theta)
+    top_wall[1] = top_interface[1] + wall_length*np.sin(theta)
+
+    from meshmode.mesh.io import (
+        generate_gmsh,
+        ScriptSource
+    )
+
+    # for 2D, the line segments/surfaces need to be specified clockwise to
+    # get the correct facing (right-handed) surface normals
+    # for 3D this is the back plane
+    my_string = \
+        f"""
+        Point(1) = {{ {bottom_inflow[0]}, {bottom_inflow[1]},
+                      {bottom_inflow[2]}, {size}}};
+        Point(2) = {{ {bottom_interface[0]}, {bottom_interface[1]},
+                      {bottom_interface[2]}, {size}}};
+        Point(3) = {{ {top_interface[0]}, {top_interface[1]},
+                      {top_interface[2]}, {size}}};
+        Point(4) = {{ {top_inflow[0]}, {top_inflow[1]},
+                      {top_inflow[2]}, {size}}};
+        Point(5) = {{ {bottom_wall[0]}, {bottom_wall[1]},
+                      {bottom_wall[2]}, {size}}};
+        Point(6) = {{ {top_wall[0]}, {top_wall[1]},
+                      {top_wall[2]}, {size}}};
+        Line(1) = {{1, 2}};
+        Line(2) = {{2, 3}};
+        Line(3) = {{3, 4}};
+        Line(4) = {{4, 1}};
+        Line(5) = {{3, 6}};
+        Line(6) = {{2, 5}};
+        Line(7) = {{5, 6}};
+        Line Loop(1) = {{-4, -3, -2, -1}};
+        Line Loop(2) = {{2, 5, -7, -6}};
+        Plane Surface(1) = {{1}};
+        Plane Surface(2) = {{2}};
+
+        Physical Surface('fluid') = {{1}};
+        Physical Surface('wall') = {{2}};
+        Physical Curve('fluid_inflow') = {{4}};
+        Physical Curve('fluid_wall') = {{1,3}};
+        Physical Curve('fluid_wall_top') = {{3}};
+        Physical Curve('fluid_wall_bottom') = {{1}};
+        Physical Curve('interface') = {{2}};
+        Physical Curve('wall_farfield') = {{5, 6, 7}};
+        Physical Curve('solid_wall_top') = {{5}};
+        Physical Curve('solid_wall_bottom') = {{6}};
+        Physical Curve('solid_wall_end') = {{7}};
+        """
+
+    if transfinite:
+        transfinite_string = \
+            f"""
+            Transfinite Curve {{1, 3}} = {0.1} / {size};
+            Transfinite Curve {{5, 6}} = {0.02} / {size};
+            Transfinite Curve {{-2, 4, 7}}={0.02}/{size} Using Bump 1/{bl_ratio};
+            Transfinite Surface {{1, 2}} Right;
+            Mesh.MeshSizeExtendFromBoundary = 0;
+            Mesh.MeshSizeFromPoints = 0;
+            Mesh.MeshSizeFromCurvature = 0;
+            Mesh.Algorithm = 5;
+            Mesh.OptimizeNetgen = 1;
+            Mesh.Smoothing = 0;
+            """
+        my_string = my_string + transfinite_string
+    else:
+        mesh_tail = \
+            f"""
+            // Create distance field from curves, excludes cavity
+            Field[1] = Distance;
+            Field[1].CurvesList = {{1,3}};
+            Field[1].NumPointsPerCurve = 100000;
+
+            //Create threshold field that varrries element size near boundaries
+            Field[2] = Threshold;
+            Field[2].InField = 1;
+            Field[2].SizeMin = {size} / {bl_ratio};
+            Field[2].SizeMax = {size};
+            Field[2].DistMin = 0.0002;
+            Field[2].DistMax = 0.005;
+            Field[2].StopAtDistMax = 1;
+
+            //  background mesh size
+            Field[3] = Box;
+            Field[3].XMin = 0.;
+            Field[3].XMax = 1.0;
+            Field[3].YMin = -1.0;
+            Field[3].YMax = 1.0;
+            Field[3].VIn = {size};
+
+            // Create distance field from curves, excludes cavity
+            Field[4] = Distance;
+            Field[4].CurvesList = {{2}};
+            Field[4].NumPointsPerCurve = 100000;
+
+            //Create threshold field that varrries element size near boundaries
+            Field[5] = Threshold;
+            Field[5].InField = 4;
+            Field[5].SizeMin = {size} / {interface_ratio};
+            Field[5].SizeMax = {size};
+            Field[5].DistMin = 0.0002;
+            Field[5].DistMax = 0.005;
+            Field[5].StopAtDistMax = 1;
+
+            // take the minimum of all defined meshing fields
+            Field[100] = Min;
+            Field[100].FieldsList = {{2, 3, 5}};
+            Background Field = 100;
+
+            Mesh.MeshSizeExtendFromBoundary = 0;
+            Mesh.MeshSizeFromPoints = 0;
+            Mesh.MeshSizeFromCurvature = 0;
+
+            Mesh.Algorithm = 5;
+            Mesh.OptimizeNetgen = 1;
+            Mesh.Smoothing = 100;
+            """
+        my_string = my_string + mesh_tail
+
+    print(my_string)
+    from functools import partial
+    generate_mesh = partial(generate_gmsh, ScriptSource(my_string, "geo"),
+                            force_ambient_dim=dim, dimensions=dim,
+                            target_unit="M", return_tag_to_elements_map=True)
+
+    return generate_mesh
+
+
+def get_flash_mesh_3d(size, bl_ratio, interface_ratio,
+                      angle=0., transfinite=False,
+                      left_boundary_loc=-1, right_boundary_loc=1,
+                      bottom_boundary_loc=-1, top_boundary_loc=1):
+    """Generate a grid using `gmsh`.
+
+    """
+
+    dim = 3
     height = 0.02
     fluid_length = 0.1
     wall_length = 0.02
@@ -357,135 +519,132 @@ def get_flash_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     top_wall[0] = top_interface[0] + wall_length*np.cos(theta)
     top_wall[1] = top_interface[1] + wall_length*np.sin(theta)
 
-    if use_gmsh:
-        from meshmode.mesh.io import (
-            generate_gmsh,
-            ScriptSource
-        )
+    from meshmode.mesh.io import (
+        generate_gmsh,
+        ScriptSource
+    )
 
-        # for 2D, the line segments/surfaces need to be specified clockwise to
-        # get the correct facing (right-handed) surface normals
-        my_string = \
+    # for 2D, the line segments/surfaces need to be specified clockwise to
+    # get the correct facing (right-handed) surface normals
+    my_string = \
+        f"""
+        Point(1) = {{ {bottom_inflow[0]},  {bottom_inflow[1]}, 0, {size}}};
+        Point(2) = {{ {bottom_interface[0]}, {bottom_interface[1]},  0, {size}}};
+        Point(3) = {{ {top_interface[0]}, {top_interface[1]},    0, {size}}};
+        Point(4) = {{ {top_inflow[0]},  {top_inflow[1]},    0, {size}}};
+        Point(5) = {{ {bottom_wall[0]},  {bottom_wall[1]},    0, {size}}};
+        Point(6) = {{ {top_wall[0]},  {top_wall[1]},    0, {size}}};
+        Line(1) = {{1, 2}};
+        Line(2) = {{2, 3}};
+        Line(3) = {{3, 4}};
+        Line(4) = {{4, 1}};
+        Line(5) = {{3, 6}};
+        Line(6) = {{2, 5}};
+        Line(7) = {{5, 6}};
+        Line Loop(1) = {{-4, -3, -2, -1}};
+        Line Loop(2) = {{2, 5, -7, -6}};
+        Plane Surface(1) = {{1}};
+        Plane Surface(2) = {{2}};
+
+        fluid_surf_vec[] = Extrude {{0, 0, {height} }} {{ Surface{{1}}; }};
+        wall_surf_vec[] = Extrude {{0, 0, {height} }} {{ Surface{{2}}; }};
+
+        Coherence;
+
+        Physical Volume('fluid') = {{1}};
+        Physical Volume('wall') = {{2}};
+        Physical Surface('fluid_inflow') = {{16}};
+        Physical Surface('fluid_wall') = {{1, 20, 28, 29}};
+        Physical Surface('fluid_wall_top') = {{20}};
+        Physical Surface('fluid_wall_bottom') = {{28}};
+        Physical Surface('fluid_wall_fore') = {{29}};
+        Physical Surface('fluid_wall_aft') = {{1}};
+        Physical Surface('wall_farfield') = {{2, 42, 46, 50, 51}};
+        Physical Surface('solid_wall_top') = {{42}};
+        Physical Surface('solid_wall_bottom') = {{50}};
+        Physical Surface('solid_wall_fore') = {{51}};
+        Physical Surface('solid_wall_aft') = {{2}};
+        Physical Surface('solid_wall_end') = {{46}};
+        """
+
+    if transfinite:
+        # MJA, fixme
+        transfinite_string = \
             f"""
-            Point(1) = {{ {bottom_inflow[0]},  {bottom_inflow[1]}, 0, {size}}};
-            Point(2) = {{ {bottom_interface[0]}, {bottom_interface[1]},  0, {size}}};
-            Point(3) = {{ {top_interface[0]}, {top_interface[1]},    0, {size}}};
-            Point(4) = {{ {top_inflow[0]},  {top_inflow[1]},    0, {size}}};
-            Point(5) = {{ {bottom_wall[0]},  {bottom_wall[1]},    0, {size}}};
-            Point(6) = {{ {top_wall[0]},  {top_wall[1]},    0, {size}}};
-            Line(1) = {{1, 2}};
-            Line(2) = {{2, 3}};
-            Line(3) = {{3, 4}};
-            Line(4) = {{4, 1}};
-            Line(5) = {{3, 6}};
-            Line(6) = {{2, 5}};
-            Line(7) = {{5, 6}};
-            Line Loop(1) = {{-4, -3, -2, -1}};
-            Line Loop(2) = {{2, 5, -7, -6}};
-            Plane Surface(1) = {{1}};
-            Plane Surface(2) = {{2}};
-            Physical Surface('fluid') = {{1}};
-            Physical Surface('wall') = {{2}};
-            Physical Curve('fluid_inflow') = {{4}};
-            Physical Curve('fluid_wall') = {{1,3}};
-            Physical Curve('fluid_wall_top') = {{3}};
-            Physical Curve('fluid_wall_bottom') = {{1}};
-            Physical Curve('interface') = {{2}};
-            Physical Curve('wall_farfield') = {{5, 6, 7}};
-            Physical Curve('solid_wall_top') = {{5}};
-            Physical Curve('solid_wall_bottom') = {{6}};
-            Physical Curve('solid_wall_end') = {{7}};
+            Transfinite Curve {{1, 3}} = {0.1} / {size};
+            Transfinite Curve {{5, 6}} = {0.02} / {size};
+            Transfinite Curve {{-2, 4, 7}}={0.02}/{size} Using Bump 1/{bl_ratio};
+            Transfinite Surface {{1, 2}} Right;
+            Mesh.MeshSizeExtendFromBoundary = 0;
+            Mesh.MeshSizeFromPoints = 0;
+            Mesh.MeshSizeFromCurvature = 0;
+            Mesh.Algorithm = 5;
+            Mesh.OptimizeNetgen = 1;
+            Mesh.Smoothing = 0;
             """
-
-        if transfinite:
-            transfinite_string = \
-                f"""
-                Transfinite Curve {{1, 3}} = {0.1} / {size};
-                Transfinite Curve {{5, 6}} = {0.02} / {size};
-                Transfinite Curve {{-2, 4, 7}}={0.02}/{size} Using Bump 1/{bl_ratio};
-                Transfinite Surface {{1, 2}} Right;
-                Mesh.MeshSizeExtendFromBoundary = 0;
-                Mesh.MeshSizeFromPoints = 0;
-                Mesh.MeshSizeFromCurvature = 0;
-                Mesh.Algorithm = 5;
-                Mesh.OptimizeNetgen = 1;
-                Mesh.Smoothing = 0;
-                """
-            my_string = my_string + transfinite_string
-        else:
-            mesh_tail = \
-                f"""
-                // Create distance field from curves, excludes cavity
-                Field[1] = Distance;
-                Field[1].CurvesList = {{1,3}};
-                Field[1].NumPointsPerCurve = 100000;
-
-                //Create threshold field that varrries element size near boundaries
-                Field[2] = Threshold;
-                Field[2].InField = 1;
-                Field[2].SizeMin = {size} / {bl_ratio};
-                Field[2].SizeMax = {size};
-                Field[2].DistMin = 0.0002;
-                Field[2].DistMax = 0.005;
-                Field[2].StopAtDistMax = 1;
-
-                //  background mesh size
-                Field[3] = Box;
-                Field[3].XMin = 0.;
-                Field[3].XMax = 1.0;
-                Field[3].YMin = -1.0;
-                Field[3].YMax = 1.0;
-                Field[3].VIn = {size};
-
-                // Create distance field from curves, excludes cavity
-                Field[4] = Distance;
-                Field[4].CurvesList = {{2}};
-                Field[4].NumPointsPerCurve = 100000;
-
-                //Create threshold field that varrries element size near boundaries
-                Field[5] = Threshold;
-                Field[5].InField = 4;
-                Field[5].SizeMin = {size} / {interface_ratio};
-                Field[5].SizeMax = {size};
-                Field[5].DistMin = 0.0002;
-                Field[5].DistMax = 0.005;
-                Field[5].StopAtDistMax = 1;
-
-                // take the minimum of all defined meshing fields
-                Field[100] = Min;
-                Field[100].FieldsList = {{2, 3, 5}};
-                Background Field = 100;
-
-                Mesh.MeshSizeExtendFromBoundary = 0;
-                Mesh.MeshSizeFromPoints = 0;
-                Mesh.MeshSizeFromCurvature = 0;
-
-                Mesh.Algorithm = 5;
-                Mesh.OptimizeNetgen = 1;
-                Mesh.Smoothing = 100;
-                """
-            my_string = my_string + mesh_tail
-
-        # print(my_string)
-        from functools import partial
-        generate_mesh = partial(generate_gmsh, ScriptSource(my_string, "geo"),
-                                force_ambient_dim=2, dimensions=2, target_unit="M",
-                                return_tag_to_elements_map=True)
+        my_string = my_string + transfinite_string
     else:
-        char_len_x = 0.002
-        char_len_y = 0.001
-        box_ll = (left_boundary_loc, bottom_boundary_loc)
-        box_ur = (right_boundary_loc, top_boundary_loc)
-        num_elements = (int((box_ur[0]-box_ll[0])/char_len_x),
-                            int((box_ur[1]-box_ll[1])/char_len_y))
+        mesh_tail = \
+            f"""
+            // Create distance field from surfaces, fluid sides
+            Field[1] = Distance;
+            Field[1].SurfacesList = {{1, 20, 28, 29}};
+            Field[1].Sampling = 1000;
 
-        from meshmode.mesh.generation import generate_regular_rect_mesh
-        generate_mesh = partial(generate_regular_rect_mesh, a=box_ll, b=box_ur,
-                                n=num_elements, boundary_tag_to_face={
-                                    "Inflow": ["-x"],
-                                    "Outflow": ["+x"],
-                                    "Wall": ["+y", "-y"]
-                                })
+            //Create threshold field that varrries element size near boundaries
+            Field[2] = Threshold;
+            Field[2].InField = 1;
+            Field[2].SizeMin = {size} / {bl_ratio};
+            Field[2].SizeMax = {size};
+            Field[2].DistMin = 0.0002;
+            Field[2].DistMax = 0.010;
+            Field[2].StopAtDistMax = 1;
+
+            //  background mesh size
+            Field[3] = Box;
+            Field[3].XMin = 0.;
+            Field[3].XMax = 2.0;
+            Field[3].YMin = -1.0;
+            Field[3].YMax = 1.0;
+            Field[3].ZMin = -1.0;
+            Field[3].ZMax = 1.0;
+            Field[3].VIn = {size};
+
+            // Create distance field from surfaces, fluid/wall interface
+            Field[4] = Distance;
+            Field[4].SurfacesList = {{24}};
+            Field[4].Sampling = 1000;
+
+            //Create threshold field that varrries element size near boundaries
+            Field[5] = Threshold;
+            Field[5].InField = 4;
+            Field[5].SizeMin = {size} / {interface_ratio};
+            Field[5].SizeMax = {size};
+            Field[5].DistMin = 0.0002;
+            Field[5].DistMax = 0.010;
+            Field[5].StopAtDistMax = 1;
+
+            // take the minimum of all defined meshing fields
+            Field[100] = Min;
+            Field[100].FieldsList = {{2, 3, 5}};
+            Background Field = 100;
+
+            Mesh.MeshSizeExtendFromBoundary = 0;
+            Mesh.MeshSizeFromPoints = 0;
+            Mesh.MeshSizeFromCurvature = 0;
+
+            Mesh.Algorithm = 5;
+            Mesh.Algorithm3D = 10;
+            Mesh.OptimizeNetgen = 1;
+            Mesh.Smoothing = 100;
+            """
+        my_string = my_string + mesh_tail
+
+    print(my_string)
+    from functools import partial
+    generate_mesh = partial(generate_gmsh, ScriptSource(my_string, "geo"),
+                            force_ambient_dim=dim, dimensions=dim, target_unit="M",
+                            return_tag_to_elements_map=True)
 
     return generate_mesh
 
@@ -497,11 +656,18 @@ def get_mesh_data(dim, mesh_angle, mesh_size, bl_ratio, interface_ratio,
     # mesh, tag_to_elements = read_gmsh(
     # mesh_filename, force_ambient_dim=dim,
     # return_tag_to_elements_map=True)
-    mesh, tag_to_elements = get_flash_mesh(dim=dim, angle=mesh_angle,
-                                           use_gmsh=True, size=mesh_size,
-                                           bl_ratio=bl_ratio,
-                                           interface_ratio=interface_ratio,
-                                           transfinite=transfinite)()
+    if dim == 2:
+        mesh, tag_to_elements = get_flash_mesh_2d(angle=mesh_angle,
+                                                  size=mesh_size,
+                                                  bl_ratio=bl_ratio,
+                                                  interface_ratio=interface_ratio,
+                                                  transfinite=transfinite)()
+    else:
+        mesh, tag_to_elements = get_flash_mesh_3d(angle=mesh_angle,
+                                                  size=mesh_size,
+                                                  bl_ratio=bl_ratio,
+                                                  interface_ratio=interface_ratio,
+                                                  transfinite=transfinite)()
 
     volume_to_tags = {
         "fluid": ["fluid"],
