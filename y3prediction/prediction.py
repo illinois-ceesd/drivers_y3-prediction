@@ -1553,8 +1553,8 @@ def main(ctx_factory=cl.create_some_context,
     # Helper functions for building states #
     ########################################
 
-    def _create_fluid_state(cv, temperature_seed, smoothness_mu=None,
-                            smoothness_beta=None, smoothness_kappa=None):
+    def _create_fluid_state(cv, temperature_seed, smoothness_mu,
+                            smoothness_beta, smoothness_kappa):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
                                 smoothness_mu=smoothness_mu,
@@ -1811,11 +1811,14 @@ def main(ctx_factory=cl.create_some_context,
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
 
         # create a fluid state so we can compute grad_t and grad_cv
-        restart_fluid_state = create_fluid_state(cv=restart_cv,
-                                                 temperature_seed=temperature_seed)
         restart_av_smu = actx.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.zeros_like(restart_cv.mass)
+        restart_fluid_state = create_fluid_state(cv=restart_cv,
+                                                 temperature_seed=temperature_seed,
+                                                 smoothness_mu=restart_av_smu,
+                                                 smoothness_beta=restart_av_sbeta,
+                                                 smoothness_kappa=restart_av_skappa)
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,

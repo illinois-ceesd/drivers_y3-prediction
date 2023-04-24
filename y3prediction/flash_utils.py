@@ -474,7 +474,7 @@ def get_flash_mesh_2d(size, bl_ratio, interface_ratio, angle=0.,
             """
         my_string = my_string + mesh_tail
 
-    print(my_string)
+    #print(my_string)
     from functools import partial
     generate_mesh = partial(generate_gmsh, ScriptSource(my_string, "geo"),
                             force_ambient_dim=dim, dimensions=dim,
@@ -640,7 +640,7 @@ def get_flash_mesh_3d(size, bl_ratio, interface_ratio,
             """
         my_string = my_string + mesh_tail
 
-    print(my_string)
+    #print(my_string)
     from functools import partial
     generate_mesh = partial(generate_gmsh, ScriptSource(my_string, "geo"),
                             force_ambient_dim=dim, dimensions=dim, target_unit="M",
