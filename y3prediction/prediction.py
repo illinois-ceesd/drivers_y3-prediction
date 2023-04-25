@@ -1619,7 +1619,10 @@ def main(ctx_factory=cl.create_some_context,
         restart_cv = bulk_init(
             dcoll=dcoll, x_vec=fluid_nodes, eos=eos,
             time=0)
+
+        restart_cv = force_evaluation(actx, restart_cv)
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
+        temperature_seed = force_evaluation(actx, temperature_seed)
 
         # create a fluid state so we can compute grad_t and grad_cv
         restart_fluid_state = create_fluid_state(cv=restart_cv,
@@ -1681,6 +1684,9 @@ def main(ctx_factory=cl.create_some_context,
         target_av_skappa = restart_av_skappa
 
     target_cv = force_evaluation(actx, target_cv)
+    target_av_smu = force_evaluation(actx, target_av_smu)
+    target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+    target_av_skappa = force_evaluation(actx, target_av_skappa)
 
     target_fluid_state = create_fluid_state(cv=target_cv,
                                             temperature_seed=temperature_seed,
@@ -1746,6 +1752,10 @@ def main(ctx_factory=cl.create_some_context,
                     cv=target_cv, dv=target_fluid_state.dv, grad_t=target_grad_t)
                 target_av_smu = compute_smoothness_mu_compiled(
                     cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+
+            target_av_smu = force_evaluation(actx, target_av_smu)
+            target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+            target_av_skappa = force_evaluation(actx, target_av_skappa)
 
             target_fluid_state = create_fluid_state(
                 cv=target_cv, temperature_seed=temperature_seed,

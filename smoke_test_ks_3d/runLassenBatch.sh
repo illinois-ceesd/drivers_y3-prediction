@@ -1,7 +1,7 @@
 #! /bin/bash --login
 #BSUB -nnodes 1
 #BSUB -G uiuc
-#BSUB -W 60
+#BSUB -W 120
 #BSUB -J pred_smoke
 #BSUB -q pdebug
 #BSUB -o runOutput.txt
