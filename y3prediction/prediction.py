@@ -1808,7 +1808,10 @@ def main(ctx_factory=cl.create_some_context,
             restart_cv = fluid_init(dcoll=dcoll, x_vec=fluid_nodes, eos=eos, time=0)
         else:
             restart_cv = fluid_init(x_vec=fluid_nodes, eos=eos, time=0)
+
+        restart_cv = force_evaluation(actx, restart_cv)
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
+        temperature_seed = force_evaluation(actx, temperature_seed)
 
         # create a fluid state so we can compute grad_t and grad_cv
         restart_av_smu = actx.zeros_like(restart_cv.mass)
@@ -1872,27 +1875,15 @@ def main(ctx_factory=cl.create_some_context,
         target_av_skappa = restart_av_skappa
 
     target_cv = force_evaluation(actx, target_cv)
+    target_av_smu = force_evaluation(actx, target_av_smu)
+    target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+    target_av_skappa = force_evaluation(actx, target_av_skappa)
 
     target_fluid_state = create_fluid_state(cv=target_cv,
                                             temperature_seed=temperature_seed,
                                             smoothness_mu=target_av_smu,
                                             smoothness_beta=target_av_sbeta,
                                             smoothness_kappa=target_av_skappa)
-
-    if init_name == "ACTII":
-        from y3prediction.actii_y3 import get_boundaries
-        fluid_boundaries, wall_boundaries, target_boundaries = \
-            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall,
-                           use_injection, quadrature_tag, gas_model,
-                           noslip, adiabatic, temp_wall, target_fluid_state)
-    elif init_name == "Flash1D":
-        from y3prediction.flash_utils import get_boundaries
-        fluid_boundaries, wall_boundaries, target_boundaries = \
-            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, noslip,
-                           adiabatic, periodic, temp_wall, gas_model, quadrature_tag,
-                           target_fluid_state)
-
-    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
@@ -1934,10 +1925,31 @@ def main(ctx_factory=cl.create_some_context,
             target_av_smu = compute_smoothness_mu_compiled(
                 cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
 
+        target_av_smu = force_evaluation(actx, target_av_smu)
+        target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+        target_av_skappa = force_evaluation(actx, target_av_skappa)
+
         target_fluid_state = create_fluid_state(
             cv=target_cv, temperature_seed=temperature_seed,
             smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
             smoothness_kappa=target_av_skappa)
+
+    ##################################
+    # Set up the boundary conditions #
+    ##################################
+
+    if init_name == "ACTII":
+        from y3prediction.actii_y3 import get_boundaries
+        fluid_boundaries, wall_boundaries, target_boundaries = \
+            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall,
+                           use_injection, quadrature_tag, gas_model,
+                           noslip, adiabatic, temp_wall, target_fluid_state)
+    elif init_name == "Flash1D":
+        from y3prediction.flash_utils import get_boundaries
+        fluid_boundaries, wall_boundaries, target_boundaries = \
+            get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, noslip,
+                           adiabatic, periodic, temp_wall, gas_model, quadrature_tag,
+                           target_fluid_state)
 
     # finish initializing the smoothness for non-restarts
     if not restart_filename:
@@ -2920,12 +2932,14 @@ def main(ctx_factory=cl.create_some_context,
 
     def my_post_step(step, t, dt, state):
 
-        if step == 1:
+        if step == first_step+2:
             with gc_timer.start_sub_timer():
                 import gc
                 gc.collect()
                 # Freeze the objects that are still alive so they will not
                 # be considered in future gc collections.
+                logger.info("Freezing GC objects to reduce overhead of "
+                            "future GC collections")
                 gc.freeze()
 
         if logmgr:
