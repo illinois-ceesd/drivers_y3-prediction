@@ -18,6 +18,7 @@ SAMPFAC="4"
 OUTPUT="actii"
 MKLINK="false"
 OVRWT="false"
+NELEM="0"
 
 while [[ $# -gt 0 ]]; do
   arg=$1
@@ -65,6 +66,9 @@ while [[ $# -gt 0 ]]; do
     --output=*)
         OUTPUT=${arg#*=}
         ;;
+    --nelem=*)
+        NELEM=${arg#*=}
+        ;;
     --link)
         MKLINK="true"
         ;;
@@ -94,7 +98,9 @@ printf "Cavity factor: ${CAVFAC}\n"
 printf "Injector factor: ${INJFAC}\n"
 printf "Shear layer factor: ${SHEARFAC}\n"
 printf "Sample factor: ${SAMPFAC}\n"
+
 if [[ "${OVRWT}" == "true" ]]; then
+    rm -f ${OUTPUT}_${NELEM}.msh
     rm -f ${OUTPUT}.msh
     MKLINK="true"
 fi
@@ -106,6 +112,13 @@ if [[ "${MKLINK}" == "true" ]]; then
     fi
     printf "Make link ${OUTPUT}.msh for finished mesh.\n"
 fi
+if [[ ! -f ${OUTPUT}_${NELEM}.msh ]]; then
+    date
+    set -x
+    rm -f tmp.msh
+    gmsh -setnumber size ${SIZE} -setnumber blratio ${BLRAT} -setnumber cavityfac ${CAVFAC} -setnumber isofac ${ISOFAC} -setnumber samplefac ${SAMPFAC} -setnumber injectorfac ${INJFAC} -setnumber blratiocavity ${BLCAVRAT} -setnumber blratioinjector ${BLINJRAT} -setnumber blratiosample ${BLSAMPRAT} -setnumber blratiosurround ${BLSURRRAT} -setnumber shearfac ${SHEARFAC} -o tmp.msh -nopopup -format msh2 ./actii_from_brep.geo -3 -nt ${NCPUS}
+    set +x
+    date
 
 date
 set -x
@@ -120,13 +133,11 @@ if [ -f "tmp.msh" ]; then
         printf "Mesh creation failed.\n"
         exit 1
     fi
-    mv tmp.msh ${OUTPUT}_${NCELLS}.msh
-    printf "Created ${OUTPUT}_${NCELLS}.msh with ${NCELLS} tets.\n"
-    if [[ "${MKLINK}" == "true" ]]; then
-        ln -s ${OUTPUT}_${NCELLS}.msh ${OUTPUT}.msh
-    fi
 else
-    printf "Mesh creation failed."
-    exit 1
+    printf "Expected mesh file already exists, skipping mesh creation.\n"
+    if [[ "${MKLINK}" == "true" ]]; then
+        ln -s ${OUTPUT}_${NELEM}.msh ${OUTPUT}.msh
+    fi
 fi
+
 

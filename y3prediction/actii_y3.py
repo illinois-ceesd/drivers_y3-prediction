@@ -667,3 +667,141 @@ class InitACTII:
             energy=energy,
             species_mass=mass*y
         )
+
+
+def get_mesh_data(mesh_filename=None, dim=None):
+    if any([mesh_filename, dim]) is None:
+        raise ValueError("ACTII grid initialization requires filename and"
+                         " dimension.")
+
+    from meshmode.mesh.io import read_gmsh
+    print(f"Reading {dim}D mesh from {mesh_filename}")
+
+    mesh, tag_to_elements = read_gmsh(
+        mesh_filename, force_ambient_dim=dim,
+        return_tag_to_elements_map=True)
+
+    volume_to_tags = {
+        "fluid": ["fluid"],
+        "wall": ["wall_insert", "wall_surround"]}
+
+    return mesh, tag_to_elements, volume_to_tags
+
+
+def get_boundaries(dcoll, actx, dd_vol_fluid, dd_vol_wall, use_injection,
+                   quadrature_tag, gas_model, noslip, adiabatic,
+                   temp_wall, target_fluid_state):
+
+    from mirgecom.boundary import (
+        PrescribedFluidBoundary,
+        IsothermalWallBoundary,
+        AdiabaticSlipBoundary,
+        AdiabaticNoslipWallBoundary,
+        DummyBoundary
+    )
+    from mirgecom.diffusion import (
+        DirichletDiffusionBoundary
+    )
+    from mirgecom.simutil import force_evaluation
+    from mirgecom.gas_model import project_fluid_state
+
+    # use dummy boundaries to setup the smoothness state for the target
+    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
+    inflow_bnd = dd_vol_fluid.trace("inflow")
+    outflow_bnd = dd_vol_fluid.trace("outflow")
+    inj_bnd = dd_vol_fluid.trace("injection")
+    flow_bnd = dd_vol_fluid.trace("flow")
+    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
+
+    if use_injection:
+        target_boundaries = {
+            flow_bnd.domain_tag:  # pylint: disable=no-member
+            DummyBoundary(),
+            wall_bnd.domain_tag:  # pylint: disable=no-member
+            IsothermalWallBoundary()
+        }
+    else:
+        target_boundaries = {
+            inflow_bnd.domain_tag:   # pylint: disable=no-member
+            DummyBoundary(),
+            outflow_bnd.domain_tag:  # pylint: disable=no-member
+            DummyBoundary(),
+            inj_bnd.domain_tag:      # pylint: disable=no-member
+            IsothermalWallBoundary(),
+            wall_bnd.domain_tag:     # pylint: disable=no-member
+            IsothermalWallBoundary()
+        }
+
+    ##################################
+    # Set up the boundary conditions #
+    ##################################
+
+    def get_target_state_on_boundary(btag):
+        return project_fluid_state(
+            dcoll, dd_vol_fluid,
+            dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
+            target_fluid_state, gas_model
+        )
+
+    flow_ref_state = \
+        get_target_state_on_boundary("flow")
+
+    flow_ref_state = force_evaluation(actx, flow_ref_state)
+
+    def _target_flow_state_func(**kwargs):
+        return flow_ref_state
+
+    flow_boundary = PrescribedFluidBoundary(
+        boundary_state_func=_target_flow_state_func)
+
+    inflow_ref_state = \
+        get_target_state_on_boundary("inflow")
+
+    inflow_ref_state = force_evaluation(actx, inflow_ref_state)
+
+    def _target_inflow_state_func(**kwargs):
+        return inflow_ref_state
+
+    inflow_boundary = PrescribedFluidBoundary(
+        boundary_state_func=_target_inflow_state_func)
+
+    outflow_ref_state = \
+        get_target_state_on_boundary("outflow")
+
+    outflow_ref_state = force_evaluation(actx, outflow_ref_state)
+
+    def _target_outflow_state_func(**kwargs):
+        return outflow_ref_state
+
+    outflow_boundary = PrescribedFluidBoundary(
+        boundary_state_func=_target_outflow_state_func)
+    #outflow_pressure = 2000
+    #outflow_boundary = PressureOutflowBoundary(outflow_pressure)
+
+    if noslip:
+        if adiabatic:
+            fluid_wall = AdiabaticNoslipWallBoundary()
+        else:
+            fluid_wall = IsothermalWallBoundary(temp_wall)
+    else:
+        fluid_wall = AdiabaticSlipBoundary()
+
+    wall_farfield = DirichletDiffusionBoundary(temp_wall)
+
+    if use_injection:
+        fluid_boundaries = {
+            flow_bnd.domain_tag: flow_boundary,   # pylint: disable=no-member
+            wall_bnd.domain_tag: fluid_wall  # pylint: disable=no-member
+        }
+    else:
+        fluid_boundaries = {
+            inflow_bnd.domain_tag: inflow_boundary,    # pylint: disable=no-member
+            outflow_bnd.domain_tag: outflow_boundary,  # pylint: disable=no-member
+            inj_bnd.domain_tag: fluid_wall,       # pylint: disable=no-member
+            wall_bnd.domain_tag: fluid_wall       # pylint: disable=no-member
+        }
+
+    wall_boundaries = {
+        wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
+    }
+    return fluid_boundaries, wall_boundaries, target_boundaries

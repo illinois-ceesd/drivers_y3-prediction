@@ -38,7 +38,7 @@ cd ${TOP_PATH}
 TOP_PATH=$(pwd)
 printf "Driver directory: ${TOP_PATH}\n"
 
-python -m pip install .
+python -m pip install -e .
 
 date
 
@@ -60,12 +60,7 @@ do
     # Create 3d mesh if not already there
     if [[ "${test_name}" == *"_3d"* ]]; then
         cd data
-        rm actii.msh
-        if [[ -f "actii_24110.msh" ]]; then
-            ln -s actii_24110.msh actii.msh
-        else
-            ./mkmsh --size=48 --link  # will not overwrite if exists
-        fi
+        ./mkmsh --size=48 --nelem=24110 --link  # will not overwrite if exists
         cd ../
     fi
 
@@ -99,6 +94,11 @@ do
     cd ${TOP_PATH}/${test_path}
     
     # Create 3d mesh unless already there
+<<<<<<< HEAD
+    cd data
+    ./mkmsh --size=30.5 --nelem=47908 --link  # will not overwrite if it exists
+    cd ../
+=======
     if [ "${test_name}" == "smoke_test_ks_3d" ]; then
         cd data 
         rm actii.msh
@@ -109,6 +109,7 @@ do
         fi
         cd ../
     fi
+>>>>>>> main
 
     # Run the case
     $MPI_EXEC -n 2 $PARALLEL_SPAWNER python -u -m mpi4py driver.py -i run_params.yaml --log --lazy
