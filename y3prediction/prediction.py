@@ -201,7 +201,7 @@ def main(ctx_factory=cl.create_some_context,
          restart_filename=None, target_filename=None,
          use_profiling=False, use_logmgr=True, user_input_file=None,
          use_overintegration=False, actx_class=None, casename=None,
-         lazy=False, log_path="log_data"):
+         lazy=False, log_path="log_data", use_esdg=False):
 
     if actx_class is None:
         raise RuntimeError("Array context class missing.")
@@ -1157,12 +1157,15 @@ def main(ctx_factory=cl.create_some_context,
     if rank == 0:
         logger.info("Making discretization")
 
+    use_overintegration = use_overintegration or use_esdg
+
     dcoll = create_discretization_collection(
         actx,
         volume_meshes={
             vol: mesh
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-        order=order)
+        order=order,
+        quadrature_order=order+2)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:

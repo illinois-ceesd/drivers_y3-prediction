@@ -20,6 +20,8 @@ if __name__ == "__main__":
                         action="store", help="simulation case name")
     parser.add_argument("-g", "--logpath", type=ascii, dest="log_path", nargs="?",
                         action="store", help="simulation case name")
+    parser.add_argument("--esdg", action="store_true", default=False,
+                        help="enable entropy-stable for inviscid terms. [OFF]")
     parser.add_argument("--profile", action="store_true", default=False,
                         help="enable kernel profiling [OFF]")
     parser.add_argument("--log", action="store_true", default=False,
@@ -73,5 +75,6 @@ if __name__ == "__main__":
     main(restart_filename=restart_filename, target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
          use_profiling=args.profile, use_logmgr=args.log,
-         use_overintegration=args.overintegration, lazy=lazy,
-         actx_class=actx_class, casename=casename)
+         use_overintegration=args.overintegration or args.esdg,
+         actx_class=actx_class, casename=casename, lazy=lazy,
+         use_esdg=args.esdg)
