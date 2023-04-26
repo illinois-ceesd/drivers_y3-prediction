@@ -40,7 +40,7 @@ if __name__ == "__main__":
         casename = args.casename.replace("'", "")
     else:
         print(f"Default casename {casename}")
-    lazy = args.lazy
+    lazy = args.lazy or args.esdg
     if args.profile:
         if lazy:
             raise ValueError("Can't use lazy and profiling together.")
@@ -77,4 +77,4 @@ if __name__ == "__main__":
          use_profiling=args.profile, use_logmgr=args.log,
          use_overintegration=args.overintegration or args.esdg,
          actx_class=actx_class, casename=casename,
-         lazy=lazy or args.esdg, use_esdg=args.esdg)
+         lazy=lazy, use_esdg=args.esdg)
