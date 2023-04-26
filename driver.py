@@ -76,5 +76,5 @@ if __name__ == "__main__":
          user_input_file=input_file, log_path=log_path,
          use_profiling=args.profile, use_logmgr=args.log,
          use_overintegration=args.overintegration or args.esdg,
-         actx_class=actx_class, casename=casename, lazy=lazy,
-         use_esdg=args.esdg)
+         actx_class=actx_class, casename=casename,
+         lazy=lazy or args.esdg, use_esdg=args.esdg)

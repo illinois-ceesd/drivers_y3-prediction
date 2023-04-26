@@ -94,7 +94,10 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     coupled_grad_t_operator,
     coupled_ns_heat_operator
 )
-from mirgecom.navierstokes import grad_cv_operator, grad_t_operator
+from mirgecom.navierstokes import (
+    grad_cv_operator, grad_t_operator,
+    ns_operator, entropy_stable_ns_operator
+)
 # driver specific utilties
 from y3prediction.utils import (
     getIsentropicPressure,
@@ -1158,6 +1161,7 @@ def main(ctx_factory=cl.create_some_context,
         logger.info("Making discretization")
 
     use_overintegration = use_overintegration or use_esdg
+    fluid_operator = entropy_stable_ns_operator if use_esdg else ns_operator
 
     dcoll = create_discretization_collection(
         actx,
@@ -2896,7 +2900,7 @@ def main(ctx_factory=cl.create_some_context,
             fluid_state=fluid_state,
             wall_kappa=wdv.thermal_conductivity,
             wall_temperature=wdv.temperature,
-            time=t,
+            time=t, fluid_operator=fluid_operator,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
