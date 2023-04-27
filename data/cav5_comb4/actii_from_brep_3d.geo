@@ -65,6 +65,12 @@ Else
     cavity_factor=1.0;
 EndIf
 
+If(Exists(nozzlefac))
+    nozzle_factor=nozzlefac;
+Else
+    nozzle_factor=12.0;
+EndIf
+
 If(Exists(samplefac))
     sample_factor=samplefac;
 Else
@@ -80,7 +86,7 @@ inj_l = 20; // length of injector
 bigsize = basesize*4;     // the biggest mesh size 
 inletsize = basesize*2;   // background mesh size upstream of the nozzle
 isosize = basesize/iso_factor;       // background mesh size in the isolator
-nozzlesize = basesize/12;       // background mesh size in the nozzle
+nozzlesize = basesize/nozzle_factor;       // background mesh size in the nozzle
 cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
 shearsize = isosize/shear_factor; // background mesh size in the shear region
 samplesize = basesize/sample_factor;       // background mesh size in the sample
