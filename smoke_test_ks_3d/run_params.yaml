@@ -24,6 +24,8 @@ dimen: 3
 wall_time_scale: 100
 wall_penalty_amount: 0
 wall_material: 2
+use_wall_mass: True
+use_wall_ox: False
 
 ##############
 # model control

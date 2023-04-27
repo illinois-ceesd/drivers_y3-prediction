@@ -3055,15 +3055,17 @@ def main(ctx_factory=cl.create_some_context,
                                   current_cfl, t_final, constant_cfl)
     """
 
-    current_step, current_t, stepper_state = \
-        advance_state(rhs=my_rhs, timestepper=timestepper,
-                      pre_step_callback=my_pre_step,
-                      post_step_callback=my_post_step,
-                      istep=current_step, dt=current_dt,
-                      t=current_t, t_final=t_final,
-                      force_eval=force_eval,
-                      state=stepper_state,
-                      compile_rhs=False)
+    advance_time = False
+    if advance_time:
+        current_step, current_t, stepper_state = \
+            advance_state(rhs=my_rhs, timestepper=timestepper,
+                          pre_step_callback=my_pre_step,
+                          post_step_callback=my_post_step,
+                          istep=current_step, dt=current_dt,
+                          t=current_t, t_final=t_final,
+                          force_eval=force_eval,
+                          state=stepper_state,
+                          compile_rhs=False)
     current_cv, tseed, current_av_smu, current_av_sbeta, \
         current_av_skappa, current_wv = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,

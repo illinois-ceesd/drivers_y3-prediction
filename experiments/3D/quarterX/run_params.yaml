@@ -23,16 +23,16 @@ t_final: 1.e-11
 ##############
 wall_time_scale: 1
 wall_penalty_amount: 0
-wall_material: 2
-use_wall_mass: False
-use_wall_ox: False
+wall_material: 0
+use_wall_mass: True
+use_wall_ox: True
 
 ##############
 # model control
 ##############
 nlimit: 100
 use_species_limiter: 0
-use_av: 1
+use_av: 0
 alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
