@@ -286,6 +286,7 @@ def main(ctx_factory=cl.create_some_context,
     viz_interval_type = configurate("viz_interval_type", input_data, 0)
 
     # default timestepping control
+    advance_time = configurate("advance_time", input_data, "True")
     integrator = configurate("integrator", input_data, "rk4")
     current_dt = configurate("current_dt", input_data, 1.e-8)
     t_final = configurate("t_final", input_data, 1.e-7)
@@ -3055,7 +3056,6 @@ def main(ctx_factory=cl.create_some_context,
                                   current_cfl, t_final, constant_cfl)
     """
 
-    advance_time = False
     if advance_time:
         current_step, current_t, stepper_state = \
             advance_state(rhs=my_rhs, timestepper=timestepper,

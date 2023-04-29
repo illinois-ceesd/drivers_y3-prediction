@@ -3,6 +3,7 @@
 ##############
 mesh_filename: data/actii_3d.msh
 use_1d_part: True
+advance_time: False
 nviz: 1
 nrestart: 5000
 nhealth: 1
