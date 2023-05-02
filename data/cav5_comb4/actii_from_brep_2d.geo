@@ -180,8 +180,41 @@ Field[2].InField = 1;
 Field[2].SizeMin = isosize / boundratio;
 Field[2].SizeMax = isosize;
 Field[2].DistMin = 0.02;
-Field[2].DistMax = 10;
+Field[2].DistMax = 20;
 Field[2].StopAtDistMax = 1;
+
+//Create threshold field that varrries element size near boundaries
+//this is for the nozzle only
+Field[2002] = Threshold;
+Field[2002].InField = 1;
+Field[2002].SizeMin = nozzlesize / boundratio;
+Field[2002].SizeMax = isosize;
+Field[2002].DistMin = 0.02;
+Field[2002].DistMax = 15;
+Field[2002].StopAtDistMax = 1;
+
+//Create threshold field that varrries element size near boundaries
+//this is for the nozzle expansion only
+Field[2003] = Threshold;
+Field[2003].InField = 1;
+Field[2003].SizeMin = 1.5*nozzlesize / boundratio;
+Field[2003].SizeMax = isosize;
+Field[2003].DistMin = 0.02;
+Field[2003].DistMax = 20;
+Field[2003].StopAtDistMax = 1;
+
+sigma = 25;
+nozzle_start = 270;
+nozzle_end = 325;
+nozzle_exp_end = 375;
+
+// restrict the nozzle bl meshing to the nozzle only
+Field[2010] = MathEval;
+Field[2010].F = Sprintf("F2 + (F2002 - F2)*(0.5*(1.0 - tanh(%g*(x - %g))))*(0.5*(1.0 - tanh(%g*(%g - x))))", sigma, nozzle_end, sigma, nozzle_start);
+
+// restrict the nozzle expansion bl meshing to the nozzle expansion only
+Field[2011] = MathEval;
+Field[2011].F = Sprintf("F2 + (F2003 - F2)*(0.5*(1.0 - tanh(%g*(x - %g))))*(0.5*(1.0 - tanh(%g*(%g - x))))", sigma, nozzle_exp_end, sigma, nozzle_end);
 
 // Create distance field from surfaces for wall meshing, excludes cavity, injector
 Field[101] = Distance;
@@ -276,8 +309,6 @@ Field[18].DistMax = 5;
 Field[18].StopAtDistMax = 1;
 //
 //  background mesh size in the isolator (downstream of the nozzle)
-nozzle_start = 270;
-nozzle_end = 300;
 Field[3] = Box;
 Field[3].XMin = nozzle_end;
 Field[3].XMax = 1000.0;
@@ -310,12 +341,10 @@ Field[5].ZMax = 1000.0;
 Field[5].Thickness = 100;    // interpolate from VIn to Vout over a distance around the box
 Field[5].VIn = nozzlesize;
 Field[5].VOut = bigsize;
-//
+
 // background mesh size in the nozzle expansion to isolator
-nozzle_exp_start = 300;
-nozzle_exp_end = 350;
 Field[105] = Box;
-Field[105].XMin = nozzle_exp_start;
+Field[105].XMin = nozzle_end;
 Field[105].XMax = nozzle_exp_end;
 Field[105].YMin = -1000.0;
 Field[105].YMax = 1000.0;
@@ -397,7 +426,13 @@ Field[21].InField = 7;
 Field[100] = Min;
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 7, 12, 14};
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 20, 21};
-Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+//Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+//
+//Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+//Field[100].FieldsList = {2002, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+Field[100].FieldsList = {2010, 2011, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+
+
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102};
 Background Field = 100;
 
@@ -406,6 +441,6 @@ Mesh.MeshSizeFromPoints = 0;
 Mesh.MeshSizeFromCurvature = 0;
 
 
-Mesh.Algorithm = 4;
+Mesh.Algorithm = 8;
 Mesh.OptimizeNetgen = 1;
 Mesh.Smoothing = 100;

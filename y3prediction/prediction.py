@@ -289,6 +289,7 @@ def main(ctx_factory=cl.create_some_context,
     viz_interval_type = configurate("viz_interval_type", input_data, 0)
 
     # default timestepping control
+    advance_time = configurate("advance_time", input_data, "True")
     integrator = configurate("integrator", input_data, "rk4")
     current_dt = configurate("current_dt", input_data, 1.e-8)
     t_final = configurate("t_final", input_data, 1.e-7)
@@ -1449,7 +1450,7 @@ def main(ctx_factory=cl.create_some_context,
     compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
 
     def lmax(s):
-        b = 100
+        b = 1000
         return (s/np.pi*actx.np.arctan(b*s) +
                 0.5*s - 1/np.pi*actx.np.arctan(b) + 0.5)
 
@@ -1653,6 +1654,8 @@ def main(ctx_factory=cl.create_some_context,
             mass=wall_mass,
             energy=wall_mass * wall_cp * temp_wall,
             ox_mass=actx.zeros_like(wall_mass))
+
+    restart_wv = force_evaluation(actx, restart_wv)
 
     ##################################
     # Set up flow target state       #
@@ -2304,7 +2307,7 @@ def main(ctx_factory=cl.create_some_context,
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
-                viz_ext.extend(("grad_v_z", grad_v[2]))
+                viz_ext.extend([("grad_v_z", grad_v[2])])
 
             viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
                            for i in range(nspecies))
@@ -2888,7 +2891,7 @@ def main(ctx_factory=cl.create_some_context,
             operator_states_quad=operator_fluid_states)
         """
 
-        ns_rhs, wall_energy_rhs = coupled_ns_heat_operator(
+        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
             dcoll=dcoll,
             gas_model=gas_model,
             fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
@@ -2904,15 +2907,14 @@ def main(ctx_factory=cl.create_some_context,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
-        chem_rhs = actx.zeros_like(cv)
         if use_combustion:  # conditionals evaluated only once at compile time
-            chem_rhs =  \
+            fluid_rhs = fluid_rhs + \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
 
-        ignition_rhs = actx.zeros_like(cv)
         if use_ignition > 0:
-            ignition_rhs = ignition_source(x_vec=fluid_nodes, state=fluid_state,
-                                           eos=gas_model.eos, time=t)/current_dt
+            fluid_rhs = fluid_rhs + \
+                ignition_source(x_vec=fluid_nodes, state=fluid_state,
+                                eos=gas_model.eos, time=t)/current_dt
 
         av_smu_rhs = actx.zeros_like(cv.mass)
         av_sbeta_rhs = actx.zeros_like(cv.mass)
@@ -2961,11 +2963,10 @@ def main(ctx_factory=cl.create_some_context,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        sponge_rhs = actx.zeros_like(cv)
+        #sponge_rhs = actx.zeros_like(cv)
         if use_sponge:
-            sponge_rhs = _sponge_source(cv=cv)
-
-        fluid_rhs = ns_rhs + chem_rhs + sponge_rhs + ignition_rhs
+            fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
+            #sponge_rhs = _sponge_source(cv=cv)
 
         # wall mass loss
         wall_mass_rhs = actx.zeros_like(wv.mass)
@@ -3062,15 +3063,16 @@ def main(ctx_factory=cl.create_some_context,
                                   current_cfl, t_final, constant_cfl)
     """
 
-    current_step, current_t, stepper_state = \
-        advance_state(rhs=my_rhs, timestepper=timestepper,
-                      pre_step_callback=my_pre_step,
-                      post_step_callback=my_post_step,
-                      istep=current_step, dt=current_dt,
-                      t=current_t, t_final=t_final,
-                      force_eval=force_eval,
-                      state=stepper_state,
-                      compile_rhs=False)
+    if advance_time:
+        current_step, current_t, stepper_state = \
+            advance_state(rhs=my_rhs, timestepper=timestepper,
+                          pre_step_callback=my_pre_step,
+                          post_step_callback=my_post_step,
+                          istep=current_step, dt=current_dt,
+                          t=current_t, t_final=t_final,
+                          force_eval=force_eval,
+                          state=stepper_state,
+                          compile_rhs=False)
     current_cv, tseed, current_av_smu, current_av_sbeta, \
         current_av_skappa, current_wv = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,
