@@ -40,6 +40,14 @@ if __name__ == "__main__":
         casename = args.casename.replace("'", "")
     else:
         print(f"Default casename {casename}")
+
+    from warnings import warn
+    if args.esdg:
+        if not args.lazy:
+            warn("ESDG requires lazy-evaluation, enabling --lazy.")
+        if not args.overintegration:
+            warn("ESDG requires overintegration, enabling --overintegration.")
+
     lazy = args.lazy or args.esdg
     if args.profile:
         if lazy:

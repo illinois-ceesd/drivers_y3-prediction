@@ -14,8 +14,10 @@ constant_cfl: 0
 current_cfl: 0.05
 current_dt: 1e-10
 t_final: 2e-9
-nspecies:  2
-order:  2
+vel_sigma: 250
+temp_sigma: 250
+nspecies:  0
+order:  3
 alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5

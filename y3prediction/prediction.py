@@ -64,8 +64,11 @@ from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
                                   euler_step)
-from mirgecom.inviscid import (inviscid_facial_flux_rusanov,
-                               inviscid_facial_flux_hll)
+from mirgecom.inviscid import (
+    inviscid_facial_flux_rusanov,
+    inviscid_facial_flux_hll,
+    entropy_stable_inviscid_flux_rusanov
+)
 from grudge.shortcuts import compiled_lsrk45_step
 
 from mirgecom.fluid import make_conserved
@@ -316,6 +319,7 @@ def main(ctx_factory=cl.create_some_context,
 
     # discretization and model control
     order = configurate("order", input_data, 2)
+    quadrature_order = configurate("quadrature_order", input_data, -1)
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
@@ -621,11 +625,15 @@ def main(ctx_factory=cl.create_some_context,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    if inv_num_flux == "rusanov":
+    if use_esdg:
+        inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
+        if rank == 0:
+            print("\nEntropy stable inviscid flux (rusanov)")
+    elif inv_num_flux == "rusanov":
         inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
         if rank == 0:
             print("\nRusanov inviscid flux")
-    if inv_num_flux == "hll":
+    elif inv_num_flux == "hll":
         inviscid_numerical_flux_func = inviscid_facial_flux_hll
         if rank == 0:
             print("\nHLL inviscid flux")
@@ -685,7 +693,7 @@ def main(ctx_factory=cl.create_some_context,
         # working gas: Ar #
         mu_ar = 4.22e-5
         mu = mu_ar
-    if fluid_mu > 0:
+    if not fluid_mu < 0:
         mu = fluid_mu
 
     kappa = cp*mu/Pr
@@ -1170,7 +1178,7 @@ def main(ctx_factory=cl.create_some_context,
             vol: mesh
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
         order=order,
-        quadrature_order=order+2)
+        quadrature_order=quadrature_order)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
