@@ -57,8 +57,8 @@ from mirgecom.simutil import (
     write_visfile,
     check_naninf_local,
     check_range_local,
-    force_evaluation
 )
+from mirgecom.utils import force_evaluation
 from mirgecom.restart import write_restart_file
 from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
