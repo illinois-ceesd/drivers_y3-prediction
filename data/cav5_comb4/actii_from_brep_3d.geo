@@ -186,9 +186,9 @@ Field[2].StopAtDistMax = 1;
 //this is for the nozzle only
 Field[2002] = Threshold;
 Field[2002].InField = 1;
-Field[2002].SizeMin = nozzlesize/blrationozzle;
+Field[2002].SizeMin = nozzlesize/boundrationozzle;
 //Field[2002].SizeMax = isosize;
-Field[2002].SizeMax = nozzlesize/blrationozzle*(2.-1./blrationozzle);
+Field[2002].SizeMax = nozzlesize/boundrationozzle*(2.-1./boundrationozzle);
 Field[2002].DistMin = 0.02;
 Field[2002].DistMax = 5;
 Field[2002].StopAtDistMax = 1;
@@ -197,9 +197,9 @@ Field[2002].StopAtDistMax = 1;
 //this is for the nozzle expansion only
 Field[2003] = Threshold;
 Field[2003].InField = 1;
-Field[2003].SizeMin = 1.5*nozzlesize / blrationozzle;
+Field[2003].SizeMin = 1.5*nozzlesize / boundrationozzle;
 //Field[2003].SizeMax = isosize;
-Field[2002].SizeMax = 1.5*nozzlesize/blrationozzle*(2.-1./blrationozzle);
+Field[2002].SizeMax = 1.5*nozzlesize/boundrationozzle*(2.-1./boundrationozzle);
 Field[2003].DistMin = 0.02;
 Field[2003].DistMax = 5;
 Field[2003].StopAtDistMax = 1;
@@ -217,6 +217,26 @@ Field[2010].F = Sprintf("F2 + (F2002 - F2)*(0.5*(1.0 - tanh(%g*(x - %g))))*(0.5*
 Field[2011] = MathEval;
 Field[2011].F = Sprintf("F2 + (F2003 - F2)*(0.5*(1.0 - tanh(%g*(x - %g))))*(0.5*(1.0 - tanh(%g*(%g - x))))", sigma, nozzle_exp_end, sigma, nozzle_end);
 
+// Create distance field from corners for wall meshing, excludes cavity, injector
+Field[3001] = Distance;
+Field[3001].CurvesList = {
+    28, 29, // top fore
+    9, 12, // top aft
+    25, 24, 19, 15, 16, 17, // bottom aft
+    42, 41, 35, 36, 32, 33, 34 // bottom fore
+};
+Field[3001].Sampling = 1000;
+////
+//Create threshold field that varrries element size near boundaries
+blratiocorner = boundratio/4.;
+Field[3002] = Threshold;
+Field[3002].InField = 3001;
+Field[3002].SizeMin = isosize/blratiocorner;
+Field[3002].SizeMax = isosize/blratiocorner*(2.-1./blratiocorner);
+Field[3002].DistMin = 0.02;
+Field[3002].DistMax = 6.0;
+Field[3002].StopAtDistMax = 1;
+
 // Create distance field from surfaces for wall meshing in the combustor
 Field[101] = Distance;
 Field[101].SurfacesList = {
@@ -231,10 +251,10 @@ Field[101].Sampling = 1000;
 //Create threshold field that varrries element size near boundaries
 Field[102] = Threshold;
 Field[102].InField = 101;
-Field[102].SizeMin = isosize/blratiocomb;
+Field[102].SizeMin = isosize/boundratiocomb;
 //Field[102].SizeMax = isosize/3;
 //Field[102].SizeMax = isosize;
-Field[102].SizeMax = isosize/blratiocomb*(2.-1./blratiocomb);
+Field[102].SizeMax = isosize/boundratiocomb*(2.-1./boundratiocomb);
 Field[102].DistMin = 0.02;
 Field[102].DistMax = 8;
 Field[102].StopAtDistMax = 1;
@@ -479,7 +499,7 @@ Field[100] = Min;
 //Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
 //
 //Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
-Field[100].FieldsList = {2010, 2011, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
+Field[100].FieldsList = {3002, 2010, 2011, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
 Background Field = 100;
 
 Mesh.MeshSizeExtendFromBoundary = 0;
@@ -495,7 +515,7 @@ Mesh.MeshSizeFromCurvature = 0;
 //Mesh.Algorithm = 8;
 // HXT, re-implemented Delaunay in parallel
 Mesh.Algorithm3D = 10;
-Mesh.OptimizeNetgen = 1;
-Mesh.Smoothing = 100;
-//Mesh.Smoothing = 0;
-//Mesh.OptimizeNetgen = 0;
+//Mesh.OptimizeNetgen = 1;
+//Mesh.Smoothing = 100;
+Mesh.Smoothing = 0;
+Mesh.OptimizeNetgen = 0;
