@@ -66,10 +66,10 @@ from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
                                   euler_step)
 from mirgecom.inviscid import (
     inviscid_facial_flux_rusanov,
-    inviscid_facial_flux_hll,
-    entropy_stable_inviscid_flux_rusanov
+    inviscid_facial_flux_hll
 )
 from grudge.shortcuts import compiled_lsrk45_step
+from mirgecom.viscous import viscous_facial_flux_harmonic
 
 from mirgecom.fluid import make_conserved
 from mirgecom.limiter import bound_preserving_limiter
@@ -99,7 +99,7 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
 )
 from mirgecom.navierstokes import (
     grad_cv_operator, grad_t_operator,
-    ns_operator, entropy_stable_ns_operator
+    ns_operator
 )
 # driver specific utilties
 from y3prediction.utils import (
@@ -625,11 +625,8 @@ def main(ctx_factory=cl.create_some_context,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    if use_esdg:
-        inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
-        if rank == 0:
-            print("\nEntropy stable inviscid flux (rusanov)")
-    elif inv_num_flux == "rusanov":
+    viscous_numerical_flux_func = viscous_facial_flux_harmonic
+    if inv_num_flux == "rusanov":
         inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
         if rank == 0:
             print("\nRusanov inviscid flux")
@@ -1169,8 +1166,9 @@ def main(ctx_factory=cl.create_some_context,
     if rank == 0:
         logger.info("Making discretization")
 
-    use_overintegration = use_overintegration or use_esdg
-    fluid_operator = entropy_stable_ns_operator if use_esdg else ns_operator
+    rhs_operator = partial(ns_operator, use_esdg=use_esdg,
+                           inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                           viscous_numerical_flux_func=viscous_numerical_flux_func)
 
     dcoll = create_discretization_collection(
         actx,
@@ -2906,12 +2904,12 @@ def main(ctx_factory=cl.create_some_context,
             fluid_boundaries=fluid_boundaries,
             wall_boundaries=wall_boundaries,
             interface_noslip=noslip,
-            #interface_noslip=True,
-            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+            # interface_noslip=True,
+            # inviscid_numerical_flux_func=inviscid_numerical_flux_func,
             fluid_state=fluid_state,
             wall_kappa=wdv.thermal_conductivity,
             wall_temperature=wdv.temperature,
-            time=t, fluid_operator=fluid_operator,
+            time=t, ns_operator=rhs_operator,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
