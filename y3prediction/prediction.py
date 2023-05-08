@@ -24,9 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 import logging
-import sys
 import numpy as np
-import pyopencl as cl
 import numpy.linalg as la  # noqa
 import pyopencl.array as cla  # noqa
 import math
@@ -43,13 +41,7 @@ from grudge.dof_desc import DD_VOLUME_ALL
 from grudge.trace_pair import inter_volume_trace_pairs
 from grudge.discretization import filter_part_boundaries
 from logpyle import IntervalTimer, set_dt
-from mirgecom.logging_quantities import (
-    initialize_logmgr,
-    logmgr_add_cl_device_info,
-    logmgr_set_time,
-    logmgr_add_device_memory_usage,
-    logmgr_add_mempool_usage,
-)
+from mirgecom.logging_quantities import logmgr_set_time
 
 from mirgecom.simutil import (
     check_step,
@@ -61,7 +53,6 @@ from mirgecom.simutil import (
 from mirgecom.utils import force_evaluation
 from mirgecom.restart import write_restart_file
 from mirgecom.io import make_init_message
-from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
                                   euler_step)
 from mirgecom.inviscid import (inviscid_facial_flux_rusanov,
@@ -196,75 +187,14 @@ class _MuDiffFluidCommTag:
     pass
 
 
-@mpi_entry_point
-def main(ctx_factory=cl.create_some_context,
-         restart_filename=None, target_filename=None,
-         use_profiling=False, use_logmgr=True, user_input_file=None,
-         use_overintegration=False, actx_class=None, casename=None,
-         lazy=False, log_path="log_data"):
-
-    if actx_class is None:
-        raise RuntimeError("Array context class missing.")
-
-    # control log messages
-    logger = logging.getLogger(__name__)
-    logger.propagate = False
-
-    if (logger.hasHandlers()):
-        logger.handlers.clear()
-
-    # send info level messages to stdout
-    h1 = logging.StreamHandler(sys.stdout)
-    f1 = SingleLevelFilter(logging.INFO, False)
-    h1.addFilter(f1)
-    logger.addHandler(h1)
-
-    # send everything else to stderr
-    h2 = logging.StreamHandler(sys.stderr)
-    f2 = SingleLevelFilter(logging.INFO, True)
-    h2.addFilter(f2)
-    logger.addHandler(h2)
-
-    cl_ctx = ctx_factory()
-
-    from mpi4py import MPI
-    comm = MPI.COMM_WORLD
+def driver(comm, actx, logmgr, logger, casename,
+           restart_filename=None, target_filename=None,
+           user_input_file=None, use_overintegration=False):
     rank = comm.Get_rank()
     nparts = comm.Get_size()
 
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
-
-    if casename is None:
-        casename = "mirgecom"
-
-    # logging and profiling
-    logname = log_path + "/" + casename + ".sqlite"
-
-    if rank == 0:
-        import os
-        log_dir = os.path.dirname(logname)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-    comm.Barrier()
-
-    logmgr = initialize_logmgr(use_logmgr,
-        filename=logname, mode="wu", mpi_comm=comm)
-
-    if use_profiling:
-        queue = cl.CommandQueue(cl_ctx,
-            properties=cl.command_queue_properties.PROFILING_ENABLE)
-    else:
-        queue = cl.CommandQueue(cl_ctx)
-
-    # main array context for the simulation
-    from mirgecom.simutil import get_reasonable_memory_pool
-    alloc = get_reasonable_memory_pool(cl_ctx, queue)
-
-    if lazy:
-        actx = actx_class(comm, queue, mpi_base_tag=12000, allocator=alloc)
-    else:
-        actx = actx_class(comm, queue, allocator=alloc, force_device_scalars=True)
 
     # set up driver parameters
     from mirgecom.simutil import configurate
@@ -2018,12 +1948,9 @@ def main(ctx_factory=cl.create_some_context,
             oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
 
     vis_timer = None
-    monitor_memory = True
     monitor_performance = 2
 
     if logmgr:
-        logmgr_add_cl_device_info(logmgr, queue)
-
         vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
         logmgr.add_quantity(vis_timer)
 
@@ -2042,35 +1969,6 @@ def main(ctx_factory=cl.create_some_context,
                 ("t_gc.max", "| \t garbage collection time: {value:6g} s\n"),
                 ("t_log.max", "| \t log walltime: {value:6g} s\n")
             ])
-
-        if monitor_memory:
-            logmgr_add_device_memory_usage(logmgr, queue)
-            logmgr_add_mempool_usage(logmgr, alloc)
-
-            logmgr.add_watches([
-                ("memory_usage_python.max",
-                 "| Memory:\n| \t python memory: {value:7g} Mb\n")
-            ])
-
-            try:
-                logmgr.add_watches([
-                    ("memory_usage_gpu.max",
-                     "| \t gpu memory: {value:7g} Mb\n")
-                ])
-            except KeyError:
-                pass
-
-            logmgr.add_watches([
-                ("memory_usage_hwm.max",
-                 "| \t memory hwm: {value:7g} Mb\n"),
-                ("memory_usage_mempool_managed.max",
-                 "| \t mempool total: {value:7g} Mb\n"),
-                ("memory_usage_mempool_active.max",
-                 "| \t mempool active: {value:7g} Mb")
-            ])
-
-        if use_profiling:
-            logmgr.add_watches(["pyopencl_array_time.max"])
 
     fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
     wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
@@ -3111,11 +3009,6 @@ def main(ctx_factory=cl.create_some_context,
         dump_number=dump_number)
     my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
                      state=stepper_state)
-
-    if logmgr:
-        logmgr.close()
-    elif use_profiling:
-        print(actx.tabulate_profiling_data())
 
     finish_tol = 2*current_dt
     assert np.abs(current_t - t_final) < finish_tol
