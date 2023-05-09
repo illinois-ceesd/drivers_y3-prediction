@@ -715,7 +715,7 @@ def main(ctx_factory=cl.create_some_context,
                 print("\tO2/N2 mix material properties.")
             else:
                 print("\tAr material properties.")
-        elif nspecies == 3:
+        elif nspecies <= 3:
             print("\tpassive scalars to track air/fuel/inert mixture, ideal gas eos")
         elif nspecies == 5:
             print("\tfull multi-species initialization with pyrometheus eos")
@@ -848,7 +848,7 @@ def main(ctx_factory=cl.create_some_context,
     # initialize eos and species mass fractions
     y = np.zeros(nspecies)
     y_fuel = np.zeros(nspecies)
-    if nspecies == 3:
+    if nspecies == 2:
         y[0] = 1
         y_fuel[1] = 1
     elif nspecies > 4:
