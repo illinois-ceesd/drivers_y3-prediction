@@ -35,6 +35,11 @@ from pytools.obj_array import make_obj_array
 from functools import partial
 from mirgecom.discretization import create_discretization_collection
 
+from arraycontext import tag_axes
+from meshmode.transform_metadata import (
+    DiscretizationElementAxisTag,
+    DiscretizationDOFAxisTag)
+
 from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
 from grudge.dof_desc import VolumeDomainTag, DOFDesc
@@ -1206,6 +1211,7 @@ def main(ctx_factory=cl.create_some_context,
     char_length_fluid = char_length_fluid + actx.zeros_like(xpos_fluid)
     char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
 
+    # FIXME: These should be force-evaluated
     smoothness_diffusivity = \
         smooth_char_length_alpha*char_length_fluid**2/current_dt
     smoothness_diffusivity_wall = \
@@ -1261,6 +1267,7 @@ def main(ctx_factory=cl.create_some_context,
             smoothed_char_length_wall = smoothed_char_length_wall + \
                                         smoothed_char_length_wall_rhs
 
+    # FIXME: Likely better to put this inside the loop
     smoothed_char_length_fluid = force_evaluation(actx, smoothed_char_length_fluid)
     smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
 
@@ -2834,9 +2841,7 @@ def main(ctx_factory=cl.create_some_context,
             logmgr.tick_after()
         return state, dt
 
-    def unfiltered_rhs(t, state):
-        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-
+    def make_derived_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv):
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
                                        smoothness_mu=av_smu,
@@ -2844,33 +2849,16 @@ def main(ctx_factory=cl.create_some_context,
                                        smoothness_kappa=av_skappa,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
-        cv = fluid_state.cv  # reset cv to the limited version
 
-        if use_av > 0:
-            # use the divergence to compute the smoothness field
-            grad_fluid_cv = grad_cv_operator(
-                dcoll, gas_model, fluid_boundaries, fluid_state,
-                dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag)
-
-        if use_av == 1:
-            smoothness_mu = compute_smoothness(
-                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
-        elif use_av == 2:
-            grad_fluid_t = grad_t_operator(
-                dcoll, gas_model, fluid_boundaries, fluid_state,
-                dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag)
-
-            smoothness_beta = compute_smoothness_beta(
-                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
-            smoothness_kappa = compute_smoothness_kappa(
-                cv=cv, dv=fluid_state.dv, grad_t=grad_fluid_t)
-            smoothness_mu = compute_smoothness_mu(
-                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
-
-        # update wall model
         wdv = wall_model.dependent_vars(wv)
+
+        return make_obj_array([fluid_state, wdv])
+
+    make_derived_state_compiled = actx.compile(make_derived_state)
+
+    def ns_heat_rhs(t, fluid_state, wv, wdv):
+        cv = fluid_state.cv
+
         tseed_rhs = actx.zeros_like(fluid_state.temperature)
 
         """
@@ -2884,7 +2872,7 @@ def main(ctx_factory=cl.create_some_context,
             operator_states_quad=operator_fluid_states)
         """
 
-        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
+        fluid_ns_rhs, wall_energy_rhs = coupled_ns_heat_operator(
             dcoll=dcoll,
             gas_model=gas_model,
             fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
@@ -2901,13 +2889,45 @@ def main(ctx_factory=cl.create_some_context,
             quadrature_tag=quadrature_tag)
 
         if use_combustion:  # conditionals evaluated only once at compile time
-            fluid_rhs = fluid_rhs + \
+            fluid_ns_rhs = fluid_ns_rhs + \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
 
         if use_ignition > 0:
-            fluid_rhs = fluid_rhs + \
+            fluid_ns_rhs = fluid_ns_rhs + \
                 ignition_source(x_vec=fluid_nodes, state=fluid_state,
                                 eos=gas_model.eos, time=t)/current_dt
+
+        #sponge_rhs = actx.zeros_like(cv)
+        if use_sponge:
+            fluid_ns_rhs = fluid_ns_rhs + _sponge_source(cv=cv)
+            #sponge_rhs = _sponge_source(cv=cv)
+
+        wall_energy_rhs = wall_time_scale * wall_energy_rhs
+
+        return make_obj_array([fluid_ns_rhs, tseed_rhs, wall_energy_rhs])
+
+    ns_heat_rhs_compiled = actx.compile(ns_heat_rhs)
+
+    def av_rhs(
+            t, fluid_state, grad_fluid_cv, grad_fluid_t, av_smu, av_sbeta,
+            av_skappa):
+        cv = fluid_state.cv
+
+        if use_av > 0:
+            # use the divergence to compute the smoothness field
+            assert grad_fluid_cv is not None
+
+        if use_av == 1:
+            smoothness_mu = compute_smoothness(
+                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
+        elif use_av == 2:
+            assert grad_fluid_t is not None
+            smoothness_beta = compute_smoothness_beta(
+                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
+            smoothness_kappa = compute_smoothness_kappa(
+                cv=cv, dv=fluid_state.dv, grad_t=grad_fluid_t)
+            smoothness_mu = compute_smoothness_mu(
+                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
 
         av_smu_rhs = actx.zeros_like(cv.mass)
         av_sbeta_rhs = actx.zeros_like(cv.mass)
@@ -2956,10 +2976,12 @@ def main(ctx_factory=cl.create_some_context,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        #sponge_rhs = actx.zeros_like(cv)
-        if use_sponge:
-            fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
-            #sponge_rhs = _sponge_source(cv=cv)
+        return make_obj_array([av_smu_rhs, av_sbeta_rhs, av_skappa_rhs])
+
+    av_rhs_compiled = actx.compile(av_rhs)
+
+    def degradation_rhs(t, fluid_state, wv, wdv):
+        cv = fluid_state.cv
 
         # wall mass loss
         wall_mass_rhs = actx.zeros_like(wv.mass)
@@ -3000,11 +3022,7 @@ def main(ctx_factory=cl.create_some_context,
                 quadrature_tag=quadrature_tag, dd=dd_vol_wall,
                 comm_tag=_WallOxDiffCommTag)
 
-        wall_rhs = wall_time_scale * WallVars(
-            mass=wall_mass_rhs,
-            energy=wall_energy_rhs,
-            ox_mass=wall_ox_mass_rhs)
-
+        fluid_dummy_ox_mass_rhs = actx.zeros_like(cv.mass)
         if use_wall_ox:
             # Solve a diffusion equation in the fluid too just to ensure all MPI
             # sends/recvs from inter_volume_trace_pairs are in DAG
@@ -3020,17 +3038,31 @@ def main(ctx_factory=cl.create_some_context,
                                tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
                 for tpair in reverse_ox_tpairs})
 
-            fluid_dummy_ox_mass_rhs = diffusion_operator(
+            fluid_dummy_ox_mass_rhs = 0*diffusion_operator(
                 dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
                 quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                 comm_tag=_FluidOxDiffCommTag)
 
-            fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
+        wall_mass_rhs = wall_time_scale * wall_mass_rhs
+        wall_ox_mass_rhs = wall_time_scale * wall_ox_mass_rhs
 
-        return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                               av_sbeta_rhs, av_skappa_rhs, wall_rhs])
+        return make_obj_array([
+            fluid_dummy_ox_mass_rhs, wall_mass_rhs, wall_ox_mass_rhs])
 
-    unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
+    degradation_rhs_compiled = actx.compile(degradation_rhs)
+
+    def accumulate_rhs(
+            fluid_ns_rhs, fluid_dummy_ox_mass_rhs, wall_mass_rhs, wall_energy_rhs,
+            wall_ox_mass_rhs):
+        fluid_rhs = fluid_ns_rhs + fluid_dummy_ox_mass_rhs
+        wall_rhs = WallVars(
+            mass=wall_mass_rhs,
+            energy=wall_energy_rhs,
+            ox_mass=wall_ox_mass_rhs)
+
+        return make_obj_array([fluid_rhs, wall_rhs])
+
+    accumulate_rhs_compiled = actx.compile(accumulate_rhs)
 
     def my_rhs(t, state):
 
@@ -3038,10 +3070,35 @@ def main(ctx_factory=cl.create_some_context,
         # don't know if we should do this
         #state = force_evaluation(actx, state)
 
-        # Work around long compile issue by computing and filtering RHS in separate
-        # compiled functions
-        fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, av_skappa_rhs, wall_rhs = \
-            unfiltered_rhs_compiled(t, state)
+        state = tag_axes(actx, {
+                    0: DiscretizationElementAxisTag(),
+                    1: DiscretizationDOFAxisTag()
+                }, state)
+
+        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+
+        # Compile pieces of RHS separately to make it easier to track down missing
+        # axis tags
+
+        fluid_state, wdv = make_derived_state_compiled(
+            cv, tseed, av_smu, av_sbeta, av_skappa, wv)
+
+        fluid_ns_rhs, tseed_rhs, wall_energy_rhs = ns_heat_rhs_compiled(
+            t, fluid_state, wv, wdv)
+
+        grad_fluid_cv = grad_cv_operator_compiled(fluid_state, t)
+
+        grad_fluid_t = grad_t_operator_fluid_compiled(fluid_state, t)
+
+        av_smu_rhs, av_sbeta_rhs, av_skappa_rhs = av_rhs_compiled(
+            t, fluid_state, grad_fluid_cv, grad_fluid_t, av_smu, av_sbeta, av_skappa)
+
+        fluid_dummy_ox_mass_rhs, wall_mass_rhs, wall_ox_mass_rhs = \
+            degradation_rhs_compiled(t, fluid_state, wv, wdv)
+
+        fluid_rhs, wall_rhs = accumulate_rhs_compiled(
+            fluid_ns_rhs, fluid_dummy_ox_mass_rhs, wall_mass_rhs, wall_energy_rhs,
+            wall_ox_mass_rhs)
 
         # Use a spectral filter on the RHS
         if use_rhs_filter:
