@@ -2391,7 +2391,8 @@ def main(ctx_factory=cl.create_some_context,
             health_error = True
             p_min = vol_min(dd_vol_fluid, dv.pressure)
             p_max = vol_max(dd_vol_fluid, dv.pressure)
-            logger.info(f"Pressure range violation: "
+            logger.info(f"{rank=}:"
+                        f"Pressure range violation: "
                         f"Simulation Range ({p_min=}, {p_max=}) "
                         f"Specified Limits ({health_pres_min=}, {health_pres_max=})")
 
@@ -2400,7 +2401,8 @@ def main(ctx_factory=cl.create_some_context,
             health_error = True
             t_min = vol_min(dd_vol_fluid, dv.temperature)
             t_max = vol_max(dd_vol_fluid, dv.temperature)
-            logger.info(f"Temperature range violation: "
+            logger.info(f"{rank=}:"
+                        f"Temperature range violation: "
                         f"Simulation Range ({t_min=}, {t_max=}) "
                         f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
 
@@ -2409,7 +2411,8 @@ def main(ctx_factory=cl.create_some_context,
             health_error = True
             t_min = vol_min(dd_vol_wall, wall_temperature)
             t_max = vol_max(dd_vol_wall, wall_temperature)
-            logger.info(f"Wall temperature range violation: "
+            logger.info(f"{rank=}:"
+                        f"Wall temperature range violation: "
                         f"Simulation Range ({t_min=}, {t_max=}) "
                         f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
 
@@ -2419,7 +2422,8 @@ def main(ctx_factory=cl.create_some_context,
                 health_error = True
                 y_min = vol_min(dd_vol_fluid, cv.species_mass_fractions[i])
                 y_max = vol_max(dd_vol_fluid, cv.species_mass_fractions[i])
-                logger.info(f"Species mass fraction range violation. "
+                logger.info(f"{rank=}:"
+                            f"Species mass fraction range violation. "
                             f"{species_names[i]}: ({y_min=}, {y_max=})")
 
         if eos_type == 1:
@@ -2431,7 +2435,8 @@ def main(ctx_factory=cl.create_some_context,
             temp_err = vol_max(dd_vol_fluid, temp_resid)
             if temp_err > pyro_temp_tol:
                 health_error = True
-                logger.info(f"Temperature is not converged "
+                logger.info(f"{rank=}:"
+                            f"Temperature is not converged "
                             f"{temp_err=} > {pyro_temp_tol}.")
 
         return health_error
@@ -2783,6 +2788,7 @@ def main(ctx_factory=cl.create_some_context,
                 if health_errors:
                     if rank == 0:
                         logger.warning("Solution failed health check.")
+                        logger.info("Solution failed health check.")
                     raise MyRuntimeError("Failed simulation health check.")
 
             if do_restart:

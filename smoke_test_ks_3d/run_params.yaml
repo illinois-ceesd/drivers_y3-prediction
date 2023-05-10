@@ -3,8 +3,8 @@
 ##############
 nviz: 5
 nrestart: 10
-nhealth: 3
-nstatus: 2
+nhealth: 1
+nstatus: 1
 viz_level: 1
 viz_interval_type: 0
 #viz_interval_type: 1
