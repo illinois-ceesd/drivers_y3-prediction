@@ -424,8 +424,8 @@ def main(ctx_factory=cl.create_some_context,
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
-    total_pres_inj = configurate("total_pres_inj", input_data, 50400)
-    total_temp_inj = configurate("total_temp_inj", input_data, 300)
+    total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
+    total_temp_inj = configurate("total_temp_inj", input_data, 300.)
     mach_inj = configurate("mach_inj", input_data, 1.0)
 
     # parameters to adjust the shape of the initialization
@@ -2373,6 +2373,36 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             print("******** Done Writing Restart File ********")
 
+    def report_violators(ary, data_min, data_max):
+
+        data = np.ravel(actx.to_numpy(ary)[0])
+        nodes_x = np.ravel(actx.to_numpy(fluid_nodes)[0])
+        nodes_y = np.ravel(actx.to_numpy(fluid_nodes)[1])
+        if dim == 3:
+            nodes_z = np.ravel(actx.to_numpy(fluid_nodes)[2])
+
+        mask = (data < data_min) | (data > data_max)
+
+        if np.any(mask):
+            guilty_node_x = nodes_x[mask]
+            guilty_node_y = nodes_y[mask]
+            if dim == 3:
+                guilty_node_z = nodes_z[mask]
+            guilty_data = data[mask]
+            for i in range(len(guilty_data)):
+                if dim == 2:
+                    logger.info("Violation at nodal location "
+                                f"({guilty_node_x[i]}, {guilty_node_y[i]}): "
+                                f"data value {guilty_data[i]}")
+                else:
+                    logger.info("Violation at nodal location "
+                                f"({guilty_node_x[i]}, {guilty_node_y[i]}, "
+                                f"{guilty_node_z[i]}): "
+                                f"data value {guilty_data[i]}")
+                if i > 50:
+                    logger.info("Violators truncated at 50")
+                    break
+
     def my_health_check(fluid_state, wall_temperature):
         health_error = False
         cv = fluid_state.cv
@@ -2381,6 +2411,7 @@ def main(ctx_factory=cl.create_some_context,
         if check_naninf_local(dcoll, dd_vol_fluid, dv.pressure):
             health_error = True
             logger.info(f"{rank=}: NANs/Infs in pressure data.")
+            print(f"{rank=}: NANs/Infs in pressure data.")
 
         if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
             health_error = True
@@ -2391,20 +2422,33 @@ def main(ctx_factory=cl.create_some_context,
             health_error = True
             p_min = vol_min(dd_vol_fluid, dv.pressure)
             p_max = vol_max(dd_vol_fluid, dv.pressure)
-            logger.info(f"{rank=}:"
-                        f"Pressure range violation: "
-                        f"Simulation Range ({p_min=}, {p_max=}) "
-                        f"Specified Limits ({health_pres_min=}, {health_pres_max=})")
+            p_min_loc = vol_min_loc(dd_vol_fluid, dv.pressure)
+            p_max_loc = vol_max_loc(dd_vol_fluid, dv.pressure)
+
+            if rank == 0:
+                logger.info("Pressure range violation:\n"
+                             "\tSpecified Limits "
+                            f"({health_pres_min=}, {health_pres_max=})\n"
+                            f"\tGlobal Range     ({p_min:1.9e}, {p_max:1.9e})")
+            logger.info(f"{rank=}: "
+                        f"Local Range      ({p_min_loc:1.9e}, {p_max_loc:1.9e})")
+            report_violators(dv.pressure, health_pres_min, health_pres_max)
 
         if global_range_check(dd_vol_fluid, dv.temperature,
                               health_temp_min, health_temp_max):
             health_error = True
             t_min = vol_min(dd_vol_fluid, dv.temperature)
             t_max = vol_max(dd_vol_fluid, dv.temperature)
-            logger.info(f"{rank=}:"
-                        f"Temperature range violation: "
-                        f"Simulation Range ({t_min=}, {t_max=}) "
-                        f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
+            t_min_loc = vol_min_loc(dd_vol_fluid, dv.temperature)
+            t_max_loc = vol_max_loc(dd_vol_fluid, dv.temperature)
+            if rank == 0:
+                logger.info("Temperature range violation:\n"
+                             "\tSpecified Limits "
+                            f"({health_temp_min=}, {health_temp_max=})\n"
+                            f"\tGlobal Range     ({t_min:7g}, {t_max:7g})")
+            logger.info(f"{rank=}: "
+                        f"Local Range      ({t_min_loc:7g}, {t_max_loc:7g})")
+            report_violators(dv.temperature, health_temp_min, health_temp_max)
 
         if global_range_check(dd_vol_wall, wall_temperature,
                               health_temp_min, health_temp_max):
@@ -2412,7 +2456,7 @@ def main(ctx_factory=cl.create_some_context,
             t_min = vol_min(dd_vol_wall, wall_temperature)
             t_max = vol_max(dd_vol_wall, wall_temperature)
             logger.info(f"{rank=}:"
-                        f"Wall temperature range violation: "
+                        "Wall temperature range violation: "
                         f"Simulation Range ({t_min=}, {t_max=}) "
                         f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
 
@@ -2422,9 +2466,20 @@ def main(ctx_factory=cl.create_some_context,
                 health_error = True
                 y_min = vol_min(dd_vol_fluid, cv.species_mass_fractions[i])
                 y_max = vol_max(dd_vol_fluid, cv.species_mass_fractions[i])
-                logger.info(f"{rank=}:"
-                            f"Species mass fraction range violation. "
-                            f"{species_names[i]}: ({y_min=}, {y_max=})")
+                y_min_loc = vol_min_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                y_max_loc = vol_max_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                if rank == 0:
+                    logger.info("Species mass fraction range violation:\n"
+                                 "\tSpecified Limits "
+                                f"({health_mass_frac_min=}, "
+                                f"{health_mass_frac_max=})\n"
+                                f"\tGlobal Range     {species_names[i]}:"
+                                f"({y_min:1.3e}, {y_max:1.3e})")
+                logger.info(f"{rank=}: "
+                            f"Local Range      {species_names[i]}: "
+                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                report_violators(cv.species_mass_fractions[i],
+                                 health_mass_frac_min, health_mass_frac_max)
 
         if eos_type == 1:
             # check the temperature convergence
@@ -2436,7 +2491,7 @@ def main(ctx_factory=cl.create_some_context,
             if temp_err > pyro_temp_tol:
                 health_error = True
                 logger.info(f"{rank=}:"
-                            f"Temperature is not converged "
+                             "Temperature is not converged "
                             f"{temp_err=} > {pyro_temp_tol}.")
 
         return health_error
@@ -2787,7 +2842,7 @@ def main(ctx_factory=cl.create_some_context,
                     op="lor")
                 if health_errors:
                     if rank == 0:
-                        logger.warning("Solution failed health check.")
+                        #logger.warning("Solution failed health check.")
                         logger.info("Solution failed health check.")
                     raise MyRuntimeError("Failed simulation health check.")
 

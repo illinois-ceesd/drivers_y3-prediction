@@ -13,8 +13,10 @@ t_viz_interval: 1.e-9
 constant_cfl: 0
 #constant_cfl: 1
 current_cfl: 0.05
-current_dt: 1.0e-13
-t_final: 2.e-12
+current_dt: 1.0e-10
+t_final: 2.e-9
+#current_dt: 1.0e-9
+#t_final: 2.e-8
 mesh_filename: data/actii.msh
 dimen: 3
 
@@ -64,7 +66,7 @@ ignition_strength: 600
 ignition_duration: 1.e-8
 ignition_diameter: 0.02
 integrator: compiled_lsrk54
-#health_pres_min: 2828
+health_temp_min: 175
 #health_pres_max: 274259
 
 ##############
