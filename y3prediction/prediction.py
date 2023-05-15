@@ -1637,12 +1637,18 @@ def main(ctx_factory=cl.create_some_context,
         restart_cv = bulk_init(
             dcoll=dcoll, x_vec=fluid_nodes, eos=eos,
             time=0)
-        temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
 
+        restart_cv = force_evaluation(actx, restart_cv)
+        temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
         # create a fluid state so we can compute grad_t and grad_cv
         restart_av_smu = actx.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.zeros_like(restart_cv.mass)
+        temperature_seed = force_evaluation(actx, temperature_seed)
+        restart_av_smu = force_evaluation(actx, restart_av_smu)
+        restart_av_sbeta = force_evaluation(actx, restart_av_sbeta)
+        restart_av_skappa = force_evaluation(actx, restart_av_skappa)
+
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -2320,17 +2326,16 @@ def main(ctx_factory=cl.create_some_context,
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
-                viz_ext.extend(("grad_v_z", grad_v[2]))
+                viz_ext.append(("grad_v_z", grad_v[2]))
 
-            viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
-                           for i in range(nspecies))
+            viz_ext = [("grad_Y_"+species_names[i], grad_y[i])
+                       for i in range(nspecies)]
             fluid_viz_fields.extend(viz_ext)
 
             if use_av == 1:
                 smoothness_mu = compute_smoothness(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
-                viz_ext = [("smoothness_mu", smoothness_mu)]
-                fluid_viz_fields.extend(viz_ext)
+                fluid_viz_fields.append(("smoothness_mu", smoothness_mu))
             elif use_av == 2:
                 smoothness_beta = compute_smoothness_beta_compiled(
                     cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
