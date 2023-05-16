@@ -1,0 +1,11 @@
+--- !SliceData
+dataName: "cv_mass"
+dataRange: [0.02, 0.1]
+camera: [0.625, 0.0, 0.023]
+colorScheme: "erdc_rainbow_dark"
+logScale: 0
+invert: 0
+cbTitle: "Density [kg/m^3]"
+pixels: [1300, 700]
+normal: [0, 0, 1]
+origin: [0, 0, 0]
