@@ -21,7 +21,7 @@ cd step2
 mkdir -p init_data
 cp ../step1/restart_data/prediction-000000100-* init_data/.
 ./run.sh > mirge-0.out
-make_viz
+#make_viz
 cd ..
 
 # step 3
