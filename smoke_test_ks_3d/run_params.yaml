@@ -5,7 +5,7 @@ nviz: 5
 nrestart: 10
 nhealth: 1
 nstatus: 1
-viz_level: 1
+viz_level: 3
 viz_interval_type: 0
 #viz_interval_type: 1
 #viz_interval_type: 2
@@ -34,11 +34,14 @@ use_wall_ox: True
 ##############
 nlimit: 1
 use_species_limiter: True
-smooth_char_length_alpha: 1.e-12
+#smooth_char_length_alpha: 1.e-12
+smooth_char_length_alpha: 0.025
 smooth_char_length: 5
 #smooth_char_length: 0
-smoothness_alpha: 1.e-12
-smoothness_tau: 1.e-12
+#smoothness_alpha: 1.e-12
+#smoothness_tau: 1.e-12
+smoothness_alpha: 0.010
+smoothness_tau: 0.05
 
 use_av: 2
 #use_av: 0
@@ -66,7 +69,7 @@ ignition_strength: 600
 ignition_duration: 1.e-8
 ignition_diameter: 0.02
 integrator: compiled_lsrk54
-health_temp_min: 175
+#health_temp_min: 175
 #health_pres_max: 274259
 
 ##############
