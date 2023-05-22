@@ -24,8 +24,6 @@ if __name__ == "__main__":
                         help="enable entropy-stable for inviscid terms. [OFF]")
     parser.add_argument("--profile", action="store_true", default=False,
                         help="enable kernel profiling [OFF]")
-    parser.add_argument("--log", action="store_true", default=False,
-                        help="enable logging profiling [ON]")
     parser.add_argument("--lazy", action="store_true", default=False,
                         help="enable lazy evaluation [OFF]")
     parser.add_argument("--overintegration", action="store_true",
@@ -82,7 +80,7 @@ if __name__ == "__main__":
     from y3prediction.prediction import main
     main(restart_filename=restart_filename, target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
-         use_profiling=args.profile, use_logmgr=args.log,
+         use_profiling=args.profile, use_logmgr=True,
          use_overintegration=args.overintegration or args.esdg,
          actx_class=actx_class, casename=casename,
          lazy=lazy, use_esdg=args.esdg)
