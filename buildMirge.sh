@@ -108,7 +108,7 @@ fi
 # add a few packages that are required for our development process
 source config/activate_env.sh
 #conda activate ${conda_env}
-python -m pip install flake8 flake8-quotes pylint
+python -m pip install flake8 flake8-quotes pylint parsl
 
 # install the git hooks script to get linting on commits
 cd ..
