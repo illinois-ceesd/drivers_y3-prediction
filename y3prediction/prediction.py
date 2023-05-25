@@ -57,8 +57,8 @@ from mirgecom.simutil import (
     write_visfile,
     check_naninf_local,
     check_range_local,
-    force_evaluation
 )
+from mirgecom.utils import force_evaluation
 from mirgecom.restart import write_restart_file
 from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
@@ -286,6 +286,7 @@ def main(ctx_factory=cl.create_some_context,
     viz_interval_type = configurate("viz_interval_type", input_data, 0)
 
     # default timestepping control
+    advance_time = configurate("advance_time", input_data, "True")
     integrator = configurate("integrator", input_data, "rk4")
     current_dt = configurate("current_dt", input_data, 1.e-8)
     t_final = configurate("t_final", input_data, 1.e-7)
@@ -423,8 +424,8 @@ def main(ctx_factory=cl.create_some_context,
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
-    total_pres_inj = configurate("total_pres_inj", input_data, 50400)
-    total_temp_inj = configurate("total_temp_inj", input_data, 300)
+    total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
+    total_temp_inj = configurate("total_temp_inj", input_data, 300.)
     mach_inj = configurate("mach_inj", input_data, 1.0)
 
     # parameters to adjust the shape of the initialization
@@ -714,7 +715,7 @@ def main(ctx_factory=cl.create_some_context,
                 print("\tO2/N2 mix material properties.")
             else:
                 print("\tAr material properties.")
-        elif nspecies == 3:
+        elif nspecies <= 3:
             print("\tpassive scalars to track air/fuel/inert mixture, ideal gas eos")
         elif nspecies == 5:
             print("\tfull multi-species initialization with pyrometheus eos")
@@ -847,7 +848,7 @@ def main(ctx_factory=cl.create_some_context,
     # initialize eos and species mass fractions
     y = np.zeros(nspecies)
     y_fuel = np.zeros(nspecies)
-    if nspecies == 3:
+    if nspecies == 2:
         y[0] = 1
         y_fuel[1] = 1
     elif nspecies > 4:
@@ -1454,7 +1455,7 @@ def main(ctx_factory=cl.create_some_context,
     compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
 
     def lmax(s):
-        b = 100
+        b = 1000
         return (s/np.pi*actx.np.arctan(b*s) +
                 0.5*s - 1/np.pi*actx.np.arctan(b) + 0.5)
 
@@ -1640,6 +1641,7 @@ def main(ctx_factory=cl.create_some_context,
 
         restart_cv = force_evaluation(actx, restart_cv)
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
+
         # create a fluid state so we can compute grad_t and grad_cv
         restart_av_smu = actx.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.zeros_like(restart_cv.mass)
@@ -1669,6 +1671,8 @@ def main(ctx_factory=cl.create_some_context,
             mass=wall_mass,
             energy=wall_mass * wall_cp * temp_wall,
             ox_mass=actx.zeros_like(wall_mass))
+
+    restart_wv = force_evaluation(actx, restart_wv)
 
     ##################################
     # Set up flow target state       #
@@ -1707,6 +1711,9 @@ def main(ctx_factory=cl.create_some_context,
         target_av_skappa = restart_av_skappa
 
     target_cv = force_evaluation(actx, target_cv)
+    target_av_smu = force_evaluation(actx, target_av_smu)
+    target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+    target_av_skappa = force_evaluation(actx, target_av_skappa)
 
     target_fluid_state = create_fluid_state(cv=target_cv,
                                             temperature_seed=temperature_seed,
@@ -1775,6 +1782,10 @@ def main(ctx_factory=cl.create_some_context,
                     cv=target_cv, dv=target_fluid_state.dv, grad_t=target_grad_t)
                 target_av_smu = compute_smoothness_mu_compiled(
                     cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+
+            target_av_smu = force_evaluation(actx, target_av_smu)
+            target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+            target_av_skappa = force_evaluation(actx, target_av_skappa)
 
             target_fluid_state = create_fluid_state(
                 cv=target_cv, temperature_seed=temperature_seed,
@@ -2398,6 +2409,36 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             print("******** Done Writing Restart File ********")
 
+    def report_violators(ary, data_min, data_max):
+
+        data = np.ravel(actx.to_numpy(ary)[0])
+        nodes_x = np.ravel(actx.to_numpy(fluid_nodes)[0])
+        nodes_y = np.ravel(actx.to_numpy(fluid_nodes)[1])
+        if dim == 3:
+            nodes_z = np.ravel(actx.to_numpy(fluid_nodes)[2])
+
+        mask = (data < data_min) | (data > data_max)
+
+        if np.any(mask):
+            guilty_node_x = nodes_x[mask]
+            guilty_node_y = nodes_y[mask]
+            if dim == 3:
+                guilty_node_z = nodes_z[mask]
+            guilty_data = data[mask]
+            for i in range(len(guilty_data)):
+                if dim == 2:
+                    logger.info("Violation at nodal location "
+                                f"({guilty_node_x[i]}, {guilty_node_y[i]}): "
+                                f"data value {guilty_data[i]}")
+                else:
+                    logger.info("Violation at nodal location "
+                                f"({guilty_node_x[i]}, {guilty_node_y[i]}, "
+                                f"{guilty_node_z[i]}): "
+                                f"data value {guilty_data[i]}")
+                if i > 50:
+                    logger.info("Violators truncated at 50")
+                    break
+
     def my_health_check(fluid_state, wall_temperature):
         health_error = False
         cv = fluid_state.cv
@@ -2406,6 +2447,7 @@ def main(ctx_factory=cl.create_some_context,
         if check_naninf_local(dcoll, dd_vol_fluid, dv.pressure):
             health_error = True
             logger.info(f"{rank=}: NANs/Infs in pressure data.")
+            print(f"{rank=}: NANs/Infs in pressure data.")
 
         if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
             health_error = True
@@ -2416,25 +2458,41 @@ def main(ctx_factory=cl.create_some_context,
             health_error = True
             p_min = vol_min(dd_vol_fluid, dv.pressure)
             p_max = vol_max(dd_vol_fluid, dv.pressure)
-            logger.info(f"Pressure range violation: "
-                        f"Simulation Range ({p_min=}, {p_max=}) "
-                        f"Specified Limits ({health_pres_min=}, {health_pres_max=})")
+            p_min_loc = vol_min_loc(dd_vol_fluid, dv.pressure)
+            p_max_loc = vol_max_loc(dd_vol_fluid, dv.pressure)
+
+            if rank == 0:
+                logger.info("Pressure range violation:\n"
+                             "\tSpecified Limits "
+                            f"({health_pres_min=}, {health_pres_max=})\n"
+                            f"\tGlobal Range     ({p_min:1.9e}, {p_max:1.9e})")
+            logger.info(f"{rank=}: "
+                        f"Local Range      ({p_min_loc:1.9e}, {p_max_loc:1.9e})")
+            report_violators(dv.pressure, health_pres_min, health_pres_max)
 
         if global_range_check(dd_vol_fluid, dv.temperature,
                               health_temp_min, health_temp_max):
             health_error = True
             t_min = vol_min(dd_vol_fluid, dv.temperature)
             t_max = vol_max(dd_vol_fluid, dv.temperature)
-            logger.info(f"Temperature range violation: "
-                        f"Simulation Range ({t_min=}, {t_max=}) "
-                        f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
+            t_min_loc = vol_min_loc(dd_vol_fluid, dv.temperature)
+            t_max_loc = vol_max_loc(dd_vol_fluid, dv.temperature)
+            if rank == 0:
+                logger.info("Temperature range violation:\n"
+                             "\tSpecified Limits "
+                            f"({health_temp_min=}, {health_temp_max=})\n"
+                            f"\tGlobal Range     ({t_min:7g}, {t_max:7g})")
+            logger.info(f"{rank=}: "
+                        f"Local Range      ({t_min_loc:7g}, {t_max_loc:7g})")
+            report_violators(dv.temperature, health_temp_min, health_temp_max)
 
         if global_range_check(dd_vol_wall, wall_temperature,
                               health_temp_min, health_temp_max):
             health_error = True
             t_min = vol_min(dd_vol_wall, wall_temperature)
             t_max = vol_max(dd_vol_wall, wall_temperature)
-            logger.info(f"Wall temperature range violation: "
+            logger.info(f"{rank=}:"
+                        "Wall temperature range violation: "
                         f"Simulation Range ({t_min=}, {t_max=}) "
                         f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
 
@@ -2444,8 +2502,20 @@ def main(ctx_factory=cl.create_some_context,
                 health_error = True
                 y_min = vol_min(dd_vol_fluid, cv.species_mass_fractions[i])
                 y_max = vol_max(dd_vol_fluid, cv.species_mass_fractions[i])
-                logger.info(f"Species mass fraction range violation. "
-                            f"{species_names[i]}: ({y_min=}, {y_max=})")
+                y_min_loc = vol_min_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                y_max_loc = vol_max_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                if rank == 0:
+                    logger.info("Species mass fraction range violation:\n"
+                                 "\tSpecified Limits "
+                                f"({health_mass_frac_min=}, "
+                                f"{health_mass_frac_max=})\n"
+                                f"\tGlobal Range     {species_names[i]}:"
+                                f"({y_min:1.3e}, {y_max:1.3e})")
+                logger.info(f"{rank=}: "
+                            f"Local Range      {species_names[i]}: "
+                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                report_violators(cv.species_mass_fractions[i],
+                                 health_mass_frac_min, health_mass_frac_max)
 
         if eos_type == 1:
             # check the temperature convergence
@@ -2456,7 +2526,8 @@ def main(ctx_factory=cl.create_some_context,
             temp_err = vol_max(dd_vol_fluid, temp_resid)
             if temp_err > pyro_temp_tol:
                 health_error = True
-                logger.info(f"Temperature is not converged "
+                logger.info(f"{rank=}:"
+                             "Temperature is not converged "
                             f"{temp_err=} > {pyro_temp_tol}.")
 
         return health_error
@@ -2807,7 +2878,8 @@ def main(ctx_factory=cl.create_some_context,
                     op="lor")
                 if health_errors:
                     if rank == 0:
-                        logger.warning("Solution failed health check.")
+                        #logger.warning("Solution failed health check.")
+                        logger.info("Solution failed health check.")
                     raise MyRuntimeError("Failed simulation health check.")
 
             if do_restart:
@@ -2844,12 +2916,14 @@ def main(ctx_factory=cl.create_some_context,
 
     def my_post_step(step, t, dt, state):
 
-        if step == 1:
+        if step == first_step+2:
             with gc_timer.start_sub_timer():
                 import gc
                 gc.collect()
                 # Freeze the objects that are still alive so they will not
                 # be considered in future gc collections.
+                logger.info("Freezing GC objects to reduce overhead of "
+                            "future GC collections")
                 gc.freeze()
 
         if logmgr:
@@ -2908,7 +2982,7 @@ def main(ctx_factory=cl.create_some_context,
             operator_states_quad=operator_fluid_states)
         """
 
-        ns_rhs, wall_energy_rhs = coupled_ns_heat_operator(
+        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
             dcoll=dcoll,
             gas_model=gas_model,
             fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
@@ -2924,29 +2998,20 @@ def main(ctx_factory=cl.create_some_context,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
-        chem_rhs = actx.zeros_like(cv)
         if use_combustion:  # conditionals evaluated only once at compile time
-            chem_rhs =  \
+            fluid_rhs = fluid_rhs + \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
 
-        ignition_rhs = actx.zeros_like(cv)
         if use_ignition > 0:
-            ignition_rhs = ignition_source(x_vec=fluid_nodes, state=fluid_state,
-                                           eos=gas_model.eos, time=t)/current_dt
+            fluid_rhs = fluid_rhs + \
+                ignition_source(x_vec=fluid_nodes, state=fluid_state,
+                                eos=gas_model.eos, time=t)/current_dt
 
         av_smu_rhs = actx.zeros_like(cv.mass)
         av_sbeta_rhs = actx.zeros_like(cv.mass)
         av_skappa_rhs = actx.zeros_like(cv.mass)
         # work good for shock 1d
 
-        # tau = 1.e-6
-        # eta = 0.1*tau
-        # epsilon_diff = eta/tau
-        # epsilon_diff = 0.
-
-        # smoothness_alpha = 0.1
-        # href = char_len_fluid_nodes
-        # epsilon_diff = smoothness_alpha*href*href/current_dt
         tau = current_dt/smoothness_tau
         epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
 
@@ -2990,11 +3055,10 @@ def main(ctx_factory=cl.create_some_context,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        sponge_rhs = actx.zeros_like(cv)
+        #sponge_rhs = actx.zeros_like(cv)
         if use_sponge:
-            sponge_rhs = _sponge_source(cv=cv)
-
-        fluid_rhs = ns_rhs + chem_rhs + sponge_rhs + ignition_rhs
+            fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
+            #sponge_rhs = _sponge_source(cv=cv)
 
         # wall mass loss
         wall_mass_rhs = actx.zeros_like(wv.mass)
@@ -3060,9 +3124,8 @@ def main(ctx_factory=cl.create_some_context,
                 quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                 comm_tag=_FluidOxDiffCommTag)
 
-            # Do not change: this "0*" pattern is *needed* here
+            # Do not change: zeros_like shouldn't be used here
             fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
-            # NO: fluid_rhs = fluid_rhs + actx.zeros_like(fluid_dummy_ox_mass_rhs)
 
         return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
                                av_sbeta_rhs, av_skappa_rhs, wall_rhs])
@@ -3097,15 +3160,16 @@ def main(ctx_factory=cl.create_some_context,
                                   current_cfl, t_final, constant_cfl)
     """
 
-    current_step, current_t, stepper_state = \
-        advance_state(rhs=my_rhs, timestepper=timestepper,
-                      pre_step_callback=my_pre_step,
-                      post_step_callback=my_post_step,
-                      istep=current_step, dt=current_dt,
-                      t=current_t, t_final=t_final,
-                      force_eval=force_eval,
-                      state=stepper_state,
-                      compile_rhs=False)
+    if advance_time:
+        current_step, current_t, stepper_state = \
+            advance_state(rhs=my_rhs, timestepper=timestepper,
+                          pre_step_callback=my_pre_step,
+                          post_step_callback=my_post_step,
+                          istep=current_step, dt=current_dt,
+                          t=current_t, t_final=t_final,
+                          force_eval=force_eval,
+                          state=stepper_state,
+                          compile_rhs=False)
     current_cv, tseed, current_av_smu, current_av_sbeta, \
         current_av_skappa, current_wv = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,
