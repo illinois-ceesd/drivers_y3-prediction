@@ -499,8 +499,8 @@ def main(ctx_factory=cl.create_some_context,
             print(f"smoothing_alpha {smooth_char_length_alpha}")
 
         if use_av > 0:
-            print("Artificial viscosity {smoothness_alpha=}")
-            print("Artificial viscosity {smoothness_tau=}")
+            print(f"Artificial viscosity {smoothness_alpha=}")
+            print(f"Artificial viscosity {smoothness_tau=}")
 
         if use_av == 0:
             print("Artificial viscosity disabled")
@@ -1641,6 +1641,7 @@ def main(ctx_factory=cl.create_some_context,
 
         restart_cv = force_evaluation(actx, restart_cv)
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
+        temperature_seed = force_evaluation(actx, temperature_seed)
 
         # create a fluid state so we can compute grad_t and grad_cv
         restart_av_smu = actx.zeros_like(restart_cv.mass)
@@ -2053,14 +2054,18 @@ def main(ctx_factory=cl.create_some_context,
     monitor_memory = True
     monitor_performance = 2
 
+    from contextlib import nullcontext
+    gc_timer = nullcontext()
+
     if logmgr:
         logmgr_add_cl_device_info(logmgr, queue)
 
         vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
         logmgr.add_quantity(vis_timer)
 
-        gc_timer = IntervalTimer("t_gc", "Time spent garbage collecting")
-        logmgr.add_quantity(gc_timer)
+        gc_timer_init = IntervalTimer("t_gc", "Time spent garbage collecting")
+        logmgr.add_quantity(gc_timer_init)
+        gc_timer = gc_timer_init.get_sub_timer()
 
         if monitor_performance > 0:
             logmgr.add_watches([
@@ -2762,7 +2767,7 @@ def main(ctx_factory=cl.create_some_context,
         state = force_evaluation(actx, state)
 
         if check_step(step=step, interval=ngarbage):
-            with gc_timer.start_sub_timer():
+            with gc_timer:
                 from warnings import warn
                 warn("Running gc.collect() to work around memory growth issue "
                      "https://github.com/illinois-ceesd/mirgecom/issues/839")
@@ -2917,7 +2922,7 @@ def main(ctx_factory=cl.create_some_context,
     def my_post_step(step, t, dt, state):
 
         if step == first_step+2:
-            with gc_timer.start_sub_timer():
+            with gc_timer:
                 import gc
                 gc.collect()
                 # Freeze the objects that are still alive so they will not

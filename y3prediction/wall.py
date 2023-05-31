@@ -4,8 +4,12 @@ from dataclasses import dataclass, fields
 from arraycontext import (
     dataclass_array_container,
     with_container_arithmetic,
-    get_container_context_recursively
+    get_container_context_recursively,
+    tag_axes,
 )
+from meshmode.transform_metadata import (
+    DiscretizationElementAxisTag,
+    DiscretizationDOFAxisTag)
 
 
 def mask_from_elements(vol_discr, actx, elements):
@@ -24,7 +28,10 @@ def mask_from_elements(vol_discr, actx, elements):
         grp_ary_np[grp_elems] = 1
         group_arrays.append(actx.from_numpy(grp_ary_np))
 
-    return DOFArray(actx, tuple(group_arrays))
+    return tag_axes(actx, {
+                0: DiscretizationElementAxisTag(),
+                1: DiscretizationDOFAxisTag()
+            }, DOFArray(actx, tuple(group_arrays)))
 
 
 @with_container_arithmetic(bcast_obj_array=False,
