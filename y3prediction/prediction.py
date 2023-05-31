@@ -3154,8 +3154,8 @@ def main(ctx_factory=cl.create_some_context,
         if use_rhs_filter:
             fluid_rhs = filter_rhs_fluid_compiled(fluid_rhs)
             wall_rhs = filter_rhs_wall_compiled(wall_rhs)
-        
-        # Current behavior is to pass back all *evaluated* quantities, i.e. if 
+
+        # Current behavior is to pass back all *evaluated* quantities, i.e. if
         # returns from compiled funcs are evaluated.
         return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
                                av_sbeta_rhs, av_skappa_rhs, wall_rhs])
