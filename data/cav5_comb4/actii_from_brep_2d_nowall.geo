@@ -109,22 +109,10 @@ Geometry.Tolerance = 1.e-3;
 Coherence;
 
 Curve Loop(1) = {1:28};
-Curve Loop(2) = {30, 31, 16, 15};
-Curve Loop(3) = {34, 35, 17, 31, 30, 14};
-Curve Loop(4) = {40, 41, 42, 21};
-Curve Loop(5) = {44, 45, 46, 22, 42, 41, 40, 20};
 
 Plane Surface(1) = {1};
-Plane Surface(2) = {2};
-Plane Surface(3) = {3};
-Plane Surface(4) = {4};
-Plane Surface(5) = {5};
 
 Physical Surface('fluid') = {-1};
-Physical Surface('wall_insert') = {-2, -4};
-Physical Surface('wall_surround') = {-3, -5};
-//Physical Surface('wall_insert_comb') = {-4};
-//Physical Surface('wall_surround_comb') = {-5};
 
 Physical Curve("inflow") = {2}; // inlet
 Physical Curve("outflow") = {25}; // outlet
@@ -142,6 +130,8 @@ Physical Curve('isothermal_wall') = {
     10, // injector bottom
     12, // injector top
     13, // cavity slant between injector/wall surround
+    14, 15, 16, 17,  // the wall/fluid interface
+    20, 21, 22,  // the wall/fluid interface
     18, // post sample flat
     19, // combustor before sample
     23, // combustor after sample
@@ -149,10 +139,6 @@ Physical Curve('isothermal_wall') = {
     26, // combustor/isolator top
     27, // nozzle top
     28 // inflow top ramp
-};
-Physical Curve('wall_farfield') = {
-    34, 35, //cavity wall surround exterior
-    44, 45, 46 // combustor wall surround exterior
 };
 
 // Create distance field from surfaces for wall meshing, excludes cavity, injector
@@ -241,6 +227,7 @@ Field[11].CurvesList = {
     7, // cavity front
     8, // cavity bottom
     9, // cavity bottom slant
+    14, 15,
     13 // cavity slant between injector/wall surround
 };
 Field[11].Sampling = 1000;
@@ -271,23 +258,6 @@ Field[14].DistMin = 0.001;
 Field[14].DistMax = 1.0;
 Field[14].StopAtDistMax = 1;
 
-// Create distance field from curves, inside wall only
-Field[15] = Distance;
-Field[15].CurvesList = {
-    30, 31,
-    40, 41, 42
-};
-Field[15].Sampling = 1000;
-
-//Create threshold field that varrries element size near boundaries
-Field[16] = Threshold;
-Field[16].InField = 15;
-Field[16].SizeMin = samplesize / boundratiosurround;
-Field[16].SizeMax = samplesize;
-Field[16].DistMin = 0.2;
-Field[16].DistMax = 5;
-Field[16].StopAtDistMax = 1;
-
 // Create distance field from curves, sample/fluid interface
 Field[17] = Distance;
 Field[17].CurvesList = {
@@ -306,7 +276,7 @@ Field[18].SizeMax = samplesize;
 Field[18].DistMin = 0.2;
 Field[18].DistMax = 5;
 Field[18].StopAtDistMax = 1;
-//
+
 //  background mesh size in the isolator (downstream of the nozzle)
 Field[3] = Box;
 Field[3].XMin = nozzle_end;
@@ -388,12 +358,6 @@ Field[7].Thickness = 100;    // interpolate from VIn to Vout over a distance aro
 Field[7].VIn = injectorsize;
 Field[7].VOut = bigsize;
 
-// background mesh size in the sample region
-Field[8] = Constant;
-Field[8].SurfacesList = {1,2};
-Field[8].VIn = samplesize;
-Field[8].VOut = bigsize;
-
 // background mesh size in the cavity shear region
 shear_start_x = 600;
 shear_end_x = 680;
@@ -429,7 +393,7 @@ Field[100] = Min;
 //
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
 //Field[100].FieldsList = {2002, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
-Field[100].FieldsList = {2010, 2011, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102, 105};
+Field[100].FieldsList = {2010, 2011, 3, 4, 5, 6, 9, 12, 18, 20, 21, 102, 105};
 
 
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102};

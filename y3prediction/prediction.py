@@ -94,7 +94,7 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     coupled_grad_t_operator,
     coupled_ns_heat_operator
 )
-from mirgecom.navierstokes import grad_cv_operator, grad_t_operator
+from mirgecom.navierstokes import grad_cv_operator, grad_t_operator, ns_operator
 # driver specific utilties
 from y3prediction.utils import (
     getIsentropicPressure,
@@ -359,6 +359,7 @@ def main(ctx_factory=cl.create_some_context,
 
     # rhs control
     use_combustion = configurate("use_combustion", input_data, True)
+    use_wall = configurate("use_wall", input_data, True)
     use_wall_ox = configurate("use_wall_ox", input_data, True)
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
@@ -759,36 +760,42 @@ def main(ctx_factory=cl.create_some_context,
             error_message = "Unknown transport_type {}".format(transport_type)
             raise RuntimeError(error_message)
 
-        print("#### Wall domain: ####")
+        if use_wall:
+            print("#### Wall domain: ####")
 
-        if wall_material == 0:
-            print("\tNon-reactive wall model")
-        elif wall_material == 1:
-            print("\tReactive wall model for non-porous media")
-        elif wall_material == 2:
-            print("\tReactive wall model for porous media")
+            if wall_material == 0:
+                print("\tNon-reactive wall model")
+            elif wall_material == 1:
+                print("\tReactive wall model for non-porous media")
+            elif wall_material == 2:
+                print("\tReactive wall model for porous media")
+            else:
+                error_message = "Unknown wall_material {}".format(wall_material)
+                raise RuntimeError(error_message)
+
+            if use_wall_ox:
+                print("\tWall oxidizer transport enabled")
+            else:
+                print("\tWall oxidizer transport disabled")
+
+            if use_wall_mass:
+                print("\t Wall mass loss enabled")
+            else:
+                print("\t Wall mass loss disabled")
+
+            print(f"\tWall density = {wall_insert_rho}")
+            print(f"\tWall cp = {wall_insert_cp}")
+            print(f"\tWall O2 diff = {wall_insert_ox_diff}")
+            print(f"\tWall surround density = {wall_surround_rho}")
+            print(f"\tWall surround cp = {wall_surround_cp}")
+            print(f"\tWall surround kappa = {wall_surround_kappa}")
+            print(f"\tWall time scale = {wall_time_scale}")
+            print(f"\tWall penalty = {wall_penalty_amount}")
         else:
-            error_message = "Unknown wall_material {}".format(wall_material)
-            raise RuntimeError(error_message)
+            print("\tWall model disabled")
+            use_wall_ox = False
+            use_wall_mass = False
 
-        if use_wall_ox:
-            print("\tWall oxidizer transport enabled")
-        else:
-            print("\tWall oxidizer transport disabled")
-
-        if use_wall_mass:
-            print("\t Wall mass loss enabled")
-        else:
-            print("\t Wall mass loss disabled")
-
-        print(f"\tWall density = {wall_insert_rho}")
-        print(f"\tWall cp = {wall_insert_cp}")
-        print(f"\tWall O2 diff = {wall_insert_ox_diff}")
-        print(f"\tWall surround density = {wall_surround_rho}")
-        print(f"\tWall surround cp = {wall_surround_cp}")
-        print(f"\tWall surround kappa = {wall_surround_kappa}")
-        print(f"\tWall time scale = {wall_time_scale}")
-        print(f"\tWall penalty = {wall_penalty_amount}")
         print("#### Simluation material properties: ####")
 
     spec_diffusivity = spec_diff * np.ones(nspecies)
@@ -1104,7 +1111,8 @@ def main(ctx_factory=cl.create_some_context,
         current_t = restart_data["t"]
         last_viz_interval = restart_data["last_viz_interval"]
         t_start = current_t
-        t_wall_start = restart_data["t_wall"]
+        if use_wall:
+            t_wall_start = restart_data["t_wall"]
         volume_to_local_mesh_data = restart_data["volume_to_local_mesh_data"]
         global_nelements = restart_data["global_nelements"]
         restart_order = int(restart_data["order"])
@@ -1121,8 +1129,9 @@ def main(ctx_factory=cl.create_some_context,
                 mesh_filename, force_ambient_dim=dim,
                 return_tag_to_elements_map=True)
             volume_to_tags = {
-                "fluid": ["fluid"],
-                "wall": ["wall_insert", "wall_surround"]}
+                "fluid": ["fluid"]}
+            if use_wall:
+                volume_to_tags["wall"] = ["wall_insert", "wall_surround"]
             return mesh, tag_to_elements, volume_to_tags
 
         def my_partitioner(mesh, tag_to_elements, num_ranks):
@@ -1135,9 +1144,9 @@ def main(ctx_factory=cl.create_some_context,
         volume_to_local_mesh_data, global_nelements = distribute_mesh(
             comm, get_mesh_data, partition_generator_func=part_func)
 
-    local_nelements = (
-        volume_to_local_mesh_data["fluid"][0].nelements
-        + volume_to_local_mesh_data["wall"][0].nelements)
+    local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    if use_wall:
+        local_nelements += volume_to_local_mesh_data["wall"][0].nelements
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
@@ -1145,7 +1154,6 @@ def main(ctx_factory=cl.create_some_context,
 
         from mirgecom.restart import read_restart_data
         target_data = read_restart_data(actx, target_filename)
-        #volume_to_local_mesh_data = target_data["volume_to_local_mesh_data"]
         global_nelements = target_data["global_nelements"]
         target_order = int(target_data["order"])
 
@@ -1175,62 +1183,59 @@ def main(ctx_factory=cl.create_some_context,
         logger.info("Done making discretization")
 
     dd_vol_fluid = DOFDesc(VolumeDomainTag("fluid"), DISCR_TAG_BASE)
-    dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
-
     fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
-    wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
 
-    wall_vol_discr = dcoll.discr_from_dd(dd_vol_wall)
-    wall_tag_to_elements = volume_to_local_mesh_data["wall"][1]
-    wall_insert_mask = mask_from_elements(
-        wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
-    wall_surround_mask = mask_from_elements(
-        wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
-
-    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
     inflow_bnd = dd_vol_fluid.trace("inflow")
     outflow_bnd = dd_vol_fluid.trace("outflow")
     inj_bnd = dd_vol_fluid.trace("injection")
     flow_bnd = dd_vol_fluid.trace("flow")
-    wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
+    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
+
+    if use_wall:
+        dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
+        wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
+
+        wall_vol_discr = dcoll.discr_from_dd(dd_vol_wall)
+        wall_tag_to_elements = volume_to_local_mesh_data["wall"][1]
+        wall_insert_mask = mask_from_elements(
+            wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
+        wall_surround_mask = mask_from_elements(
+            wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
+
+        wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     from grudge.dt_utils import characteristic_lengthscales
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
-    char_length_wall = force_evaluation(actx,
-        characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
-    xpos_wall = wall_nodes[0]
     char_length_fluid = char_length_fluid + actx.zeros_like(xpos_fluid)
-    char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
 
     smoothness_diffusivity = \
         smooth_char_length_alpha*char_length_fluid**2/current_dt
-    smoothness_diffusivity_wall = \
-        smooth_char_length_alpha*char_length_wall**2/current_dt
 
-    def compute_smoothed_char_length(href_fluid, href_wall, comm_ind):
+    if use_wall:
+        char_length_wall = force_evaluation(actx,
+            characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
+        xpos_wall = wall_nodes[0]
+        char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
+        smoothness_diffusivity_wall = \
+            smooth_char_length_alpha*char_length_wall**2/current_dt
+
+    def compute_smoothed_char_length(href_fluid, comm_ind):
         # regular boundaries
         smooth_neumann = NeumannDiffusionBoundary(0)
         fluid_smoothness_boundaries = {
             flow_bnd.domain_tag: smooth_neumann,
             wall_bnd.domain_tag: smooth_neumann,
         }
-        wall_smoothness_boundaries = {
-            wall_ffld_bnd.domain_tag: smooth_neumann,
-        }
 
-        fluid_smoothness_boundaries.update({
-             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
-             for dd_bdry in filter_part_boundaries(
-                 dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
-
-        wall_smoothness_boundaries.update({
-             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
-             for dd_bdry in filter_part_boundaries(
-                 dcoll, volume_dd=dd_vol_wall, neighbor_volume_dd=dd_vol_fluid)})
+        if use_wall:
+            fluid_smoothness_boundaries.update({
+                 dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+                 for dd_bdry in filter_part_boundaries(
+                     dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
@@ -1238,39 +1243,53 @@ def main(ctx_factory=cl.create_some_context,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
             comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
 
+        return smooth_href_fluid_rhs
+
+    def compute_smoothed_char_length_wall(href_wall, comm_ind):
+        smooth_neumann = NeumannDiffusionBoundary(0)
+        wall_smoothness_boundaries = {
+            wall_ffld_bnd.domain_tag: smooth_neumann,
+        }
+
+        wall_smoothness_boundaries.update({
+             dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+             for dd_bdry in filter_part_boundaries(
+                 dcoll, volume_dd=dd_vol_wall, neighbor_volume_dd=dd_vol_fluid)})
+
         smooth_href_wall_rhs = diffusion_operator(
                 dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
                 href_wall,
                 quadrature_tag=quadrature_tag, dd=dd_vol_wall,
                 comm_tag=(_SmoothCharDiffWallCommTag, comm_ind))*current_dt
 
-        return make_obj_array([smooth_href_fluid_rhs, smooth_href_wall_rhs])
+        return smooth_href_wall_rhs
 
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
+    if use_wall:
+        compute_smoothed_char_length_wall_compiled = \
+            actx.compile(compute_smoothed_char_length_wall)
 
     smoothed_char_length_fluid = char_length_fluid
-    smoothed_char_length_wall = char_length_wall
     if use_smoothed_char_length:
         for i in range(smooth_char_length):
-            [smoothed_char_length_fluid_rhs, smoothed_char_length_wall_rhs] = \
-                compute_smoothed_char_length_compiled(smoothed_char_length_fluid,
-                                                      smoothed_char_length_wall, i)
+            smoothed_char_length_fluid_rhs = \
+                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, i)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
-            smoothed_char_length_wall = smoothed_char_length_wall + \
-                                        smoothed_char_length_wall_rhs
+
+        if use_wall:
+            smoothed_char_length_wall = char_length_wall
+            for i in range(smooth_char_length):
+                smoothed_char_length_wall_rhs = \
+                    compute_smoothed_char_length_wall_compiled(
+                        smoothed_char_length_wall, i)
+                smoothed_char_length_wall = smoothed_char_length_wall + \
+                                            smoothed_char_length_wall_rhs
 
     smoothed_char_length_fluid = force_evaluation(actx, smoothed_char_length_fluid)
-    smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
-
-    """
-    # this is strange, but maybe fixes a compile issue and get it evaluated now
-    smoothed_char_length_fluid = smoothed_char_length_fluid + \
-                                 actx.zeros_like(char_length_fluid)
-    smoothed_char_length_wall = smoothed_char_length_wall + \
-                                actx.zeros_like(char_length_wall)
-                                """
+    if use_wall:
+        smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -1548,16 +1567,17 @@ def main(ctx_factory=cl.create_some_context,
 
     compute_production_rates = actx.compile(get_production_rates)
 
-    def grad_t_operator_coupled(t, fluid_state, wall_kappa, wall_temperature):
-        fluid_grad_t, wall_grad_t = coupled_grad_t_operator(
-            dcoll,
-            gas_model,
-            dd_vol_fluid, dd_vol_wall,
-            fluid_boundaries, wall_boundaries,
-            fluid_state, wall_kappa, wall_temperature,
-            time=t,
-            quadrature_tag=quadrature_tag)
-        return make_obj_array([fluid_grad_t, wall_grad_t])
+    if use_wall:
+        def grad_t_operator_coupled(t, fluid_state, wall_kappa, wall_temperature):
+            fluid_grad_t, wall_grad_t = coupled_grad_t_operator(
+                dcoll,
+                gas_model,
+                dd_vol_fluid, dd_vol_wall,
+                fluid_boundaries, wall_boundaries,
+                fluid_state, wall_kappa, wall_temperature,
+                time=t,
+                quadrature_tag=quadrature_tag)
+            return make_obj_array([fluid_grad_t, wall_grad_t])
 
     #grad_t_operator_coupled_compiled = actx.compile(grad_t_operator_coupled)
 
@@ -1582,10 +1602,11 @@ def main(ctx_factory=cl.create_some_context,
             logger.info("Restarting soln.")
         temperature_seed = restart_data["temperature_seed"]
         restart_cv = restart_data["cv"]
-        restart_wv = restart_data["wv"]
         restart_av_smu = restart_data["av_smu"]
         restart_av_sbeta = restart_data["av_sbeta"]
         restart_av_skappa = restart_data["av_skappa"]
+        if use_wall:
+            restart_wv = restart_data["wv"]
         if restart_order != order:
             restart_dcoll = create_discretization_collection(
                 actx,
@@ -1599,17 +1620,19 @@ def main(ctx_factory=cl.create_some_context,
                 dcoll.discr_from_dd(dd_vol_fluid),
                 restart_dcoll.discr_from_dd(dd_vol_fluid)
             )
-            wall_connection = make_same_mesh_connection(
-                actx,
-                dcoll.discr_from_dd(dd_vol_wall),
-                restart_dcoll.discr_from_dd(dd_vol_wall)
-            )
+            if use_wall:
+                wall_connection = make_same_mesh_connection(
+                    actx,
+                    dcoll.discr_from_dd(dd_vol_wall),
+                    restart_dcoll.discr_from_dd(dd_vol_wall)
+                )
             restart_cv = fluid_connection(restart_data["cv"])
             restart_av_smu = fluid_connection(restart_data["av_smu"])
             restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
             restart_av_skappa = fluid_connection(restart_data["av_skappa"])
             temperature_seed = fluid_connection(restart_data["temperature_seed"])
-            restart_wv = wall_connection(restart_data["wv"])
+            if use_wall:
+                restart_wv = wall_connection(restart_data["wv"])
 
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
@@ -1637,18 +1660,20 @@ def main(ctx_factory=cl.create_some_context,
         # so we defer until after those are setup
 
         # initialize the wall
-        wall_mass = (
-            wall_insert_rho * wall_insert_mask
-            + wall_surround_rho * wall_surround_mask)
-        wall_cp = (
-            wall_insert_cp * wall_insert_mask
-            + wall_surround_cp * wall_surround_mask)
-        restart_wv = WallVars(
-            mass=wall_mass,
-            energy=wall_mass * wall_cp * temp_wall,
-            ox_mass=actx.zeros_like(wall_mass))
+        if use_wall:
+            wall_mass = (
+                wall_insert_rho * wall_insert_mask
+                + wall_surround_rho * wall_surround_mask)
+            wall_cp = (
+                wall_insert_cp * wall_insert_mask
+                + wall_surround_cp * wall_surround_mask)
+            restart_wv = WallVars(
+                mass=wall_mass,
+                energy=wall_mass * wall_cp * temp_wall,
+                ox_mass=actx.zeros_like(wall_mass))
 
-    restart_wv = force_evaluation(actx, restart_wv)
+    if use_wall:
+        restart_wv = force_evaluation(actx, restart_wv)
 
     ##################################
     # Set up flow target state       #
@@ -1836,9 +1861,10 @@ def main(ctx_factory=cl.create_some_context,
             wall_bnd.domain_tag: fluid_wall       # pylint: disable=no-member
         }
 
-    wall_boundaries = {
-        wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
-    }
+    if use_wall:
+        wall_boundaries = {
+            wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
+        }
 
     # finish initializing the smoothness for non-restarts
     if not restart_filename:
@@ -1876,14 +1902,22 @@ def main(ctx_factory=cl.create_some_context,
                                              smoothness_mu=restart_av_smu,
                                              smoothness_beta=restart_av_sbeta,
                                              smoothness_kappa=restart_av_skappa)
-    current_wv = force_evaluation(actx, restart_wv)
+    if use_wall:
+        current_wv = force_evaluation(actx, restart_wv)
 
-    stepper_state = make_obj_array([current_fluid_state.cv,
-                                    temperature_seed,
-                                    current_fluid_state.dv.smoothness_mu,
-                                    current_fluid_state.dv.smoothness_beta,
-                                    current_fluid_state.dv.smoothness_kappa,
-                                    current_wv])
+    if use_wall:
+        stepper_state = make_obj_array([current_fluid_state.cv,
+                                        temperature_seed,
+                                        current_fluid_state.dv.smoothness_mu,
+                                        current_fluid_state.dv.smoothness_beta,
+                                        current_fluid_state.dv.smoothness_kappa,
+                                        current_wv])
+    else:
+        stepper_state = make_obj_array([current_fluid_state.cv,
+                                        temperature_seed,
+                                        current_fluid_state.dv.smoothness_mu,
+                                        current_fluid_state.dv.smoothness_beta,
+                                        current_fluid_state.dv.smoothness_kappa])
 
     ####################
     # Ignition Sources #
@@ -1935,87 +1969,88 @@ def main(ctx_factory=cl.create_some_context,
         """Create sponge source."""
         return sponge_sigma*(current_fluid_state.cv - cv)
 
-    def experimental_kappa(temperature):
-        return (
-            1.766e-10 * temperature**3
-            - 4.828e-7 * temperature**2
-            + 6.252e-4 * temperature
-            + 6.707e-3)
+    if use_wall:
+        def experimental_kappa(temperature):
+            return (
+                1.766e-10 * temperature**3
+                - 4.828e-7 * temperature**2
+                + 6.252e-4 * temperature
+                + 6.707e-3)
 
-    def puma_kappa(mass_loss_frac):
-        return (
-            0.0988 * mass_loss_frac**2
-            - 0.2751 * mass_loss_frac
-            + 0.201)
+        def puma_kappa(mass_loss_frac):
+            return (
+                0.0988 * mass_loss_frac**2
+                - 0.2751 * mass_loss_frac
+                + 0.201)
 
-    def puma_effective_surface_area(mass_loss_frac):
-        # Original fit function: -1.1012e5*x**2 - 0.0646e5*x + 1.1794e5
-        # Rescale by x==0 value and rearrange
-        return 1.1794e5 * (
-            1
-            - 0.0547736137 * mass_loss_frac
-            - 0.9336950992 * mass_loss_frac**2)
+        def puma_effective_surface_area(mass_loss_frac):
+            # Original fit function: -1.1012e5*x**2 - 0.0646e5*x + 1.1794e5
+            # Rescale by x==0 value and rearrange
+            return 1.1794e5 * (
+                1
+                - 0.0547736137 * mass_loss_frac
+                - 0.9336950992 * mass_loss_frac**2)
 
-    def _get_wall_kappa_fiber(mass, temperature):
-        mass_loss_frac = (
-            (wall_insert_rho - mass)/wall_insert_rho
-            * wall_insert_mask)
-        scaled_insert_kappa = (
-            experimental_kappa(temperature)
-            * puma_kappa(mass_loss_frac)
-            / puma_kappa(0))
-        return (
-            scaled_insert_kappa * wall_insert_mask
-            + wall_surround_kappa * wall_surround_mask)
+        def _get_wall_kappa_fiber(mass, temperature):
+            mass_loss_frac = (
+                (wall_insert_rho - mass)/wall_insert_rho
+                * wall_insert_mask)
+            scaled_insert_kappa = (
+                experimental_kappa(temperature)
+                * puma_kappa(mass_loss_frac)
+                / puma_kappa(0))
+            return (
+                scaled_insert_kappa * wall_insert_mask
+                + wall_surround_kappa * wall_surround_mask)
 
-    def _get_wall_kappa_inert(mass, temperature):
-        return (
-            wall_insert_kappa * wall_insert_mask
-            + wall_surround_kappa * wall_surround_mask)
+        def _get_wall_kappa_inert(mass, temperature):
+            return (
+                wall_insert_kappa * wall_insert_mask
+                + wall_surround_kappa * wall_surround_mask)
 
-    def _get_wall_effective_surface_area_fiber(mass):
-        mass_loss_frac = (
-            (wall_insert_rho - mass)/wall_insert_rho
-            * wall_insert_mask)
-        return (
-            puma_effective_surface_area(mass_loss_frac) * wall_insert_mask)
+        def _get_wall_effective_surface_area_fiber(mass):
+            mass_loss_frac = (
+                (wall_insert_rho - mass)/wall_insert_rho
+                * wall_insert_mask)
+            return (
+                puma_effective_surface_area(mass_loss_frac) * wall_insert_mask)
 
-    def _mass_loss_rate_fiber(mass, ox_mass, temperature, eff_surf_area):
-        actx = mass.array_context
-        alpha = (
-            (0.00143+0.01*actx.np.exp(-1450.0/temperature))
-            / (1.0+0.0002*actx.np.exp(13000.0/temperature)))
-        k = alpha*actx.np.sqrt(
-            (univ_gas_const*temperature)/(2.0*np.pi*mw_o2))
-        return (mw_co/mw_o2 + mw_o/mw_o2 - 1)*ox_mass*k*eff_surf_area
+        def _mass_loss_rate_fiber(mass, ox_mass, temperature, eff_surf_area):
+            actx = mass.array_context
+            alpha = (
+                (0.00143+0.01*actx.np.exp(-1450.0/temperature))
+                / (1.0+0.0002*actx.np.exp(13000.0/temperature)))
+            k = alpha*actx.np.sqrt(
+                (univ_gas_const*temperature)/(2.0*np.pi*mw_o2))
+            return (mw_co/mw_o2 + mw_o/mw_o2 - 1)*ox_mass*k*eff_surf_area
 
-    # inert
-    if wall_material == 0:
-        wall_model = WallModel(
-            heat_capacity=(
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask),
-            thermal_conductivity_func=_get_wall_kappa_inert)
-    # non-porous
-    elif wall_material == 1:
-        wall_model = WallModel(
-            heat_capacity=(
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask),
-            thermal_conductivity_func=_get_wall_kappa_fiber,
-            effective_surface_area_func=_get_wall_effective_surface_area_fiber,
-            mass_loss_func=_mass_loss_rate_fiber,
-            oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
-    # porous
-    elif wall_material == 2:
-        wall_model = WallModel(
-            heat_capacity=(
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask),
-            thermal_conductivity_func=_get_wall_kappa_fiber,
-            effective_surface_area_func=_get_wall_effective_surface_area_fiber,
-            mass_loss_func=_mass_loss_rate_fiber,
-            oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
+        # inert
+        if wall_material == 0:
+            wall_model = WallModel(
+                heat_capacity=(
+                    wall_insert_cp * wall_insert_mask
+                    + wall_surround_cp * wall_surround_mask),
+                thermal_conductivity_func=_get_wall_kappa_inert)
+        # non-porous
+        elif wall_material == 1:
+            wall_model = WallModel(
+                heat_capacity=(
+                    wall_insert_cp * wall_insert_mask
+                    + wall_surround_cp * wall_surround_mask),
+                thermal_conductivity_func=_get_wall_kappa_fiber,
+                effective_surface_area_func=_get_wall_effective_surface_area_fiber,
+                mass_loss_func=_mass_loss_rate_fiber,
+                oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
+        # porous
+        elif wall_material == 2:
+            wall_model = WallModel(
+                heat_capacity=(
+                    wall_insert_cp * wall_insert_mask
+                    + wall_surround_cp * wall_surround_mask),
+                thermal_conductivity_func=_get_wall_kappa_fiber,
+                effective_surface_area_func=_get_wall_effective_surface_area_fiber,
+                mass_loss_func=_mass_loss_rate_fiber,
+                oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
 
     vis_timer = None
     monitor_memory = True
@@ -2073,7 +2108,8 @@ def main(ctx_factory=cl.create_some_context,
             logmgr.add_watches(["pyopencl_array_time.max"])
 
     fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
-    wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
+    if use_wall:
+        wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
 
     #    initname = initializer.__class__.__name__
     eosname = eos.__class__.__name__
@@ -2127,8 +2163,9 @@ def main(ctx_factory=cl.create_some_context,
         pmax = vol_max(dd_vol_fluid, dv.pressure)
         tmin = vol_min(dd_vol_fluid, dv.temperature)
         tmax = vol_max(dd_vol_fluid, dv.temperature)
-        twmin = vol_min(dd_vol_wall, wall_temperature)
-        twmax = vol_max(dd_vol_wall, wall_temperature)
+        if use_wall:
+            twmin = vol_min(dd_vol_wall, wall_temperature)
+            twmax = vol_max(dd_vol_wall, wall_temperature)
 
         from pytools.obj_array import obj_array_vectorize
         y_min = obj_array_vectorize(lambda x: vol_min(dd_vol_fluid, x),
@@ -2140,8 +2177,9 @@ def main(ctx_factory=cl.create_some_context,
             f"\n------ P       (min, max) (Pa) = ({pmin:1.9e}, {pmax:1.9e})")
         dv_status_msg += (
             f"\n------ T_fluid (min, max) (K)  = ({tmin:7g}, {tmax:7g})")
-        dv_status_msg += (
-            f"\n------ T_wall  (min, max) (K)  = ({twmin:7g}, {twmax:7g})")
+        if use_wall:
+            dv_status_msg += (
+                f"\n------ T_wall  (min, max) (K)  = ({twmin:7g}, {twmax:7g})")
 
         if eos_type == 1:
             # check the temperature convergence
@@ -2182,12 +2220,13 @@ def main(ctx_factory=cl.create_some_context,
         fluid_viz_fields = [("cv", cv),
                             ("dv", dv),
                             ("dt" if constant_cfl else "cfl", ts_field_fluid)]
-        wall_viz_fields = [
-            ("wv", wv),
-            ("wall_kappa", wall_kappa),
-            ("wall_temperature", wall_temperature),
-            ("dt" if constant_cfl else "cfl", ts_field_wall)
-        ]
+        if use_wall:
+            wall_viz_fields = [
+                ("wv", wv),
+                ("wall_kappa", wall_kappa),
+                ("wall_temperature", wall_temperature),
+                ("dt" if constant_cfl else "cfl", ts_field_wall)
+            ]
 
         # extra viz quantities, things here are often used for post-processing
         if viz_level > 0:
@@ -2218,8 +2257,9 @@ def main(ctx_factory=cl.create_some_context,
             if nparts > 1:
                 fluid_viz_ext = [("rank", rank)]
                 fluid_viz_fields.extend(fluid_viz_ext)
-                wall_viz_ext = [("rank", rank)]
-                wall_viz_fields.extend(wall_viz_ext)
+                if use_wall:
+                    wall_viz_ext = [("rank", rank)]
+                    wall_viz_fields.extend(wall_viz_ext)
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
@@ -2249,11 +2289,12 @@ def main(ctx_factory=cl.create_some_context,
                       ("char_length_fluid_smooth", smoothed_char_length_fluid)]
             fluid_viz_fields.extend(viz_ext)
 
-            cell_alpha = wall_model.thermal_diffusivity(
-                wv.mass, wall_temperature, wall_kappa)
+            if use_wall:
+                cell_alpha = wall_model.thermal_diffusivity(
+                    wv.mass, wall_temperature, wall_kappa)
 
-            viz_ext = [("alpha", cell_alpha)]
-            wall_viz_fields.extend(viz_ext)
+                viz_ext = [("alpha", cell_alpha)]
+                wall_viz_fields.extend(viz_ext)
 
             cfl_fluid_inv = char_length_fluid / (fluid_state.wavespeed)
             nu = fluid_state.viscosity/fluid_state.mass_density
@@ -2335,10 +2376,11 @@ def main(ctx_factory=cl.create_some_context,
             dcoll, fluid_viz_fields, fluid_visualizer,
             vizname=vizname+"-fluid", step=dump_number, t=t,
             overwrite=True, comm=comm, vis_timer=vis_timer)
-        write_visfile(
-            dcoll, wall_viz_fields, wall_visualizer,
-            vizname=vizname+"-wall", step=dump_number, t=t_wall,
-            overwrite=True, comm=comm, vis_timer=vis_timer)
+        if use_wall:
+            write_visfile(
+                dcoll, wall_viz_fields, wall_visualizer,
+                vizname=vizname+"-wall", step=dump_number, t=t_wall,
+                overwrite=True, comm=comm, vis_timer=vis_timer)
 
         if rank == 0:
             print("******** Done Writing Visualization File ********")
@@ -2348,7 +2390,10 @@ def main(ctx_factory=cl.create_some_context,
             print(f"******** Writing Restart File at step {step}, "
                   f"sim time {t:1.6e} s ********")
 
-        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+        if use_wall:
+            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+        else:
+            cv, tseed, av_smu, av_sbeta, av_skappa = state
         restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
         if restart_fname != restart_filename:
             restart_data = {
@@ -2359,15 +2404,18 @@ def main(ctx_factory=cl.create_some_context,
                 "av_skappa": av_skappa,
                 "temperature_seed": tseed,
                 "nspecies": nspecies,
-                "wv": wv,
                 "t": t,
-                "t_wall": t_wall,
                 "step": step,
                 "order": order,
                 "last_viz_interval": last_viz_interval,
                 "global_nelements": global_nelements,
                 "num_parts": nparts
             }
+
+            if use_wall:
+                restart_data["wv"] = wv
+                restart_data["t_wall"] = t_wall
+
             write_restart_file(actx, restart_data, restart_fname, comm)
 
         if rank == 0:
@@ -2413,9 +2461,10 @@ def main(ctx_factory=cl.create_some_context,
             logger.info(f"{rank=}: NANs/Infs in pressure data.")
             print(f"{rank=}: NANs/Infs in pressure data.")
 
-        if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
-            health_error = True
-            logger.info(f"{rank=}: NANs/Infs in wall temperature data.")
+        if use_wall:
+            if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
+                health_error = True
+                logger.info(f"{rank=}: NANs/Infs in wall temperature data.")
 
         if global_range_check(dd_vol_fluid, dv.pressure,
                               health_pres_min, health_pres_max):
@@ -2450,15 +2499,17 @@ def main(ctx_factory=cl.create_some_context,
                         f"Local Range      ({t_min_loc:7g}, {t_max_loc:7g})")
             report_violators(dv.temperature, health_temp_min, health_temp_max)
 
-        if global_range_check(dd_vol_wall, wall_temperature,
-                              health_temp_min, health_temp_max):
-            health_error = True
-            t_min = vol_min(dd_vol_wall, wall_temperature)
-            t_max = vol_max(dd_vol_wall, wall_temperature)
-            logger.info(f"{rank=}:"
-                        "Wall temperature range violation: "
-                        f"Simulation Range ({t_min=}, {t_max=}) "
-                        f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
+        if use_wall:
+            if global_range_check(dd_vol_wall, wall_temperature,
+                                  health_temp_min, health_temp_max):
+                health_error = True
+                t_min = vol_min(dd_vol_wall, wall_temperature)
+                t_max = vol_max(dd_vol_wall, wall_temperature)
+                logger.info(
+                    f"{rank=}:"
+                    "Wall temperature range violation: "
+                    f"Simulation Range ({t_min=}, {t_max=}) "
+                    f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
 
         for i in range(nspecies):
             if global_range_check(dd_vol_fluid, cv.species_mass_fractions[i],
@@ -2497,22 +2548,7 @@ def main(ctx_factory=cl.create_some_context,
         return health_error
 
     def my_get_viscous_timestep(dcoll, fluid_state):
-        """Routine returns the the node-local maximum stable viscous timestep.
 
-        Parameters
-        ----------
-        dcoll: grudge.eager.EagerDGDiscretization
-            the discretization to use
-        fluid_state: :class:`~mirgecom.gas_model.FluidState`
-            Full fluid state including conserved and thermal state
-        alpha: :class:`~meshmode.dof_array.DOFArray`
-            Arfifical viscosity
-
-        Returns
-        -------
-        :class:`~meshmode.dof_array.DOFArray`
-            The maximum stable timestep at each node.
-        """
         nu = 0
         d_alpha_max = 0
 
@@ -2530,141 +2566,51 @@ def main(ctx_factory=cl.create_some_context,
             + ((nu + d_alpha_max) / char_length_fluid))
         )
 
-    def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
-        """Routine returns the the node-local maximum stable thermal timestep.
+    if use_wall:
+        def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
 
-        Parameters
-        ----------
-        dcoll: grudge.eager.EagerDGDiscretization
-            the discretization to use
+            return (
+                char_length_wall*char_length_wall
+                / (
+                    wall_time_scale
+                    * actx.np.maximum(
+                        wall_model.thermal_diffusivity(
+                            wv.mass, wall_temperature, wall_kappa),
+                        wall_model.oxygen_diffusivity)))
 
-        Returns
-        -------
-        :class:`~meshmode.dof_array.DOFArray`
-            The maximum stable timestep at each node.
-        """
+        def _my_get_timestep_wall(
+                dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
+                constant_cfl=False, wall_dd=DD_VOLUME_ALL):
 
-        return (
-            char_length_wall*char_length_wall
-            / (
-                wall_time_scale
-                * actx.np.maximum(
-                    wall_model.thermal_diffusivity(
-                        wv.mass, wall_temperature, wall_kappa),
-                    wall_model.oxygen_diffusivity)))
+            actx = wall_kappa.array_context
+            mydt = dt
+            if constant_cfl:
+                from grudge.op import nodal_min
+                ts_field = cfl*my_get_wall_timestep(
+                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wall_temperature=wall_temperature)
+                mydt = actx.to_numpy(
+                    nodal_min(
+                        dcoll, wall_dd, ts_field, initial=np.inf))[()]
+            else:
+                from grudge.op import nodal_max
+                ts_field = mydt/my_get_wall_timestep(
+                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wall_temperature=wall_temperature)
+                cfl = actx.to_numpy(
+                    nodal_max(
+                        dcoll, wall_dd, ts_field, initial=0.))[()]
 
-    def _my_get_timestep_wall(
-            dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
-            constant_cfl=False, wall_dd=DD_VOLUME_ALL):
-        """Return the maximum stable timestep for a typical heat transfer simulation.
-
-        This routine returns *dt*, the users defined constant timestep, or *max_dt*,
-        the maximum domain-wide stability-limited timestep for a fluid simulation.
-
-        .. important::
-            This routine calls the collective: :func:`~grudge.op.nodal_min` on the
-            inside which makes it domain-wide regardless of parallel domain
-            decomposition. Thus this routine must be called *collectively*
-            (i.e. by all ranks).
-
-        Two modes are supported:
-            - Constant DT mode: returns the minimum of (t_final-t, dt)
-            - Constant CFL mode: returns (cfl * max_dt)
-
-        Parameters
-        ----------
-        dcoll
-            Grudge discretization or discretization collection?
-        t: float
-            Current time
-        t_final: float
-            Final time
-        dt: float
-            The current timestep
-        cfl: float
-            The current CFL number
-        constant_cfl: bool
-            True if running constant CFL mode
-
-        Returns
-        -------
-        float
-            The dt (contant cfl) or cfl (constant dt) at every point in the mesh
-        float
-            The minimum stable cfl based on conductive heat transfer
-        float
-            The maximum stable DT based on conductive heat transfer
-        """
-        actx = wall_kappa.array_context
-        mydt = dt
-        if constant_cfl:
-            from grudge.op import nodal_min
-            ts_field = cfl*my_get_wall_timestep(
-                dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
-                wall_temperature=wall_temperature)
-            mydt = actx.to_numpy(
-                nodal_min(
-                    dcoll, wall_dd, ts_field, initial=np.inf))[()]
-        else:
-            from grudge.op import nodal_max
-            ts_field = mydt/my_get_wall_timestep(
-                dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
-                wall_temperature=wall_temperature)
-            cfl = actx.to_numpy(
-                nodal_max(
-                    dcoll, wall_dd, ts_field, initial=0.))[()]
-
-        return ts_field, cfl, mydt
+            return ts_field, cfl, mydt
 
     #my_get_timestep = actx.compile(_my_get_timestep)
-    my_get_timestep_wall = _my_get_timestep_wall
+    if use_wall:
+        my_get_timestep_wall = _my_get_timestep_wall
 
     def _my_get_timestep(
             dcoll, fluid_state, t, dt, cfl, t_final, constant_cfl=False,
             fluid_dd=DD_VOLUME_ALL):
-        """Return the maximum stable timestep for a typical fluid simulation.
 
-        This routine returns *dt*, the users defined constant timestep, or *max_dt*,
-        the maximum domain-wide stability-limited timestep for a fluid simulation.
-
-        .. important::
-            This routine calls the collective: :func:`~grudge.op.nodal_min` on the
-            inside which makes it domain-wide regardless of parallel domain
-            decomposition. Thus this routine must be called *collectively*
-            (i.e. by all ranks).
-
-        Two modes are supported:
-            - Constant DT mode: returns the minimum of (t_final-t, dt)
-            - Constant CFL mode: returns (cfl * max_dt)
-
-        Parameters
-        ----------
-        dcoll
-            Grudge discretization or discretization collection?
-        fluid_state: :class:`~mirgecom.gas_model.FluidState`
-            The full fluid conserved and thermal state
-        t: float
-            Current time
-        t_final: float
-            Final time
-        dt: float
-            The current timestep
-        cfl: float
-            The current CFL number
-        alpha: :class:`~meshmode.dof_array.DOFArray`
-            The contribution from artificial viscosity
-        constant_cfl: bool
-            True if running constant CFL mode
-
-        Returns
-        -------
-        float
-            The dt (contant cfl) or cfl (constant dt) at every point in the mesh
-        float
-            The minimum stable cfl based on a viscous fluid.
-        float
-            The maximum stable DT based on a viscous fluid.
-        """
         mydt = dt
         if constant_cfl:
             from grudge.op import nodal_min
@@ -2736,18 +2682,28 @@ def main(ctx_factory=cl.create_some_context,
         # Filter *first* because this will be most straightfwd to
         # understand and move. For this to work, this routine
         # must pass back the filtered CV in the state.
-        if check_step(step=step, interval=soln_nfilter):
-            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-            cv = filter_cv_compiled(cv)
-            state = make_obj_array([cv, tseed, av_smu, av_sbeta, av_skappa, wv])
+        if use_wall:
+            if check_step(step=step, interval=soln_nfilter):
+                cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+                cv = filter_cv_compiled(cv)
+                state = make_obj_array([cv, tseed, av_smu, av_sbeta, av_skappa, wv])
 
-        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+        else:
+            if check_step(step=step, interval=soln_nfilter):
+                cv, tseed, av_smu, av_sbeta, av_skappa = state
+                cv = filter_cv_compiled(cv)
+                state = make_obj_array([cv, tseed, av_smu, av_sbeta, av_skappa])
+
+            cv, tseed, av_smu, av_sbeta, av_skappa = state
+
         fluid_state = create_fluid_state(cv=cv,
                                          temperature_seed=tseed,
                                          smoothness_mu=av_smu,
                                          smoothness_beta=av_sbeta,
                                          smoothness_kappa=av_skappa)
-        wdv = create_wall_dependent_vars_compiled(wv)
+        if use_wall:
+            wdv = create_wall_dependent_vars_compiled(wv)
         cv = fluid_state.cv  # reset cv to limited version
 
         try:
@@ -2765,17 +2721,23 @@ def main(ctx_factory=cl.create_some_context,
             next_dump_number = step
 
             # This re-creation of the state resets *tseed* to current temp
-            state = make_obj_array([cv, fluid_state.temperature,
-                                    av_smu, av_sbeta, av_skappa, wv])
+            if use_wall:
+                state = make_obj_array([cv, fluid_state.temperature,
+                                        av_smu, av_sbeta, av_skappa, wv])
+            else:
+                state = make_obj_array([cv, fluid_state.temperature,
+                                        av_smu, av_sbeta, av_skappa])
 
             if any([do_viz, do_restart, do_health, do_status]):
 
                 # pass through, removes a bunch of tagging to avoid recomplie
-                wv = get_wv(wv)
+                if use_wall:
+                    wv = get_wv(wv)
 
                 if not force_eval:
                     fluid_state = force_evaluation(actx, fluid_state)
-                    wv = force_evaluation(actx, wv)
+                    if use_wall:
+                        wv = force_evaluation(actx, wv)
 
                 dv = fluid_state.dv
 
@@ -2784,11 +2746,14 @@ def main(ctx_factory=cl.create_some_context,
                     t=t, dt=dt, cfl=current_cfl, t_final=t_final,
                     constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
 
-                ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
-                    dcoll=dcoll, wv=wv, wall_kappa=wdv.thermal_conductivity,
-                    wall_temperature=wdv.temperature, t=t, dt=dt,
-                    cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
-                    wall_dd=dd_vol_wall)
+                if use_wall:
+                    ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
+                        dcoll=dcoll, wv=wv, wall_kappa=wdv.thermal_conductivity,
+                        wall_temperature=wdv.temperature, t=t, dt=dt,
+                        cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
+                        wall_dd=dd_vol_wall)
+                else:
+                    cfl_wall = cfl_fluid
 
             """
             # adjust time for constant cfl, use the smallest timescale
@@ -2833,13 +2798,25 @@ def main(ctx_factory=cl.create_some_context,
 
             # these status updates require global reductions on state data
             if do_status:
-                my_write_status(cv=cv, dv=dv, wall_temperature=wdv.temperature,
-                                dt=dt, cfl_fluid=cfl_fluid, cfl_wall=cfl_wall)
+                # MJA this interface needs updating for with/without wall
+                # one option is wall-specific status and health checking?
+                if use_wall:
+                    my_write_status(cv=cv, dv=dv, wall_temperature=wdv.temperature,
+                                    dt=dt, cfl_fluid=cfl_fluid, cfl_wall=cfl_wall)
+                else:
+                    my_write_status(cv=cv, dv=dv, wall_temperature=None,
+                                    dt=dt, cfl_fluid=cfl_fluid, cfl_wall=cfl_wall)
 
             if do_health:
-                health_errors = global_reduce(
-                    my_health_check(fluid_state, wall_temperature=wdv.temperature),
-                    op="lor")
+                if use_wall:
+                    health_errors = global_reduce(
+                        my_health_check(fluid_state,
+                                        wall_temperature=wdv.temperature),
+                        op="lor")
+                else:
+                    health_errors = global_reduce(
+                        my_health_check(fluid_state, wall_temperature=None),
+                        op="lor")
                 if health_errors:
                     if rank == 0:
                         #logger.warning("Solution failed health check.")
@@ -2850,12 +2827,21 @@ def main(ctx_factory=cl.create_some_context,
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
 
             if do_viz:
-                my_write_viz(
-                    step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
-                    wv=wv, wall_kappa=wdv.thermal_conductivity,
-                    wall_temperature=wdv.temperature, ts_field_fluid=ts_field_fluid,
-                    ts_field_wall=ts_field_wall,
-                    dump_number=next_dump_number)
+                if use_wall:
+                    my_write_viz(
+                        step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
+                        wv=wv, wall_kappa=wdv.thermal_conductivity,
+                        wall_temperature=wdv.temperature,
+                        ts_field_fluid=ts_field_fluid,
+                        ts_field_wall=ts_field_wall,
+                        dump_number=next_dump_number)
+                else:
+                    my_write_viz(
+                        step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
+                        wv=None, wall_kappa=None,
+                        wall_temperature=None, ts_field_fluid=ts_field_fluid,
+                        ts_field_wall=None,
+                        dump_number=next_dump_number)
 
         except MyRuntimeError:
             if rank == 0:
@@ -2867,12 +2853,20 @@ def main(ctx_factory=cl.create_some_context,
                 dump_number = (math.floor((t-t_start)/t_viz_interval) +
                     last_viz_interval)
 
-            my_write_viz(
-                step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
-                wv=wv, wall_kappa=wdv.thermal_conductivity,
-                wall_temperature=wdv.temperature, ts_field_fluid=ts_field_fluid,
-                ts_field_wall=ts_field_wall,
-                dump_number=dump_number)
+            if use_wall:
+                my_write_viz(
+                    step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
+                    wv=wv, wall_kappa=wdv.thermal_conductivity,
+                    wall_temperature=wdv.temperature, ts_field_fluid=ts_field_fluid,
+                    ts_field_wall=ts_field_wall,
+                    dump_number=dump_number)
+            else:
+                my_write_viz(
+                    step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
+                    wv=None, wall_kappa=None,
+                    wall_temperature=None, ts_field_fluid=ts_field_fluid,
+                    ts_field_wall=None,
+                    dump_number=dump_number)
             my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
             raise
 
@@ -2896,7 +2890,10 @@ def main(ctx_factory=cl.create_some_context,
         return state, dt
 
     def unfiltered_rhs(t, state):
-        cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+        if use_wall:
+            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+        else:
+            cv, tseed, av_smu, av_sbeta, av_skappa = state
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
@@ -2931,7 +2928,8 @@ def main(ctx_factory=cl.create_some_context,
                 cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
 
         # update wall model
-        wdv = wall_model.dependent_vars(wv)
+        if use_wall:
+            wdv = wall_model.dependent_vars(wv)
         tseed_rhs = actx.zeros_like(fluid_state.temperature)
 
         """
@@ -2944,22 +2942,32 @@ def main(ctx_factory=cl.create_some_context,
             quadrature_tag=quadrature_tag,
             operator_states_quad=operator_fluid_states)
         """
-
-        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-            fluid_boundaries=fluid_boundaries,
-            wall_boundaries=wall_boundaries,
-            interface_noslip=noslip,
-            #interface_noslip=True,
-            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-            fluid_state=fluid_state,
-            wall_kappa=wdv.thermal_conductivity,
-            wall_temperature=wdv.temperature,
-            time=t,
-            wall_penalty_amount=wall_penalty_amount,
-            quadrature_tag=quadrature_tag)
+        if use_wall:
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=fluid_boundaries,
+                wall_boundaries=wall_boundaries,
+                interface_noslip=noslip,
+                #interface_noslip=True,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                time=t,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag)
+        else:
+            fluid_rhs = ns_operator(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                dd=dd_vol_fluid,
+                boundaries=fluid_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                state=fluid_state,
+                time=t,
+                quadrature_tag=quadrature_tag)
 
         if use_combustion:  # conditionals evaluated only once at compile time
             fluid_rhs = fluid_rhs + \
@@ -3022,74 +3030,82 @@ def main(ctx_factory=cl.create_some_context,
             fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
             #sponge_rhs = _sponge_source(cv=cv)
 
-        # wall mass loss
-        wall_mass_rhs = actx.zeros_like(wv.mass)
-        if use_wall_mass:
-            wall_mass_rhs = -wall_model.mass_loss_rate(
-                mass=wv.mass, ox_mass=wv.ox_mass,
-                temperature=wdv.temperature)
+        if use_wall:
+            # wall mass loss
+            wall_mass_rhs = actx.zeros_like(wv.mass)
+            if use_wall_mass:
+                wall_mass_rhs = -wall_model.mass_loss_rate(
+                    mass=wv.mass, ox_mass=wv.ox_mass,
+                    temperature=wdv.temperature)
 
-        # wall oxygen diffusion
-        wall_ox_mass_rhs = actx.zeros_like(wv.mass)
-        if use_wall_ox:
-            if nspecies == 0:
-                fluid_ox_mass = actx.zeros_like(cv.mass)
-            elif nspecies > 3:
-                fluid_ox_mass = cv.species_mass[i_ox]
-            else:
-                fluid_ox_mass = mf_o2*cv.species_mass[0]
-            pairwise_ox = {
-                (dd_vol_fluid, dd_vol_wall):
-                    (fluid_ox_mass, wv.ox_mass)}
-            pairwise_ox_tpairs = inter_volume_trace_pairs(
-                dcoll, pairwise_ox, comm_tag=_OxCommTag)
-            ox_tpairs = pairwise_ox_tpairs[dd_vol_fluid, dd_vol_wall]
-            wall_ox_boundaries = {
-                wall_ffld_bnd.domain_tag:  # pylint: disable=no-member
-                DirichletDiffusionBoundary(0)}
+            # wall oxygen diffusion
+            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            if use_wall_ox:
+                if nspecies == 0:
+                    fluid_ox_mass = actx.zeros_like(cv.mass)
+                elif nspecies > 3:
+                    fluid_ox_mass = cv.species_mass[i_ox]
+                else:
+                    fluid_ox_mass = mf_o2*cv.species_mass[0]
+                pairwise_ox = {
+                    (dd_vol_fluid, dd_vol_wall):
+                        (fluid_ox_mass, wv.ox_mass)}
+                pairwise_ox_tpairs = inter_volume_trace_pairs(
+                    dcoll, pairwise_ox, comm_tag=_OxCommTag)
+                ox_tpairs = pairwise_ox_tpairs[dd_vol_fluid, dd_vol_wall]
+                wall_ox_boundaries = {
+                    wall_ffld_bnd.domain_tag:  # pylint: disable=no-member
+                    DirichletDiffusionBoundary(0)}
 
-            wall_ox_boundaries.update({
-                tpair.dd.domain_tag:
-                DirichletDiffusionBoundary(
-                    op.project(dcoll, tpair.dd,
-                               tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
-                for tpair in ox_tpairs})
+                wall_ox_boundaries.update({
+                    tpair.dd.domain_tag:
+                    DirichletDiffusionBoundary(
+                        op.project(dcoll, tpair.dd,
+                                   tpair.dd.with_discr_tag(quadrature_tag),
+                                   tpair.ext))
+                    for tpair in ox_tpairs})
 
-            wall_ox_mass_rhs = diffusion_operator(
-                dcoll, wall_model.oxygen_diffusivity, wall_ox_boundaries, wv.ox_mass,
-                penalty_amount=wall_penalty_amount,
-                quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                comm_tag=_WallOxDiffCommTag)
+                wall_ox_mass_rhs = diffusion_operator(
+                    dcoll, wall_model.oxygen_diffusivity,
+                    wall_ox_boundaries, wv.ox_mass,
+                    penalty_amount=wall_penalty_amount,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_wall,
+                    comm_tag=_WallOxDiffCommTag)
 
-        wall_rhs = wall_time_scale * WallVars(
-            mass=wall_mass_rhs,
-            energy=wall_energy_rhs,
-            ox_mass=wall_ox_mass_rhs)
+            wall_rhs = wall_time_scale * WallVars(
+                mass=wall_mass_rhs,
+                energy=wall_energy_rhs,
+                ox_mass=wall_ox_mass_rhs)
 
-        if use_wall_ox:
-            # Solve a diffusion equation in the fluid too just to ensure all MPI
-            # sends/recvs from inter_volume_trace_pairs are in DAG
-            # FIXME: this is dumb
-            reverse_ox_tpairs = pairwise_ox_tpairs[dd_vol_wall, dd_vol_fluid]
-            fluid_ox_boundaries = {
-                bdtag: DirichletDiffusionBoundary(0)
-                for bdtag in fluid_boundaries}
-            fluid_ox_boundaries.update({
-                tpair.dd.domain_tag:
-                DirichletDiffusionBoundary(
-                    op.project(dcoll, tpair.dd,
-                               tpair.dd.with_discr_tag(quadrature_tag), tpair.ext))
-                for tpair in reverse_ox_tpairs})
+            if use_wall_ox:
+                # Solve a diffusion equation in the fluid too just to ensure all MPI
+                # sends/recvs from inter_volume_trace_pairs are in DAG
+                # FIXME: this is dumb
+                reverse_ox_tpairs = pairwise_ox_tpairs[dd_vol_wall, dd_vol_fluid]
+                fluid_ox_boundaries = {
+                    bdtag: DirichletDiffusionBoundary(0)
+                    for bdtag in fluid_boundaries}
+                fluid_ox_boundaries.update({
+                    tpair.dd.domain_tag:
+                    DirichletDiffusionBoundary(
+                        op.project(dcoll, tpair.dd,
+                                   tpair.dd.with_discr_tag(quadrature_tag),
+                                   tpair.ext))
+                    for tpair in reverse_ox_tpairs})
 
-            fluid_dummy_ox_mass_rhs = diffusion_operator(
-                dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
-                quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                comm_tag=_FluidOxDiffCommTag)
+                fluid_dummy_ox_mass_rhs = diffusion_operator(
+                    dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    comm_tag=_FluidOxDiffCommTag)
 
-            fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
+                fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
-        return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                               av_sbeta_rhs, av_skappa_rhs, wall_rhs])
+        if use_wall:
+            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
+                                   av_sbeta_rhs, av_skappa_rhs, wall_rhs])
+        else:
+            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
+                                   av_sbeta_rhs, av_skappa_rhs])
 
     unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
@@ -3101,16 +3117,26 @@ def main(ctx_factory=cl.create_some_context,
 
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
-        fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, av_skappa_rhs, wall_rhs = \
-            unfiltered_rhs_compiled(t, state)
+        if use_wall:
+            fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, \
+                av_skappa_rhs, wall_rhs = \
+                unfiltered_rhs_compiled(t, state)
+        else:
+            fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, av_skappa_rhs = \
+                unfiltered_rhs_compiled(t, state)
 
         # Use a spectral filter on the RHS
         if use_rhs_filter:
             fluid_rhs = filter_rhs_fluid_compiled(fluid_rhs)
-            wall_rhs = filter_rhs_wall_compiled(wall_rhs)
+            if use_wall:
+                wall_rhs = filter_rhs_wall_compiled(wall_rhs)
 
-        return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                               av_sbeta_rhs, av_skappa_rhs, wall_rhs])
+        if use_wall:
+            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
+                                   av_sbeta_rhs, av_skappa_rhs, wall_rhs])
+        else:
+            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
+                                   av_sbeta_rhs, av_skappa_rhs])
 
     """
     current_dt = get_sim_timestep(dcoll, current_state, current_t, current_dt,
@@ -3127,13 +3153,19 @@ def main(ctx_factory=cl.create_some_context,
                           force_eval=force_eval,
                           state=stepper_state,
                           compile_rhs=False)
-    current_cv, tseed, current_av_smu, current_av_sbeta, \
-        current_av_skappa, current_wv = stepper_state
+
+    if use_wall:
+        current_cv, tseed, current_av_smu, current_av_sbeta, \
+            current_av_skappa, current_wv = stepper_state
+    else:
+        current_cv, tseed, current_av_smu, current_av_sbeta, \
+            current_av_skappa = stepper_state
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              smoothness_mu=current_av_smu,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa)
-    current_wdv = create_wall_dependent_vars_compiled(current_wv)
+    if use_wall:
+        current_wdv = create_wall_dependent_vars_compiled(current_wv)
 
     # Dump the final data
     if rank == 0:
@@ -3144,17 +3176,24 @@ def main(ctx_factory=cl.create_some_context,
         fluid_state=current_fluid_state,
         t=current_t, dt=current_dt, cfl=current_cfl,
         t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
-    ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(dcoll=dcoll,
-        wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
-        wall_temperature=current_wdv.temperature, t=current_t, dt=current_dt,
-        cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
-        wall_dd=dd_vol_wall)
+    if use_wall:
+        ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(dcoll=dcoll,
+            wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
+            wall_temperature=current_wdv.temperature, t=current_t, dt=current_dt,
+            cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
+            wall_dd=dd_vol_wall)
     current_t_wall = t_wall_start + (current_step - first_step)*dt*wall_time_scale
+
     my_write_status_lite(step=current_step, t=current_t,
                          t_wall=current_t_wall)
-    my_write_status(dv=final_dv, cv=current_cv,
-                    wall_temperature=current_wdv.temperature,
-                    dt=dt, cfl_fluid=cfl, cfl_wall=cfl_wall)
+    if use_wall:
+        my_write_status(dv=final_dv, cv=current_cv,
+                        wall_temperature=current_wdv.temperature,
+                        dt=dt, cfl_fluid=cfl, cfl_wall=cfl_wall)
+    else:
+        my_write_status(dv=final_dv, cv=current_cv,
+                        wall_temperature=None,
+                        dt=dt, cfl_fluid=cfl, cfl_wall=cfl)
 
     if viz_interval_type == 0:
         dump_number = current_step
@@ -3162,14 +3201,25 @@ def main(ctx_factory=cl.create_some_context,
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
 
-    my_write_viz(
-        step=current_step, t=current_t, t_wall=current_t_wall,
-        fluid_state=current_fluid_state,
-        wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
-        wall_temperature=current_wdv.temperature,
-        ts_field_fluid=ts_field_fluid,
-        ts_field_wall=ts_field_wall,
-        dump_number=dump_number)
+    if use_wall:
+        my_write_viz(
+            step=current_step, t=current_t, t_wall=current_t_wall,
+            fluid_state=current_fluid_state,
+            wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
+            wall_temperature=current_wdv.temperature,
+            ts_field_fluid=ts_field_fluid,
+            ts_field_wall=ts_field_wall,
+            dump_number=dump_number)
+    else:
+        my_write_viz(
+            step=current_step, t=current_t, t_wall=current_t_wall,
+            fluid_state=current_fluid_state,
+            wv=None, wall_kappa=None,
+            wall_temperature=None,
+            ts_field_fluid=ts_field_fluid,
+            ts_field_wall=None,
+            dump_number=dump_number)
+
     my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
                      state=stepper_state)
 
