@@ -109,6 +109,52 @@ from y3prediction.wall import (
 from y3prediction.uiuc_sharp import Thermochemistry
 from y3prediction.actii_y3 import InitACTII
 
+from dataclasses import dataclass
+from arraycontext import (
+    dataclass_array_container,
+    with_container_arithmetic
+)
+from mirgecom.fluid import ConservedVars
+from meshmode.dof_array import DOFArray  # noqa
+
+
+@with_container_arithmetic(bcast_obj_array=False,
+                           bcast_container_types=(DOFArray, np.ndarray),
+                           rel_comparison=True)
+@dataclass_array_container
+@dataclass(frozen=True)
+class StepperState:
+    r"""Store quantities to advance in time."
+
+    Store the quanitites that should be evolved in time by an advancer
+    """
+
+    cv: ConservedVars
+    tseed: DOFArray
+    av_smu: DOFArray
+    av_sbeta: DOFArray
+    av_skappa: DOFArray
+
+    def replace(self, **kwargs):
+        """Return a copy of *self* with the attributes in *kwargs* replaced."""
+        from dataclasses import replace
+        return replace(self, **kwargs)
+
+
+@with_container_arithmetic(bcast_obj_array=False,
+                           bcast_container_types=(DOFArray, np.ndarray),
+                           rel_comparison=True)
+@dataclass_array_container
+@dataclass(frozen=True)
+class WallStepperState(StepperState):
+    r"""Store quantities to advance in time."
+
+    Store the quanitites that should be evolved in time by an advancer
+    Adding WallVars
+    """
+
+    wv: WallVars
+
 
 class SingleLevelFilter(logging.Filter):
     def __init__(self, passlevel, reject):
@@ -1902,22 +1948,26 @@ def main(ctx_factory=cl.create_some_context,
                                              smoothness_mu=restart_av_smu,
                                              smoothness_beta=restart_av_sbeta,
                                              smoothness_kappa=restart_av_skappa)
+
+    current_wv = None
     if use_wall:
         current_wv = force_evaluation(actx, restart_wv)
 
-    if use_wall:
-        stepper_state = make_obj_array([current_fluid_state.cv,
-                                        temperature_seed,
-                                        current_fluid_state.dv.smoothness_mu,
-                                        current_fluid_state.dv.smoothness_beta,
-                                        current_fluid_state.dv.smoothness_kappa,
-                                        current_wv])
-    else:
-        stepper_state = make_obj_array([current_fluid_state.cv,
-                                        temperature_seed,
-                                        current_fluid_state.dv.smoothness_mu,
-                                        current_fluid_state.dv.smoothness_beta,
-                                        current_fluid_state.dv.smoothness_kappa])
+    def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv=None):
+        if wv is not None:
+            return WallStepperState(cv=cv, tseed=tseed, av_smu=av_smu,
+                                    av_sbeta=av_sbeta, av_skappa=av_skappa, wv=wv)
+        else:
+            return StepperState(cv=cv, tseed=tseed, av_smu=av_smu,
+                                av_sbeta=av_sbeta, av_skappa=av_skappa)
+
+    stepper_state = make_stepper_state(
+        cv=current_fluid_state.cv,
+        tseed=temperature_seed,
+        wv=current_wv,
+        av_smu=current_fluid_state.dv.smoothness_mu,
+        av_sbeta=current_fluid_state.dv.smoothness_beta,
+        av_skappa=current_fluid_state.dv.smoothness_kappa)
 
     ####################
     # Ignition Sources #
@@ -2148,24 +2198,21 @@ def main(ctx_factory=cl.create_some_context,
 
     def my_write_status_lite(step, t, t_wall):
         status_msg = (f"\n--     step {step:9d}:"
-                      f"\n----   fluid sim time {t:1.8e},"
-                      f" wall sim time {t_wall:1.8e}")
+                      f"\n----   fluid sim time {t:1.8e}")
+        if use_wall:
+            status_msg += (f", wall sim time {t_wall:1.8e}")
 
         if rank == 0:
             logger.info(status_msg)
 
-    def my_write_status(cv, dv, wall_temperature, dt, cfl_fluid, cfl_wall):
+    def my_write_status_fluid(cv, dv, dt, cfl_fluid):
         status_msg = (f"----   dt {dt:1.3e},"
-                      f" cfl_fluid {cfl_fluid:1.8f},"
-                      f" cfl_wall {cfl_wall:1.8f}")
+                      f" cfl_fluid {cfl_fluid:1.8f}")
 
         pmin = vol_min(dd_vol_fluid, dv.pressure)
         pmax = vol_max(dd_vol_fluid, dv.pressure)
         tmin = vol_min(dd_vol_fluid, dv.temperature)
         tmax = vol_max(dd_vol_fluid, dv.temperature)
-        if use_wall:
-            twmin = vol_min(dd_vol_wall, wall_temperature)
-            twmax = vol_max(dd_vol_wall, wall_temperature)
 
         from pytools.obj_array import obj_array_vectorize
         y_min = obj_array_vectorize(lambda x: vol_min(dd_vol_fluid, x),
@@ -2177,9 +2224,6 @@ def main(ctx_factory=cl.create_some_context,
             f"\n------ P       (min, max) (Pa) = ({pmin:1.9e}, {pmax:1.9e})")
         dv_status_msg += (
             f"\n------ T_fluid (min, max) (K)  = ({tmin:7g}, {tmax:7g})")
-        if use_wall:
-            dv_status_msg += (
-                f"\n------ T_wall  (min, max) (K)  = ({twmin:7g}, {twmax:7g})")
 
         if eos_type == 1:
             # check the temperature convergence
@@ -2203,12 +2247,23 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             logger.info(status_msg)
 
-    def my_write_viz(step, t, t_wall, fluid_state, wv, wall_kappa,
-                     wall_temperature, ts_field_fluid, ts_field_wall,
-                     dump_number):
+    def my_write_status_wall(wall_temperature, dt, cfl_wall):
+        status_msg = (f"----   wall dt {dt:1.3e},"
+                      f" cfl_wall {cfl_wall:1.8f}")
+
+        twmin = vol_min(dd_vol_wall, wall_temperature)
+        twmax = vol_max(dd_vol_wall, wall_temperature)
+
+        status_msg += (
+            f"\n------ T_wall  (min, max) (K)  = ({twmin:7g}, {twmax:7g})")
 
         if rank == 0:
-            print(f"******** Writing Visualization File {dump_number}"
+            logger.info(status_msg)
+
+    def my_write_viz_fluid(step, t, fluid_state, ts_field_fluid, dump_number):
+
+        if rank == 0:
+            print(f"******** Writing Fluid Visualization File {dump_number}"
                   f" at step {step},"
                   f" sim time {t:1.6e} s ********")
 
@@ -2220,13 +2275,6 @@ def main(ctx_factory=cl.create_some_context,
         fluid_viz_fields = [("cv", cv),
                             ("dv", dv),
                             ("dt" if constant_cfl else "cfl", ts_field_fluid)]
-        if use_wall:
-            wall_viz_fields = [
-                ("wv", wv),
-                ("wall_kappa", wall_kappa),
-                ("wall_temperature", wall_temperature),
-                ("dt" if constant_cfl else "cfl", ts_field_wall)
-            ]
 
         # extra viz quantities, things here are often used for post-processing
         if viz_level > 0:
@@ -2257,9 +2305,6 @@ def main(ctx_factory=cl.create_some_context,
             if nparts > 1:
                 fluid_viz_ext = [("rank", rank)]
                 fluid_viz_fields.extend(fluid_viz_ext)
-                if use_wall:
-                    wall_viz_ext = [("rank", rank)]
-                    wall_viz_fields.extend(wall_viz_ext)
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
@@ -2288,13 +2333,6 @@ def main(ctx_factory=cl.create_some_context,
             viz_ext = [("char_length_fluid", char_length_fluid),
                       ("char_length_fluid_smooth", smoothed_char_length_fluid)]
             fluid_viz_fields.extend(viz_ext)
-
-            if use_wall:
-                cell_alpha = wall_model.thermal_diffusivity(
-                    wv.mass, wall_temperature, wall_kappa)
-
-                viz_ext = [("alpha", cell_alpha)]
-                wall_viz_fields.extend(viz_ext)
 
             cfl_fluid_inv = char_length_fluid / (fluid_state.wavespeed)
             nu = fluid_state.viscosity/fluid_state.mass_density
@@ -2369,40 +2407,79 @@ def main(ctx_factory=cl.create_some_context,
                            """
                 fluid_viz_fields.extend(viz_ext)
 
-            #viz_ext = [("grad_temperature", wall_grad_temperature)]
-            #wall_viz_fields.extend(viz_ext)
-
         write_visfile(
             dcoll, fluid_viz_fields, fluid_visualizer,
             vizname=vizname+"-fluid", step=dump_number, t=t,
             overwrite=True, comm=comm, vis_timer=vis_timer)
-        if use_wall:
-            write_visfile(
-                dcoll, wall_viz_fields, wall_visualizer,
-                vizname=vizname+"-wall", step=dump_number, t=t_wall,
-                overwrite=True, comm=comm, vis_timer=vis_timer)
 
         if rank == 0:
-            print("******** Done Writing Visualization File ********")
+            print("******** Done Writing Fluid Visualization File ********")
+
+    def my_write_viz_wall(step, t, t_wall, wv, wdv, ts_field_wall, dump_number):
+
+        wall_kappa = wdv.thermal_conductivity
+        wall_temperature = wdv.temperature
+
+        if rank == 0:
+            print(f"******** Writing Wall Visualization File {dump_number}"
+                  f" at step {step},"
+                  f" sim time {t:1.6e} s ********")
+
+        wall_viz_fields = [
+            ("wv", wv),
+            ("wall_kappa", wall_kappa),
+            ("wall_temperature", wall_temperature),
+            ("dt" if constant_cfl else "cfl", ts_field_wall)
+        ]
+
+        # extra viz quantities, things here are often used for post-processing
+        if viz_level > 0:
+            if nparts > 1:
+                wall_viz_ext = [("rank", rank)]
+                wall_viz_fields.extend(wall_viz_ext)
+
+        # additional viz quantities, add in some non-dimensional numbers
+        if viz_level > 1:
+            cell_alpha = wall_model.thermal_diffusivity(
+                wv.mass, wall_temperature, wall_kappa)
+
+            viz_ext = [("alpha", cell_alpha)]
+            wall_viz_fields.extend(viz_ext)
+
+        # debbuging viz quantities, things here are used for diagnosing run issues
+        """
+        if viz_level > 2:
+            grad_temperature = grad_t_operator_coupled_compiled(
+                dv.temperature, fluid_state, wall_kappa, wall_temperature)
+            fluid_grad_temperature = grad_temperature[0]
+            wall_grad_temperature = grad_temperature[1]
+
+            viz_ext = [("grad_temperature", wall_grad_temperature)]
+            wall_viz_fields.extend(viz_ext)
+        """
+
+        write_visfile(
+            dcoll, wall_viz_fields, wall_visualizer,
+            vizname=vizname+"-wall", step=dump_number, t=t_wall,
+            overwrite=True, comm=comm, vis_timer=vis_timer)
+
+        if rank == 0:
+            print("******** Done Writing Wall Visualization File ********")
 
     def my_write_restart(step, t, t_wall, state):
         if rank == 0:
             print(f"******** Writing Restart File at step {step}, "
                   f"sim time {t:1.6e} s ********")
 
-        if use_wall:
-            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-        else:
-            cv, tseed, av_smu, av_sbeta, av_skappa = state
         restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
         if restart_fname != restart_filename:
             restart_data = {
                 "volume_to_local_mesh_data": volume_to_local_mesh_data,
-                "cv": cv,
-                "av_smu": av_smu,
-                "av_sbeta": av_sbeta,
-                "av_skappa": av_skappa,
-                "temperature_seed": tseed,
+                "cv": state.cv,
+                "av_smu": state.av_smu,
+                "av_sbeta": state.av_sbeta,
+                "av_skappa": state.av_skappa,
+                "temperature_seed": state.tseed,
                 "nspecies": nspecies,
                 "t": t,
                 "step": step,
@@ -2413,7 +2490,7 @@ def main(ctx_factory=cl.create_some_context,
             }
 
             if use_wall:
-                restart_data["wv"] = wv
+                restart_data["wv"] = state.wv
                 restart_data["t_wall"] = t_wall
 
             write_restart_file(actx, restart_data, restart_fname, comm)
@@ -2682,32 +2759,22 @@ def main(ctx_factory=cl.create_some_context,
         # Filter *first* because this will be most straightfwd to
         # understand and move. For this to work, this routine
         # must pass back the filtered CV in the state.
+        if check_step(step=step, interval=soln_nfilter):
+            #cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+            cv = filter_cv_compiled(state.cv)
+            state = state.replace(cv=cv)
+
+        fluid_state = create_fluid_state(cv=state.cv,
+                                         temperature_seed=state.tseed,
+                                         smoothness_mu=state.av_smu,
+                                         smoothness_beta=state.av_sbeta,
+                                         smoothness_kappa=state.av_skappa)
+
         if use_wall:
-            if check_step(step=step, interval=soln_nfilter):
-                cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-                cv = filter_cv_compiled(cv)
-                state = make_obj_array([cv, tseed, av_smu, av_sbeta, av_skappa, wv])
-
-            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-        else:
-            if check_step(step=step, interval=soln_nfilter):
-                cv, tseed, av_smu, av_sbeta, av_skappa = state
-                cv = filter_cv_compiled(cv)
-                state = make_obj_array([cv, tseed, av_smu, av_sbeta, av_skappa])
-
-            cv, tseed, av_smu, av_sbeta, av_skappa = state
-
-        fluid_state = create_fluid_state(cv=cv,
-                                         temperature_seed=tseed,
-                                         smoothness_mu=av_smu,
-                                         smoothness_beta=av_sbeta,
-                                         smoothness_kappa=av_skappa)
-        if use_wall:
-            wdv = create_wall_dependent_vars_compiled(wv)
+            wdv = create_wall_dependent_vars_compiled(state.wv)
         cv = fluid_state.cv  # reset cv to limited version
 
         try:
-
             if logmgr:
                 logmgr.tick_before()
 
@@ -2721,23 +2788,20 @@ def main(ctx_factory=cl.create_some_context,
             next_dump_number = step
 
             # This re-creation of the state resets *tseed* to current temp
-            if use_wall:
-                state = make_obj_array([cv, fluid_state.temperature,
-                                        av_smu, av_sbeta, av_skappa, wv])
-            else:
-                state = make_obj_array([cv, fluid_state.temperature,
-                                        av_smu, av_sbeta, av_skappa])
+            # and forces the limited cv into state
+
+            state = state.replace(cv=cv, tseed=fluid_state.temperature)
 
             if any([do_viz, do_restart, do_health, do_status]):
 
                 # pass through, removes a bunch of tagging to avoid recomplie
                 if use_wall:
-                    wv = get_wv(wv)
+                    wv = get_wv(state.wv)
 
                 if not force_eval:
                     fluid_state = force_evaluation(actx, fluid_state)
                     if use_wall:
-                        wv = force_evaluation(actx, wv)
+                        wv = force_evaluation(actx, state.wv)
 
                 dv = fluid_state.dv
 
@@ -2798,14 +2862,10 @@ def main(ctx_factory=cl.create_some_context,
 
             # these status updates require global reductions on state data
             if do_status:
-                # MJA this interface needs updating for with/without wall
-                # one option is wall-specific status and health checking?
+                my_write_status_fluid(cv=cv, dv=dv, dt=dt, cfl_fluid=cfl_fluid)
                 if use_wall:
-                    my_write_status(cv=cv, dv=dv, wall_temperature=wdv.temperature,
-                                    dt=dt, cfl_fluid=cfl_fluid, cfl_wall=cfl_wall)
-                else:
-                    my_write_status(cv=cv, dv=dv, wall_temperature=None,
-                                    dt=dt, cfl_fluid=cfl_fluid, cfl_wall=cfl_wall)
+                    my_write_status_wall(wall_temperature=wdv.temperature,
+                                         dt=dt*wall_time_scale, cfl_wall=cfl_wall)
 
             if do_health:
                 if use_wall:
@@ -2827,20 +2887,15 @@ def main(ctx_factory=cl.create_some_context,
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
 
             if do_viz:
+                my_write_viz_fluid(
+                    step=step, t=t, fluid_state=fluid_state,
+                    ts_field_fluid=ts_field_fluid,
+                    dump_number=next_dump_number)
                 if use_wall:
-                    my_write_viz(
-                        step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
-                        wv=wv, wall_kappa=wdv.thermal_conductivity,
-                        wall_temperature=wdv.temperature,
-                        ts_field_fluid=ts_field_fluid,
+                    my_write_viz_wall(
+                        step=step, t=t, t_wall=t_wall,
+                        wv=wv, wdv=wdv,
                         ts_field_wall=ts_field_wall,
-                        dump_number=next_dump_number)
-                else:
-                    my_write_viz(
-                        step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
-                        wv=None, wall_kappa=None,
-                        wall_temperature=None, ts_field_fluid=ts_field_fluid,
-                        ts_field_wall=None,
                         dump_number=next_dump_number)
 
         except MyRuntimeError:
@@ -2853,20 +2908,17 @@ def main(ctx_factory=cl.create_some_context,
                 dump_number = (math.floor((t-t_start)/t_viz_interval) +
                     last_viz_interval)
 
+            my_write_viz_fluid(
+                step=step, t=t, fluid_state=fluid_state,
+                ts_field_fluid=ts_field_fluid,
+                dump_number=dump_number)
             if use_wall:
-                my_write_viz(
-                    step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
-                    wv=wv, wall_kappa=wdv.thermal_conductivity,
-                    wall_temperature=wdv.temperature, ts_field_fluid=ts_field_fluid,
+                my_write_viz_wall(
+                    step=step, t=t, t_wall=t_wall,
+                    wv=wv, wdv=wdv,
                     ts_field_wall=ts_field_wall,
                     dump_number=dump_number)
-            else:
-                my_write_viz(
-                    step=step, t=t, t_wall=t_wall, fluid_state=fluid_state,
-                    wv=None, wall_kappa=None,
-                    wall_temperature=None, ts_field_fluid=ts_field_fluid,
-                    ts_field_wall=None,
-                    dump_number=dump_number)
+
             my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
             raise
 
@@ -2887,13 +2939,16 @@ def main(ctx_factory=cl.create_some_context,
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
+
         return state, dt
 
     def unfiltered_rhs(t, state):
-        if use_wall:
-            cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-        else:
-            cv, tseed, av_smu, av_sbeta, av_skappa = state
+
+        cv = state.cv
+        tseed = state.tseed
+        av_smu = state.av_smu
+        av_sbeta = state.av_sbeta
+        av_skappa = state.av_skappa
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
@@ -2929,6 +2984,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         if use_wall:
+            wv = state.wv
             wdv = wall_model.dependent_vars(wv)
         tseed_rhs = actx.zeros_like(fluid_state.temperature)
 
@@ -2942,6 +2998,7 @@ def main(ctx_factory=cl.create_some_context,
             quadrature_tag=quadrature_tag,
             operator_states_quad=operator_fluid_states)
         """
+        wall_rhs = None
         if use_wall:
             fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
                 dcoll=dcoll,
@@ -2950,7 +3007,6 @@ def main(ctx_factory=cl.create_some_context,
                 fluid_boundaries=fluid_boundaries,
                 wall_boundaries=wall_boundaries,
                 interface_noslip=noslip,
-                #interface_noslip=True,
                 inviscid_numerical_flux_func=inviscid_numerical_flux_func,
                 fluid_state=fluid_state,
                 wall_kappa=wdv.thermal_conductivity,
@@ -3100,12 +3156,13 @@ def main(ctx_factory=cl.create_some_context,
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
-        if use_wall:
-            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                                   av_sbeta_rhs, av_skappa_rhs, wall_rhs])
-        else:
-            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                                   av_sbeta_rhs, av_skappa_rhs])
+        return make_stepper_state(
+            cv=fluid_rhs,
+            tseed=tseed_rhs,
+            wv=wall_rhs,
+            av_smu=av_smu_rhs,
+            av_sbeta=av_sbeta_rhs,
+            av_skappa=av_skappa_rhs)
 
     unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
@@ -3117,26 +3174,15 @@ def main(ctx_factory=cl.create_some_context,
 
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
-        if use_wall:
-            fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, \
-                av_skappa_rhs, wall_rhs = \
-                unfiltered_rhs_compiled(t, state)
-        else:
-            fluid_rhs, tseed_rhs, av_smu_rhs, av_sbeta_rhs, av_skappa_rhs = \
-                unfiltered_rhs_compiled(t, state)
-
+        rhs_state = unfiltered_rhs_compiled(t, state)
         # Use a spectral filter on the RHS
         if use_rhs_filter:
-            fluid_rhs = filter_rhs_fluid_compiled(fluid_rhs)
+            rhs_state = rhs_state.replace(cv=filter_rhs_fluid_compiled(rhs_state.cv))
             if use_wall:
-                wall_rhs = filter_rhs_wall_compiled(wall_rhs)
+                rhs_state = rhs_state.replace(
+                    wv=filter_rhs_wall_compiled(rhs_state.wv))
 
-        if use_wall:
-            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                                   av_sbeta_rhs, av_skappa_rhs, wall_rhs])
-        else:
-            return make_obj_array([fluid_rhs, tseed_rhs, av_smu_rhs,
-                                   av_sbeta_rhs, av_skappa_rhs])
+        return rhs_state
 
     """
     current_dt = get_sim_timestep(dcoll, current_state, current_t, current_dt,
@@ -3154,17 +3200,18 @@ def main(ctx_factory=cl.create_some_context,
                           state=stepper_state,
                           compile_rhs=False)
 
-    if use_wall:
-        current_cv, tseed, current_av_smu, current_av_sbeta, \
-            current_av_skappa, current_wv = stepper_state
-    else:
-        current_cv, tseed, current_av_smu, current_av_sbeta, \
-            current_av_skappa = stepper_state
+    current_cv = stepper_state.cv
+    tseed = stepper_state.tseed
+    current_av_smu = stepper_state.av_smu
+    current_av_sbeta = stepper_state.av_sbeta
+    current_av_skappa = stepper_state.av_skappa
+
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              smoothness_mu=current_av_smu,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa)
     if use_wall:
+        current_wv = stepper_state.wv
         current_wdv = create_wall_dependent_vars_compiled(current_wv)
 
     # Dump the final data
@@ -3186,14 +3233,11 @@ def main(ctx_factory=cl.create_some_context,
 
     my_write_status_lite(step=current_step, t=current_t,
                          t_wall=current_t_wall)
+
+    my_write_status_fluid(cv=current_cv, dv=final_dv, dt=dt, cfl_fluid=cfl)
     if use_wall:
-        my_write_status(dv=final_dv, cv=current_cv,
-                        wall_temperature=current_wdv.temperature,
-                        dt=dt, cfl_fluid=cfl, cfl_wall=cfl_wall)
-    else:
-        my_write_status(dv=final_dv, cv=current_cv,
-                        wall_temperature=None,
-                        dt=dt, cfl_fluid=cfl, cfl_wall=cfl)
+        my_write_status_wall(wall_temperature=current_wdv.temperature,
+                             dt=dt*wall_time_scale, cfl_wall=cfl_wall)
 
     if viz_interval_type == 0:
         dump_number = current_step
@@ -3201,23 +3245,15 @@ def main(ctx_factory=cl.create_some_context,
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
 
+    my_write_viz_fluid(
+        step=current_step, t=current_t, fluid_state=current_fluid_state,
+        ts_field_fluid=ts_field_fluid,
+        dump_number=dump_number)
     if use_wall:
-        my_write_viz(
+        my_write_viz_wall(
             step=current_step, t=current_t, t_wall=current_t_wall,
-            fluid_state=current_fluid_state,
-            wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
-            wall_temperature=current_wdv.temperature,
-            ts_field_fluid=ts_field_fluid,
+            wv=current_wv, wdv=current_wdv,
             ts_field_wall=ts_field_wall,
-            dump_number=dump_number)
-    else:
-        my_write_viz(
-            step=current_step, t=current_t, t_wall=current_t_wall,
-            fluid_state=current_fluid_state,
-            wv=None, wall_kappa=None,
-            wall_temperature=None,
-            ts_field_fluid=ts_field_fluid,
-            ts_field_wall=None,
             dump_number=dump_number)
 
     my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
