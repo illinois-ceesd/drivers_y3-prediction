@@ -3049,11 +3049,13 @@ def main(ctx_factory=cl.create_some_context,
                 wall_bnd.domain_tag: smooth_neumann,
             }
 
-            from grudge.discretization import filter_part_boundaries
-            fluid_av_boundaries.update({
-                 dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
-                 for dd_bdry in filter_part_boundaries(
-                     dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
+            if use_wall:
+                from grudge.discretization import filter_part_boundaries
+                fluid_av_boundaries.update({
+                     dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
+                     for dd_bdry in filter_part_boundaries(
+                         dcoll, volume_dd=dd_vol_fluid,
+                         neighbor_volume_dd=dd_vol_wall)})
 
             # av mu
             av_smu_rhs = (
