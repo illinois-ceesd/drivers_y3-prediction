@@ -91,7 +91,6 @@ from mirgecom.transport import (SimpleTransport,
                                 ArtificialViscosityTransportDiv2)
 from mirgecom.gas_model import GasModel, make_fluid_state
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
-    coupled_grad_t_operator,
     coupled_ns_heat_operator2,
     update_coupled_boundary_conditions
 )
@@ -155,6 +154,15 @@ class WallStepperState(StepperState):
     """
 
     wv: WallVars
+
+
+def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv=None):
+    if wv is not None:
+        return WallStepperState(cv=cv, tseed=tseed, av_smu=av_smu,
+                                av_sbeta=av_sbeta, av_skappa=av_skappa, wv=wv)
+    else:
+        return StepperState(cv=cv, tseed=tseed, av_smu=av_smu,
+                            av_sbeta=av_sbeta, av_skappa=av_skappa)
 
 
 class SingleLevelFilter(logging.Filter):
@@ -1494,7 +1502,72 @@ def main(ctx_factory=cl.create_some_context,
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
 
-    # smoothness used with av = 1 or 2
+    # helper function to get the fluid gradients, regardless of wall coupling
+    def compute_fluid_gradients(state, time):
+        cv = state.cv
+        tseed = state.tseed
+        av_smu = state.av_smu
+        av_sbeta = state.av_sbeta
+        av_skappa = state.av_skappa
+
+        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
+                                       temperature_seed=tseed,
+                                       smoothness_mu=av_smu,
+                                       smoothness_beta=av_sbeta,
+                                       smoothness_kappa=av_skappa,
+                                       limiter_func=limiter_func,
+                                       limiter_dd=dd_vol_fluid)
+        cv = fluid_state.cv  # reset cv to the limited version
+
+        if use_wall:
+            wv = state.wv
+            wdv = wall_model.dependent_vars(wv)
+
+            # update the boundaries and compute the gradients
+            # shared by artificial viscosity and the operators
+            # this updates the coupling between the fluid and wall
+            (updated_fluid_boundaries,
+             updated_wall_boundaries,
+             fluid_operator_states_quad,
+             grad_fluid_cv,
+             grad_fluid_t,
+             grad_wall_t) = update_coupled_boundary_conditions(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=uncoupled_fluid_boundaries,
+                wall_boundaries=uncoupled_wall_boundaries,
+                interface_noslip=noslip,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func,
+                return_gradients=True,
+                comm_tag=_InitCommTag)
+
+            # this works, but is wrong....
+            #grad_fluid_t = grad_t_operator(
+                #dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                #state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                #time=time, quadrature_tag=quadrature_tag)
+        else:
+            grad_fluid_cv = grad_cv_operator(
+                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                time=time, quadrature_tag=quadrature_tag)
+
+            grad_fluid_t = grad_t_operator(
+                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                time=time, quadrature_tag=quadrature_tag)
+
+        #return make_obj_array([grad_fluid_cv, grad_fluid_t])
+        return (grad_fluid_cv, grad_fluid_t)
+
+    # smoothness used with av = 1
     def compute_smoothness(cv, dv, grad_cv):
 
         from mirgecom.fluid import velocity_gradient
@@ -1510,8 +1583,6 @@ def main(ctx_factory=cl.create_some_context,
             1 + actx.np.exp(theta_sc*(indicator - beta_sc)))/theta_sc
         return smoothness*gamma_sc*href
 
-    compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
-
     def lmax(s):
         b = 1000
         return (s/np.pi*actx.np.arctan(b*s) +
@@ -1521,10 +1592,11 @@ def main(ctx_factory=cl.create_some_context,
         return s - lmax(s)
 
     # smoothness used fore beta with av = 3
-    def compute_smoothness_beta(cv, dv, grad_cv):
+    def compute_smoothness_mbk(cv, dv, grad_cv, grad_t):
 
         from mirgecom.fluid import velocity_gradient
-        div_v = np.trace(velocity_gradient(cv, grad_cv))
+        vel_grad = velocity_gradient(cv, grad_cv)
+        div_v = np.trace(vel_grad)
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         r = gas_model.eos.gas_const(cv)
@@ -1535,17 +1607,10 @@ def main(ctx_factory=cl.create_some_context,
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
         indicator_max = 2/actx.np.sqrt(gamma - 1)
-        smoothness = (lmin(lmax(indicator - av2_beta_s0) - indicator_max)
-                      + indicator_max)*href
+        smoothness_beta = (lmin(lmax(indicator - av2_beta_s0) - indicator_max)
+                           + indicator_max)*href
 
-        return smoothness
-
-    compute_smoothness_beta_compiled = actx.compile(compute_smoothness_beta) # noqa
-
-    # smoothness used fore beta with av = 3
-    def compute_smoothness_kappa(cv, dv, grad_t):
         grad_t_mag = actx.np.sqrt(np.dot(grad_t, grad_t))
-        href = smoothed_char_length_fluid
         indicator = href*grad_t_mag/static_temp
 
         # limit the indicator range
@@ -1554,26 +1619,11 @@ def main(ctx_factory=cl.create_some_context,
         #indicator_min = 0.01
         #indicator_min = 0.000001
         indicator_max = 2
-        smoothness = (lmin(lmax(indicator - av2_kappa_s0) - indicator_max)
-                      + indicator_max)*href
-
-        return smoothness
-
-    compute_smoothness_kappa_compiled = actx.compile(compute_smoothness_kappa) # noqa
-
-    # smoothness used fore beta with av = 3
-    def compute_smoothness_mu(cv, dv, grad_cv):
-
-        from mirgecom.fluid import velocity_gradient
-        vel_grad = velocity_gradient(cv, grad_cv)
-
-        gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
-        r = gas_model.eos.gas_const(cv)
-        c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
+        smoothness_kappa = (lmin(lmax(indicator - av2_kappa_s0) - indicator_max)
+                            + indicator_max)*href
 
         vmax = actx.np.sqrt(np.dot(cv.velocity, cv.velocity) +
                             2*c_star/(gamma - 1))
-        href = smoothed_char_length_fluid
 
         # just the determinant
         # scaled_grad = vel_grad/vmax
@@ -1595,70 +1645,27 @@ def main(ctx_factory=cl.create_some_context,
         # multiply by href, since we won't have access to it inside transport
         #indicator_min = 1.0
         indicator_max = 2
-        smoothness = (lmin(lmax(indicator - av2_mu_s0) - indicator_max)
-                      + indicator_max)*href
+        smoothness_mu = (lmin(lmax(indicator - av2_mu_s0) - indicator_max)
+                         + indicator_max)*href
 
-        return smoothness
+        return make_obj_array([smoothness_mu, smoothness_beta, smoothness_kappa])
 
-    compute_smoothness_mu_compiled = actx.compile(compute_smoothness_mu) # noqa
+    def compute_smoothness_wrapper(state, dv, time):
 
-    # compiled wrapper for grad_cv_operator
-    def _grad_cv_operator_orig(fluid_state, time):
-        return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
-                                boundaries=coupled_fluid_boundaries,
-                                dd=dd_vol_fluid,
-                                state=fluid_state,
-                                time=time,
-                                quadrature_tag=quadrature_tag)
+        grad_fluid_cv, grad_fluid_t = compute_fluid_gradients(state, time)
+        cv = state.cv
+        if use_av == 1:
+            return compute_smoothness(cv, dv, grad_fluid_cv)
+        elif use_av == 2:
+            return compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
 
-    grad_cv_operator_orig_compiled = actx.compile(_grad_cv_operator_orig) # noqa
-
-    # compiled wrapper for grad_cv_operator
-    def _grad_cv_operator(fluid_state, fluid_boundaries, time):
-        return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
-                                boundaries=fluid_boundaries,
-                                dd=dd_vol_fluid,
-                                state=fluid_state,
-                                time=time,
-                                quadrature_tag=quadrature_tag)
-
-    # can't call this compiled with the boundary being passed in,
-    # only using it for debug mode viz, so a recompile is not the end of the
-    # world
-    #grad_cv_operator_compiled = actx.compile(_grad_cv_operator) # noqa
-    grad_cv_operator_compiled = _grad_cv_operator # noqa
+    # this one gets used in init/viz
+    compute_smoothness_compiled = actx.compile(compute_smoothness_wrapper) # noqa
 
     def get_production_rates(cv, temperature):
         return eos.get_production_rates(cv, temperature)
 
     compute_production_rates = actx.compile(get_production_rates)
-
-    if use_wall:
-        def grad_t_operator_coupled(t, fluid_state, wall_kappa, wall_temperature):
-            fluid_grad_t, wall_grad_t = coupled_grad_t_operator(
-                dcoll,
-                gas_model,
-                dd_vol_fluid, dd_vol_wall,
-                coupled_fluid_boundaries, coupled_wall_boundaries,
-                fluid_state, wall_kappa, wall_temperature,
-                time=t,
-                quadrature_tag=quadrature_tag)
-            return make_obj_array([fluid_grad_t, wall_grad_t])
-
-    #grad_t_operator_coupled_compiled = actx.compile(grad_t_operator_coupled)
-
-    def grad_t_operator_fluid(fluid_state, fluid_boundaries, time):
-        return grad_t_operator(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            dd=dd_vol_fluid,
-            boundaries=fluid_boundaries,
-            state=fluid_state,
-            time=time,
-            quadrature_tag=quadrature_tag)
-
-    #grad_t_operator_fluid_compiled = actx.compile(grad_t_operator_fluid)
-    grad_t_operator_fluid_compiled = grad_t_operator_fluid
 
     ##################################
     # Set up flow initial conditions #
@@ -1834,19 +1841,23 @@ def main(ctx_factory=cl.create_some_context,
 
             target_grad_cv = grad_cv_operator_target_compiled(
                 target_fluid_state, time=0.)
+            # MJA
+            # fix me
             if use_av == 1:
-                target_av_smu = compute_smoothness_compiled(
-                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+                print("Fix me")
+                #target_av_smu = compute_smoothness_compiled(
+                    #cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
             elif use_av == 2:
-                target_grad_t = grad_t_operator_target_compiled(
-                    target_fluid_state, time=0.)
+                print("Fix me too")
+                #target_grad_t = grad_t_operator_target_compiled(
+                    #target_fluid_state, time=0.)
 
-                target_av_sbeta = compute_smoothness_beta_compiled(
-                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
-                target_av_skappa = compute_smoothness_kappa_compiled(
-                    cv=target_cv, dv=target_fluid_state.dv, grad_t=target_grad_t)
-                target_av_smu = compute_smoothness_mu_compiled(
-                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+                #target_av_sbeta = compute_smoothness_beta_compiled(
+                    #cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+                #target_av_skappa = compute_smoothness_kappa_compiled(
+                    #cv=target_cv, dv=target_fluid_state.dv, grad_t=target_grad_t)
+                #target_av_smu = compute_smoothness_mu_compiled(
+                    #cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
 
             target_av_smu = force_evaluation(actx, target_av_smu)
             target_av_sbeta = force_evaluation(actx, target_av_sbeta)
@@ -2019,94 +2030,30 @@ def main(ctx_factory=cl.create_some_context,
             wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
         }
 
-        # update the boundaries to have the interface information
-        # this updates the coupling between the fluid and wall
-        # these can't be used inside timestepping, they must be updated to be correct
-        #restart_wdv = create_wall_dependent_vars_compiled(restart_wv)
-        restart_wdv = wall_model.dependent_vars(restart_wv)
-
-        (coupled_fluid_boundaries,
-         coupled_wall_boundaries,
-         fluid_operator_states_quad) = update_coupled_boundary_conditions(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-            fluid_boundaries=uncoupled_fluid_boundaries,
-            wall_boundaries=uncoupled_wall_boundaries,
-            interface_noslip=noslip,
-            fluid_state=restart_fluid_state,
-            wall_kappa=restart_wdv.thermal_conductivity,
-            wall_temperature=restart_wdv.temperature,
-            time=current_t,
-            wall_penalty_amount=wall_penalty_amount,
-            quadrature_tag=quadrature_tag,
-            limiter_func=limiter_func,
-            return_gradients=False)
-    else:
-        coupled_fluid_boundaries = uncoupled_fluid_boundaries
-
-    def update_coupled_gradients(fluid_state, wall_kappa, wall_temperature, time):
-        # update the boundaries and compute the gradients
-        # shared by artificial viscosity and the operators
-        # this updates the coupling between the fluid and wall
-        (updated_fluid_boundaries,
-         updated_wall_boundaries,
-         fluid_operator_states_quad,
-         grad_fluid_cv,
-         grad_fluid_t,
-         grad_wall_t) = update_coupled_boundary_conditions(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-            fluid_boundaries=uncoupled_fluid_boundaries,
-            wall_boundaries=uncoupled_wall_boundaries,
-            interface_noslip=noslip,
-            fluid_state=fluid_state,
-            wall_kappa=wall_kappa,
-            wall_temperature=wall_temperature,
-            time=time,
-            wall_penalty_amount=wall_penalty_amount,
-            quadrature_tag=quadrature_tag,
-            limiter_func=limiter_func,
-            return_gradients=True,
-            comm_tag=_InitCommTag)
-
-        return make_obj_array([grad_fluid_cv, grad_fluid_t, grad_wall_t])
-
-    update_coupled_gradients_compiled = actx.compile(update_coupled_gradients) # noqa
+    current_wv = None
+    if use_wall:
+        current_wv = force_evaluation(actx, restart_wv)
 
     # finish initializing the smoothness for non-restarts
+
     if not restart_filename:
-        if use_av > 0:
-            grad_cv, grad_t, grad_t_wall = update_coupled_gradients_compiled(
-                fluid_state=restart_fluid_state,
-                wall_kappa=restart_wdv.thermal_conductivity,
-                wall_temperature=restart_wdv.temperature,
-                time=current_t)
-            #grad_cv = grad_cv_operator_orig_compiled(
-                #restart_fluid_state, time=0.)
+        restart_stepper_state = make_stepper_state(
+            cv=restart_fluid_state.cv,
+            tseed=temperature_seed,
+            wv=current_wv,
+            av_smu=restart_av_smu,
+            av_sbeta=restart_av_sbeta,
+            av_skappa=restart_av_skappa)
 
         if use_av == 1:
             restart_av_smu = compute_smoothness_compiled(
-                cv=restart_fluid_state.cv,
-                dv=restart_fluid_state.dv,
-                grad_cv=grad_cv)
+                state=restart_stepper_state, dv=restart_fluid_state.dv,
+                time=current_t)
         elif use_av == 2:
-            restart_av_smu = compute_smoothness_mu_compiled(
-                cv=restart_fluid_state.cv,
-                dv=restart_fluid_state.dv,
-                grad_cv=grad_cv)
-            restart_av_sbeta = compute_smoothness_beta_compiled(
-                cv=restart_fluid_state.cv,
-                dv=restart_fluid_state.dv,
-                grad_cv=grad_cv)
-            #grad_t = grad_t_operator_fluid_compiled(
-                #restart_fluid_state, fluid_boundaries=coupled_fluid_boundaries,
-                #time=0.)
-            restart_av_skappa = compute_smoothness_kappa_compiled(
-                cv=restart_fluid_state.cv,
-                dv=restart_fluid_state.dv,
-                grad_t=grad_t)
+            [restart_av_smu, restart_av_sbeta, restart_av_skappa] = \
+                compute_smoothness_compiled(
+                    state=restart_stepper_state, dv=restart_fluid_state.dv,
+                    time=current_t)
 
     restart_cv = force_evaluation(actx, restart_cv)
     temperature_seed = force_evaluation(actx, temperature_seed)
@@ -2120,18 +2067,6 @@ def main(ctx_factory=cl.create_some_context,
                                              smoothness_mu=restart_av_smu,
                                              smoothness_beta=restart_av_sbeta,
                                              smoothness_kappa=restart_av_skappa)
-
-    current_wv = None
-    if use_wall:
-        current_wv = force_evaluation(actx, restart_wv)
-
-    def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv=None):
-        if wv is not None:
-            return WallStepperState(cv=cv, tseed=tseed, av_smu=av_smu,
-                                    av_sbeta=av_sbeta, av_skappa=av_skappa, wv=wv)
-        else:
-            return StepperState(cv=cv, tseed=tseed, av_smu=av_smu,
-                                av_sbeta=av_sbeta, av_skappa=av_skappa)
 
     stepper_state = make_stepper_state(
         cv=current_fluid_state.cv,
@@ -3148,12 +3083,10 @@ def main(ctx_factory=cl.create_some_context,
                     dd=dd_vol_fluid,
                     time=t, quadrature_tag=quadrature_tag)
 
-            smoothness_beta = compute_smoothness_beta(
-                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
-            smoothness_kappa = compute_smoothness_kappa(
-                cv=cv, dv=fluid_state.dv, grad_t=grad_fluid_t)
-            smoothness_mu = compute_smoothness_mu(
-                cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
+            [smoothness_mu, smoothness_beta, smoothness_kappa] = \
+                compute_smoothness_mbk(cv=cv, dv=fluid_state.dv,
+                                       grad_cv=grad_fluid_cv,
+                                       grad_t=grad_fluid_t)
 
         tseed_rhs = actx.zeros_like(fluid_state.temperature)
 
