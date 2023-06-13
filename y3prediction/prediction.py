@@ -1548,6 +1548,26 @@ def main(ctx_factory=cl.create_some_context,
                 return_gradients=True,
                 comm_tag=_InitCommTag)
 
+            # try making sure the stuff that comes back is used
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=updated_fluid_boundaries,
+                wall_boundaries=updated_wall_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                fluid_operator_states_quad=fluid_operator_states_quad,
+                fluid_grad_cv=grad_fluid_cv,
+                fluid_grad_t=grad_fluid_t,
+                wall_grad_t=grad_wall_t,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag)
+
+
             # this works, but is wrong....
             #grad_fluid_t = grad_t_operator(
                 #dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
@@ -1650,17 +1670,137 @@ def main(ctx_factory=cl.create_some_context,
 
         return make_obj_array([smoothness_mu, smoothness_beta, smoothness_kappa])
 
-    def compute_smoothness_wrapper(state, dv, time):
+    def update_smoothness(state, time):
 
-        grad_fluid_cv, grad_fluid_t = compute_fluid_gradients(state, time)
+        #grad_fluid_cv, grad_fluid_t = compute_fluid_gradients(state, time)
+        #cv = state.cv
+
         cv = state.cv
+        tseed = state.tseed
+        av_smu = state.av_smu
+        av_sbeta = state.av_sbeta
+        av_skappa = state.av_skappa
+
+        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
+                                       temperature_seed=tseed,
+                                       smoothness_mu=av_smu,
+                                       smoothness_beta=av_sbeta,
+                                       smoothness_kappa=av_skappa,
+                                       limiter_func=limiter_func,
+                                       limiter_dd=dd_vol_fluid)
+        cv = fluid_state.cv  # reset cv to the limited version
+        dv = fluid_state.dv
+
+        if use_wall:
+            wv = state.wv
+            wdv = wall_model.dependent_vars(wv)
+
+            # update the boundaries and compute the gradients
+            # shared by artificial viscosity and the operators
+            # this updates the coupling between the fluid and wall
+            (updated_fluid_boundaries,
+             updated_wall_boundaries,
+             fluid_operator_states_quad,
+             grad_fluid_cv,
+             grad_fluid_t,
+             grad_wall_t) = update_coupled_boundary_conditions(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=uncoupled_fluid_boundaries,
+                wall_boundaries=uncoupled_wall_boundaries,
+                interface_noslip=noslip,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func,
+                return_gradients=True,
+                comm_tag=_InitCommTag)
+
+            # try making sure the stuff that comes back is used
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=updated_fluid_boundaries,
+                wall_boundaries=updated_wall_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                fluid_operator_states_quad=fluid_operator_states_quad,
+                fluid_grad_cv=grad_fluid_cv,
+                fluid_grad_t=grad_fluid_t,
+                wall_grad_t=grad_wall_t,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag)
+
+            # try making sure the stuff that comes back is used
+            # even if it's a zero contribution
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=updated_fluid_boundaries,
+                wall_boundaries=updated_wall_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                fluid_operator_states_quad=fluid_operator_states_quad,
+                fluid_grad_cv=grad_fluid_cv,
+                fluid_grad_t=grad_fluid_t,
+                wall_grad_t=grad_wall_t,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag)
+
+            cv = cv + 0.*fluid_rhs
+
+            wall_mass_rhs = actx.zeros_like(wv.mass)
+            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            wall_rhs = wall_time_scale * WallVars(
+                mass=wall_mass_rhs,
+                energy=wall_energy_rhs,
+                ox_mass=wall_ox_mass_rhs)
+
+            wv = wv + 0.*wall_rhs
+
+        else:
+            grad_fluid_cv = grad_cv_operator(
+                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                time=time, quadrature_tag=quadrature_tag)
+
+            grad_fluid_t = grad_t_operator(
+                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                time=time, quadrature_tag=quadrature_tag)
+
+        # now compute the smoothness part
         if use_av == 1:
-            return compute_smoothness(cv, dv, grad_fluid_cv)
+            av_smu = compute_smoothness(cv, dv, grad_fluid_cv)
         elif use_av == 2:
-            return compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
+            av_smu, av_sbeta, av_skappa = \
+                compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
+
+        # update the stepper_state
+        state = state.replace(cv=cv,
+                              wv=wv,
+                              av_smu=av_smu,
+                              av_sbeta=av_sbeta,
+                              av_skappa=av_skappa)
+
+        return state
 
     # this one gets used in init/viz
-    compute_smoothness_compiled = actx.compile(compute_smoothness_wrapper) # noqa
+    #compute_smoothness_compiled = actx.compile(compute_smoothness_wrapper) # noqa
+    compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
+    update_smoothness_compiled = actx.compile(update_smoothness) # noqa
 
     def get_production_rates(cv, temperature):
         return eos.get_production_rates(cv, temperature)
@@ -2034,32 +2174,25 @@ def main(ctx_factory=cl.create_some_context,
     if use_wall:
         current_wv = force_evaluation(actx, restart_wv)
 
+    restart_stepper_state = make_stepper_state(
+        cv=restart_fluid_state.cv,
+        tseed=temperature_seed,
+        wv=restart_wv,
+        av_smu=restart_fluid_state.dv.smoothness_mu,
+        av_sbeta=restart_fluid_state.dv.smoothness_beta,
+        av_skappa=restart_fluid_state.dv.smoothness_kappa)
+
     # finish initializing the smoothness for non-restarts
-
     if not restart_filename:
-        restart_stepper_state = make_stepper_state(
-            cv=restart_fluid_state.cv,
-            tseed=temperature_seed,
-            wv=current_wv,
-            av_smu=restart_av_smu,
-            av_sbeta=restart_av_sbeta,
-            av_skappa=restart_av_skappa)
-
-        if use_av == 1:
-            restart_av_smu = compute_smoothness_compiled(
-                state=restart_stepper_state, dv=restart_fluid_state.dv,
-                time=current_t)
-        elif use_av == 2:
-            [restart_av_smu, restart_av_sbeta, restart_av_skappa] = \
-                compute_smoothness_compiled(
-                    state=restart_stepper_state, dv=restart_fluid_state.dv,
-                    time=current_t)
-
-    restart_cv = force_evaluation(actx, restart_cv)
+        if use_av > 0:
+            restart_stepper_state = update_smoothness_compiled(
+                state=restart_stepper_state, time=current_t)
+    
+    restart_cv = force_evaluation(actx, restart_stepper_state.cv)
     temperature_seed = force_evaluation(actx, temperature_seed)
-    restart_av_smu = force_evaluation(actx, restart_av_smu)
-    restart_av_sbeta = force_evaluation(actx, restart_av_sbeta)
-    restart_av_skappa = force_evaluation(actx, restart_av_skappa)
+    restart_av_smu = force_evaluation(actx, restart_stepper_state.av_smu)
+    restart_av_sbeta = force_evaluation(actx, restart_stepper_state.av_sbeta)
+    restart_av_skappa = force_evaluation(actx, restart_stepper_state.av_skappa)
 
     # set the initial data used by the simulation
     current_fluid_state = create_fluid_state(cv=restart_cv,
@@ -2067,6 +2200,9 @@ def main(ctx_factory=cl.create_some_context,
                                              smoothness_mu=restart_av_smu,
                                              smoothness_beta=restart_av_sbeta,
                                              smoothness_kappa=restart_av_skappa)
+
+    if use_wall:
+        current_wv = force_evaluation(actx, restart_stepper_state.wv)
 
     stepper_state = make_stepper_state(
         cv=current_fluid_state.cv,
