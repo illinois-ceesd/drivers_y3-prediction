@@ -1502,91 +1502,6 @@ def main(ctx_factory=cl.create_some_context,
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
 
-    # helper function to get the fluid gradients, regardless of wall coupling
-    def compute_fluid_gradients(state, time):
-        cv = state.cv
-        tseed = state.tseed
-        av_smu = state.av_smu
-        av_sbeta = state.av_sbeta
-        av_skappa = state.av_skappa
-
-        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
-                                       temperature_seed=tseed,
-                                       smoothness_mu=av_smu,
-                                       smoothness_beta=av_sbeta,
-                                       smoothness_kappa=av_skappa,
-                                       limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid)
-        cv = fluid_state.cv  # reset cv to the limited version
-
-        if use_wall:
-            wv = state.wv
-            wdv = wall_model.dependent_vars(wv)
-
-            # update the boundaries and compute the gradients
-            # shared by artificial viscosity and the operators
-            # this updates the coupling between the fluid and wall
-            (updated_fluid_boundaries,
-             updated_wall_boundaries,
-             fluid_operator_states_quad,
-             grad_fluid_cv,
-             grad_fluid_t,
-             grad_wall_t) = update_coupled_boundary_conditions(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                fluid_boundaries=uncoupled_fluid_boundaries,
-                wall_boundaries=uncoupled_wall_boundaries,
-                interface_noslip=noslip,
-                fluid_state=fluid_state,
-                wall_kappa=wdv.thermal_conductivity,
-                wall_temperature=wdv.temperature,
-                time=time,
-                wall_penalty_amount=wall_penalty_amount,
-                quadrature_tag=quadrature_tag,
-                limiter_func=limiter_func,
-                return_gradients=True,
-                comm_tag=_InitCommTag)
-
-            # try making sure the stuff that comes back is used
-            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                fluid_boundaries=updated_fluid_boundaries,
-                wall_boundaries=updated_wall_boundaries,
-                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-                fluid_state=fluid_state,
-                wall_kappa=wdv.thermal_conductivity,
-                wall_temperature=wdv.temperature,
-                fluid_operator_states_quad=fluid_operator_states_quad,
-                fluid_grad_cv=grad_fluid_cv,
-                fluid_grad_t=grad_fluid_t,
-                wall_grad_t=grad_wall_t,
-                time=time,
-                wall_penalty_amount=wall_penalty_amount,
-                quadrature_tag=quadrature_tag)
-
-
-            # this works, but is wrong....
-            #grad_fluid_t = grad_t_operator(
-                #dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
-                #state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                #time=time, quadrature_tag=quadrature_tag)
-        else:
-            grad_fluid_cv = grad_cv_operator(
-                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
-                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                time=time, quadrature_tag=quadrature_tag)
-
-            grad_fluid_t = grad_t_operator(
-                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
-                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                time=time, quadrature_tag=quadrature_tag)
-
-        #return make_obj_array([grad_fluid_cv, grad_fluid_t])
-        return (grad_fluid_cv, grad_fluid_t)
-
     # smoothness used with av = 1
     def compute_smoothness(cv, dv, grad_cv):
 
@@ -1672,9 +1587,6 @@ def main(ctx_factory=cl.create_some_context,
 
     def update_smoothness(state, time):
 
-        #grad_fluid_cv, grad_fluid_t = compute_fluid_gradients(state, time)
-        #cv = state.cv
-
         cv = state.cv
         tseed = state.tseed
         av_smu = state.av_smu
@@ -1719,25 +1631,6 @@ def main(ctx_factory=cl.create_some_context,
                 limiter_func=limiter_func,
                 return_gradients=True,
                 comm_tag=_InitCommTag)
-
-            # try making sure the stuff that comes back is used
-            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                fluid_boundaries=updated_fluid_boundaries,
-                wall_boundaries=updated_wall_boundaries,
-                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-                fluid_state=fluid_state,
-                wall_kappa=wdv.thermal_conductivity,
-                wall_temperature=wdv.temperature,
-                fluid_operator_states_quad=fluid_operator_states_quad,
-                fluid_grad_cv=grad_fluid_cv,
-                fluid_grad_t=grad_fluid_t,
-                wall_grad_t=grad_wall_t,
-                time=time,
-                wall_penalty_amount=wall_penalty_amount,
-                quadrature_tag=quadrature_tag)
 
             # try making sure the stuff that comes back is used
             # even if it's a zero contribution
@@ -2425,16 +2318,138 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             logger.info(status_msg)
 
-    def my_write_viz_fluid(step, t, fluid_state, fluid_boundaries,
-                           ts_field_fluid, dump_number):
+    def compute_viz_fields(fluid_state, wv, wdv, time):
+
+        cv = fluid_state.cv
+        dv = fluid_state.dv
+
+        if use_wall:
+            # update the boundaries and compute the gradients
+            # shared by artificial viscosity and the operators
+            # this updates the coupling between the fluid and wall
+            (updated_fluid_boundaries,
+             updated_wall_boundaries,
+             fluid_operator_states_quad,
+             grad_fluid_cv,
+             grad_fluid_t,
+             grad_wall_t) = update_coupled_boundary_conditions(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=uncoupled_fluid_boundaries,
+                wall_boundaries=uncoupled_wall_boundaries,
+                interface_noslip=noslip,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func,
+                return_gradients=True,
+                comm_tag=_InitCommTag)
+
+            # try making sure the stuff that comes back is used
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                fluid_boundaries=updated_fluid_boundaries,
+                wall_boundaries=updated_wall_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                fluid_operator_states_quad=fluid_operator_states_quad,
+                fluid_grad_cv=grad_fluid_cv,
+                fluid_grad_t=grad_fluid_t,
+                wall_grad_t=grad_wall_t,
+                time=time,
+                wall_penalty_amount=wall_penalty_amount,
+                quadrature_tag=quadrature_tag)
+
+            cv = cv + 0.*fluid_rhs
+
+            wall_mass_rhs = actx.zeros_like(wv.mass)
+            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            wall_rhs = wall_time_scale * WallVars(
+                mass=wall_mass_rhs,
+                energy=wall_energy_rhs,
+                ox_mass=wall_ox_mass_rhs)
+
+            wv = wv + 0.*wall_rhs
+        else:
+            grad_fluid_cv = grad_cv_operator(
+                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                time=time, quadrature_tag=quadrature_tag)
+
+            grad_fluid_t = grad_t_operator(
+                dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
+                state=fluid_state, boundaries=uncoupled_fluid_boundaries,
+                time=time, quadrature_tag=quadrature_tag)
+
+        # now compute the smoothness part
+        if use_av == 1:
+            av_smu = compute_smoothness(cv, dv, grad_fluid_cv)
+        elif use_av == 2:
+            av_smu, av_sbeta, av_skappa = \
+                compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
+
+        from mirgecom.fluid import (
+            velocity_gradient,
+            species_mass_fraction_gradient
+        )
+        grad_v = velocity_gradient(cv, grad_fluid_cv)
+        grad_y = species_mass_fraction_gradient(cv, grad_fluid_cv)
+
+
+        local_fluid_viz_fields = {}
+        local_fluid_viz_fields["smoothness_mu"] = [av_smu] 
+        local_fluid_viz_fields["smoothness_beta"] = [av_sbeta] 
+        local_fluid_viz_fields["smoothness_kappa"] = [av_skappa] 
+
+
+        #viz_ext = [("smoothness_mu", av_smu),
+                   #("smoothness_beta", av_sbeta),
+                   #("smoothness_kappa", av_skappa)]
+        #local_fluid_viz_fields.extend(viz_ext)
+
+        #fluid_viz_stuff = make_obj_array([av_smu, av_sbeta, av_skappa]) 
+
+        if use_wall:
+            ##local_wall_viz_fields = [("grad_temperature", grad_wall_t)]
+            #local_wall_viz_fields = {}
+            #local_wall_viz_fields["grad_temperature"] = [grad_wall_t]
+            #return make_obj_array([local_fluid_viz_fields,
+                                   #local_wall_viz_fields])
+            return make_obj_array([av_smu, av_sbeta, av_skappa,
+                                   grad_v, grad_y, grad_fluid_t,
+                                   grad_wall_t, cv, wv])
+        else:
+            return local_fluid_viz_fields
+
+    compute_viz_fields_compiled = actx.compile(compute_viz_fields)
+
+
+    def my_write_viz(step, t, t_wall, viz_state, viz_dv,
+                     ts_field_fluid, ts_field_wall, dump_number):
 
         if rank == 0:
             print(f"******** Writing Fluid Visualization File {dump_number}"
                   f" at step {step},"
                   f" sim time {t:1.6e} s ********")
 
+        if use_wall:
+            fluid_state = viz_state[0]
+            wv = viz_state[1]
+            dv = viz_dv[0]
+            wdv = viz_dv[1]
+        else:
+            fluid_state = viz_state
+            dv = viz_dv
+
         cv = fluid_state.cv
-        dv = fluid_state.dv
 
         # basic viz quantities, things here are difficult (or impossible) to compute
         # in post-processing
@@ -2444,7 +2459,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # extra viz quantities, things here are often used for post-processing
         if viz_level > 0:
-            mach = fluid_state.speed / dv.speed_of_sound
+            mach = cv.speed / dv.speed_of_sound
             fluid_viz_ext = [("mach", mach),
                              ("velocity", cv.velocity)]
             fluid_viz_fields.extend(fluid_viz_ext)
@@ -2457,8 +2472,8 @@ def main(ctx_factory=cl.create_some_context,
             if eos_type == 1:
                 temp_resid = get_temperature_update_compiled(
                     cv, dv.temperature)/dv.temperature
-                production_rates = compute_production_rates(fluid_state.cv,
-                                                            fluid_state.temperature)
+                production_rates = compute_production_rates(cv,
+                                                            dv.temperature)
                 fluid_viz_ext = [("temp_resid", temp_resid),
                                  ("production_rates", production_rates)]
                 fluid_viz_fields.extend(fluid_viz_ext)
@@ -2471,6 +2486,25 @@ def main(ctx_factory=cl.create_some_context,
             if nparts > 1:
                 fluid_viz_ext = [("rank", rank)]
                 fluid_viz_fields.extend(fluid_viz_ext)
+
+        wall_kappa = wdv.thermal_conductivity
+        wall_temperature = wdv.temperature
+
+        if rank == 0:
+            print(f"******** Writing Wall Visualization File {dump_number}"
+                  f" at step {step},"
+                  f" sim time {t:1.6e} s ********")
+
+        wall_viz_fields = [
+            ("wv", wv),
+            ("wall_kappa", wall_kappa),
+            ("wall_temperature", wall_temperature),
+            ("dt" if constant_cfl else "cfl", ts_field_wall)
+        ]
+
+        if nparts > 1:
+            wall_viz_ext = [("rank", rank)]
+            wall_viz_fields.extend(wall_viz_ext)
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
@@ -2515,29 +2549,37 @@ def main(ctx_factory=cl.create_some_context,
                        ("cfl_fluid_heat_diff", current_dt/cfl_fluid_heat_diff)]
             fluid_viz_fields.extend(viz_ext)
 
+            cell_alpha = wall_model.thermal_diffusivity(
+                wv.mass, wall_temperature, wall_kappa)
+
+            viz_ext = [("alpha", cell_alpha)]
+            wall_viz_fields.extend(viz_ext)
+
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
-            from mirgecom.fluid import (
-                velocity_gradient,
-                species_mass_fraction_gradient
-            )
 
-            grad_cv = grad_cv_operator_compiled(fluid_state,
-                                                fluid_boundaries,
-                                                time=t)
-            grad_v = velocity_gradient(cv, grad_cv)
-            grad_y = species_mass_fraction_gradient(cv, grad_cv)
+            viz_stuff = compute_viz_fields_compiled(
+                fluid_state=fluid_state,
+                wv=wv,
+                wdv=wdv,
+                time=t)
 
-            """
-            grad_temperature = grad_t_operator_coupled_compiled(
-                dv.temperature, fluid_state, wall_kappa, wall_temperature)
-            fluid_grad_temperature = grad_temperature[0]
-            wall_grad_temperature = grad_temperature[1]
-            """
+            av_smu = viz_stuff[0]
+            av_sbeta = viz_stuff[1]
+            av_skappa = viz_stuff[2]
+            grad_v = viz_stuff[3]
+            grad_y = viz_stuff[4]
+            grad_fluid_t = viz_stuff[5]
+            grad_wall_t = viz_stuff[6]
+
+            viz_ext = [("smoothness_mu", av_smu),
+                       ("smoothness_beta", av_sbeta),
+                       ("smoothness_kappa", av_skappa)]
+            fluid_viz_fields.extend(viz_ext)
 
             #viz_ext = [("rhs", ns_rhs),
             viz_ext = [("sponge_sigma", sponge_sigma),
-                       #("grad_temperature", fluid_grad_temperature),
+                       ("grad_temperature", grad_fluid_t),
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
@@ -2545,29 +2587,15 @@ def main(ctx_factory=cl.create_some_context,
 
             viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
                            for i in range(nspecies))
-            fluid_viz_fields.extend(viz_ext)
 
-            if use_av == 1:
-                smoothness_mu = compute_smoothness_compiled(
-                    cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
-                viz_ext = [("smoothness_mu", smoothness_mu)]
-                fluid_viz_fields.extend(viz_ext)
-            elif use_av == 2:
-                smoothness_beta = compute_smoothness_beta_compiled(
-                    cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
-                """
-                smoothness_kappa = compute_smoothness_kappa_compiled(
-                    cv=cv, dv=fluid_state.dv, grad_t=fluid_grad_temperature)
-                    """
-                smoothness_mu = compute_smoothness_mu_compiled(
-                    cv=cv, dv=fluid_state.dv, grad_cv=grad_cv)
-                viz_ext = [("smoothness_mu", smoothness_mu),
-                           ("smoothness_beta", smoothness_beta)]
-                """
-                           #("smoothness_beta", smoothness_beta),
-                           #("smoothness_kappa", smoothness_kappa)]
-                           """
-                fluid_viz_fields.extend(viz_ext)
+            viz_ext = [("grad_temperature", grad_wall_t)]
+            wall_viz_fields.extend(viz_ext)
+
+            #if use_wall:
+                #fluid_viz_fields.extend(extra_viz_fields[0])
+                #wall_viz_fields.extend(extra_viz_fields[1])
+            #else:
+                #fluid_viz_fields.extend(extra_viz_fields)
 
         write_visfile(
             dcoll, fluid_viz_fields, fluid_visualizer,
@@ -2577,56 +2605,14 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             print("******** Done Writing Fluid Visualization File ********")
 
-    def my_write_viz_wall(step, t, t_wall, wv, wdv, ts_field_wall, dump_number):
+        if use_wall:
+            write_visfile(
+                dcoll, wall_viz_fields, wall_visualizer,
+                vizname=vizname+"-wall", step=dump_number, t=t_wall,
+                overwrite=True, comm=comm, vis_timer=vis_timer)
 
-        wall_kappa = wdv.thermal_conductivity
-        wall_temperature = wdv.temperature
-
-        if rank == 0:
-            print(f"******** Writing Wall Visualization File {dump_number}"
-                  f" at step {step},"
-                  f" sim time {t:1.6e} s ********")
-
-        wall_viz_fields = [
-            ("wv", wv),
-            ("wall_kappa", wall_kappa),
-            ("wall_temperature", wall_temperature),
-            ("dt" if constant_cfl else "cfl", ts_field_wall)
-        ]
-
-        # extra viz quantities, things here are often used for post-processing
-        if viz_level > 0:
-            if nparts > 1:
-                wall_viz_ext = [("rank", rank)]
-                wall_viz_fields.extend(wall_viz_ext)
-
-        # additional viz quantities, add in some non-dimensional numbers
-        if viz_level > 1:
-            cell_alpha = wall_model.thermal_diffusivity(
-                wv.mass, wall_temperature, wall_kappa)
-
-            viz_ext = [("alpha", cell_alpha)]
-            wall_viz_fields.extend(viz_ext)
-
-        # debbuging viz quantities, things here are used for diagnosing run issues
-        """
-        if viz_level > 2:
-            grad_temperature = grad_t_operator_coupled_compiled(
-                dv.temperature, fluid_state, wall_kappa, wall_temperature)
-            fluid_grad_temperature = grad_temperature[0]
-            wall_grad_temperature = grad_temperature[1]
-
-            viz_ext = [("grad_temperature", wall_grad_temperature)]
-            wall_viz_fields.extend(viz_ext)
-        """
-
-        write_visfile(
-            dcoll, wall_viz_fields, wall_visualizer,
-            vizname=vizname+"-wall", step=dump_number, t=t_wall,
-            overwrite=True, comm=comm, vis_timer=vis_timer)
-
-        if rank == 0:
-            print("******** Done Writing Wall Visualization File ********")
+            if rank == 0:
+                print("******** Done Writing Wall Visualization File ********")
 
     def my_write_restart(step, t, t_wall, state):
         if rank == 0:
@@ -2972,6 +2958,7 @@ def main(ctx_factory=cl.create_some_context,
                     t=t, dt=dt, cfl=current_cfl, t_final=t_final,
                     constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
 
+                ts_field_wall = None
                 if use_wall:
                     ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
                         dcoll=dcoll, wv=wv, wall_kappa=wdv.thermal_conductivity,
@@ -3049,44 +3036,20 @@ def main(ctx_factory=cl.create_some_context,
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
 
             if do_viz:
-
-                # update the boundaries if we are going to viz data
-                # that requres updated gradients
-                updated_fluid_boundaries = uncoupled_fluid_boundaries
-                if viz_level > 2:
-                    # update the boundaries and compute the gradients
-                    # shared by artificial viscosity and the operators
-                    # this updates the coupling between the fluid and wall
-                    (updated_fluid_boundaries,
-                     updated_wall_boundaries,
-                     fluid_operator_states_quad) = \
-                        update_coupled_boundary_conditions(
-                            dcoll=dcoll,
-                            gas_model=gas_model,
-                            fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                            fluid_boundaries=uncoupled_fluid_boundaries,
-                            wall_boundaries=uncoupled_wall_boundaries,
-                            interface_noslip=noslip,
-                            fluid_state=fluid_state,
-                            wall_kappa=wdv.thermal_conductivity,
-                            wall_temperature=wdv.temperature,
-                            time=t,
-                            wall_penalty_amount=wall_penalty_amount,
-                            quadrature_tag=quadrature_tag,
-                            limiter_func=limiter_func,
-                            return_gradients=False)
-
-                my_write_viz_fluid(
-                    step=step, t=t, fluid_state=fluid_state,
-                    fluid_boundaries=updated_fluid_boundaries,
-                    ts_field_fluid=ts_field_fluid,
-                    dump_number=next_dump_number)
+                # pack things up
                 if use_wall:
-                    my_write_viz_wall(
-                        step=step, t=t, t_wall=t_wall,
-                        wv=wv, wdv=wdv,
-                        ts_field_wall=ts_field_wall,
-                        dump_number=next_dump_number)
+                    viz_state = make_obj_array([fluid_state, wv])
+                    viz_dv = make_obj_array([dv, wdv])
+                else:
+                    viz_state = fluid_state
+                    viz_dv = dv
+
+                my_write_viz(
+                    step=step, t=t, t_wall=t_wall,
+                    viz_state=viz_state, viz_dv=viz_dv,
+                    ts_field_fluid=ts_field_fluid,
+                    ts_field_wall=ts_field_wall,
+                    dump_number=next_dump_number)
 
         except MyRuntimeError:
             if rank == 0:
@@ -3098,43 +3061,20 @@ def main(ctx_factory=cl.create_some_context,
                 dump_number = (math.floor((t-t_start)/t_viz_interval) +
                     last_viz_interval)
 
-            # update the boundaries if we are going to viz data
-            # that requres updated gradients
-            updated_fluid_boundaries = uncoupled_fluid_boundaries
-            if viz_level > 2:
-                # update the boundaries and compute the gradients
-                # shared by artificial viscosity and the operators
-                # this updates the coupling between the fluid and wall
-                (updated_fluid_boundaries,
-                 updated_wall_boundaries,
-                 fluid_operator_states_quad) = \
-                    update_coupled_boundary_conditions(
-                        dcoll=dcoll,
-                        gas_model=gas_model,
-                        fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                        fluid_boundaries=uncoupled_fluid_boundaries,
-                        wall_boundaries=uncoupled_wall_boundaries,
-                        interface_noslip=noslip,
-                        fluid_state=fluid_state,
-                        wall_kappa=wdv.thermal_conductivity,
-                        wall_temperature=wdv.temperature,
-                        time=t,
-                        wall_penalty_amount=wall_penalty_amount,
-                        quadrature_tag=quadrature_tag,
-                        limiter_func=limiter_func,
-                        return_gradients=False)
-
-            my_write_viz_fluid(
-                step=step, t=t, fluid_state=fluid_state,
-                fluid_boundaries=updated_fluid_boundaries,
-                ts_field_fluid=ts_field_fluid,
-                dump_number=dump_number)
+            # pack things up
             if use_wall:
-                my_write_viz_wall(
-                    step=step, t=t, t_wall=t_wall,
-                    wv=wv, wdv=wdv,
-                    ts_field_wall=ts_field_wall,
-                    dump_number=dump_number)
+                viz_state = make_obj_array([fluid_state, wv])
+                viz_dv = make_obj_array([dv, wdv])
+            else:
+                viz_state = fluid_state
+                viz_dv = dv
+
+            my_write_viz(
+                step=step, t=t, t_wall=t_wall,
+                viz_state=viz_state, viz_dv=viz_dv,
+                ts_field_fluid=ts_field_fluid,
+                ts_field_wall=ts_field_wall,
+                dump_number=dump_number)
 
             my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
             raise
@@ -3460,6 +3400,8 @@ def main(ctx_factory=cl.create_some_context,
         fluid_state=current_fluid_state,
         t=current_t, dt=current_dt, cfl=current_cfl,
         t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+
+    ts_field_wall = None
     if use_wall:
         ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(dcoll=dcoll,
             wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
@@ -3482,43 +3424,20 @@ def main(ctx_factory=cl.create_some_context,
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
 
-    # update the boundaries if we are going to viz data
-    # that requres updated gradients
-    updated_fluid_boundaries = uncoupled_fluid_boundaries
-    if viz_level > 2:
-        # update the boundaries and compute the gradients
-        # shared by artificial viscosity and the operators
-        # this updates the coupling between the fluid and wall
-        (updated_fluid_boundaries,
-         updated_wall_boundaries,
-         fluid_operator_states_quad) = \
-            update_coupled_boundary_conditions(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                fluid_boundaries=uncoupled_fluid_boundaries,
-                wall_boundaries=uncoupled_wall_boundaries,
-                interface_noslip=noslip,
-                fluid_state=current_fluid_state,
-                wall_kappa=current_wdv.thermal_conductivity,
-                wall_temperature=current_wdv.temperature,
-                time=current_t,
-                wall_penalty_amount=wall_penalty_amount,
-                quadrature_tag=quadrature_tag,
-                limiter_func=limiter_func,
-                return_gradients=False)
-
-    my_write_viz_fluid(
-        step=current_step, t=current_t, fluid_state=current_fluid_state,
-        fluid_boundaries=updated_fluid_boundaries,
-        ts_field_fluid=ts_field_fluid,
-        dump_number=dump_number)
+    # pack things up
     if use_wall:
-        my_write_viz_wall(
-            step=current_step, t=current_t, t_wall=current_t_wall,
-            wv=current_wv, wdv=current_wdv,
-            ts_field_wall=ts_field_wall,
-            dump_number=dump_number)
+        viz_state = make_obj_array([current_fluid_state, current_wv])
+        viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
+    else:
+        viz_state = current_fluid_state
+        viz_dv = current_fluid_state.dv
+
+    my_write_viz(
+        step=current_step, t=current_t, t_wall=current_t_wall,
+        viz_state=viz_state, viz_dv=viz_dv,
+        ts_field_fluid=ts_field_fluid,
+        ts_field_wall=ts_field_wall,
+        dump_number=dump_number)
 
     my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
                      state=stepper_state)
