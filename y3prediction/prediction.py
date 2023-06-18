@@ -91,7 +91,7 @@ from mirgecom.transport import (SimpleTransport,
                                 ArtificialViscosityTransportDiv2)
 from mirgecom.gas_model import GasModel, make_fluid_state
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
-    coupled_ns_heat_operator2,
+    coupled_ns_heat_operator_with_grad,
     update_coupled_boundary_conditions
 )
 from mirgecom.navierstokes import grad_cv_operator, grad_t_operator, ns_operator
@@ -1635,7 +1635,7 @@ def main(ctx_factory=cl.create_some_context,
 
             # try making sure the stuff that comes back is used
             # even if it's a zero contribution
-            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator_with_grad(
                 dcoll=dcoll,
                 gas_model=gas_model,
                 fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
@@ -2347,7 +2347,7 @@ def main(ctx_factory=cl.create_some_context,
             comm_tag=_InitCommTag)
 
         # try making sure the stuff that comes back is used
-        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+        fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator_with_grad(
             dcoll=dcoll,
             gas_model=gas_model,
             fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
@@ -3190,7 +3190,7 @@ def main(ctx_factory=cl.create_some_context,
 
         wall_rhs = None
         if use_wall:
-            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator2(
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator_with_grad(
                 dcoll=dcoll,
                 gas_model=gas_model,
                 fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
