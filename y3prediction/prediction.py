@@ -1758,9 +1758,6 @@ def main(ctx_factory=cl.create_some_context,
         temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
         temperature_seed = force_evaluation(actx, temperature_seed)
 
-        # create a fluid state so we can compute grad_t and grad_cv
-        restart_fluid_state = create_fluid_state(cv=restart_cv,
-                                                 temperature_seed=temperature_seed)
         restart_av_smu = actx.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.zeros_like(restart_cv.mass)
@@ -2067,12 +2064,12 @@ def main(ctx_factory=cl.create_some_context,
         current_wv = force_evaluation(actx, restart_wv)
 
     restart_stepper_state = make_stepper_state(
-        cv=restart_fluid_state.cv,
+        cv=restart_cv,
         tseed=temperature_seed,
         wv=restart_wv,
-        av_smu=restart_fluid_state.dv.smoothness_mu,
-        av_sbeta=restart_fluid_state.dv.smoothness_beta,
-        av_skappa=restart_fluid_state.dv.smoothness_kappa)
+        av_smu=restart_av_smu,
+        av_sbeta=restart_av_sbeta,
+        av_skappa=restart_av_skappa)
 
     # finish initializing the smoothness for non-restarts
     if not restart_filename:
