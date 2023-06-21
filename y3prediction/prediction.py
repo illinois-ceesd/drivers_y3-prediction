@@ -1203,8 +1203,8 @@ def main(ctx_factory=cl.create_some_context,
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
     xpos_wall = wall_nodes[0]
-    char_length_fluid = char_length_fluid + actx.zeros_like(xpos_fluid)
-    char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
+    char_length_fluid = char_length_fluid + actx.np.zeros_like(xpos_fluid)
+    char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
 
     smoothness_diffusivity = \
         smooth_char_length_alpha*char_length_fluid**2/current_dt
@@ -1267,9 +1267,9 @@ def main(ctx_factory=cl.create_some_context,
     """
     # this is strange, but maybe fixes a compile issue and get it evaluated now
     smoothed_char_length_fluid = smoothed_char_length_fluid + \
-                                 actx.zeros_like(char_length_fluid)
+                                 actx.np.zeros_like(char_length_fluid)
     smoothed_char_length_wall = smoothed_char_length_wall + \
-                                actx.zeros_like(char_length_wall)
+                                actx.np.zeros_like(char_length_wall)
                                 """
 
     if rank == 0:
@@ -1289,7 +1289,7 @@ def main(ctx_factory=cl.create_some_context,
         ])
 
         # limit the sum to 1.0
-        aux = actx.zeros_like(cv.mass)
+        aux = actx.np.zeros_like(cv.mass)
         for i in range(0, nspecies):
             aux = aux + spec_lim[i]
         spec_lim = spec_lim/aux
@@ -1622,15 +1622,15 @@ def main(ctx_factory=cl.create_some_context,
             time=0)
 
         restart_cv = force_evaluation(actx, restart_cv)
-        temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
+        temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
         temperature_seed = force_evaluation(actx, temperature_seed)
 
         # create a fluid state so we can compute grad_t and grad_cv
         restart_fluid_state = create_fluid_state(cv=restart_cv,
                                                  temperature_seed=temperature_seed)
-        restart_av_smu = actx.zeros_like(restart_cv.mass)
-        restart_av_sbeta = actx.zeros_like(restart_cv.mass)
-        restart_av_skappa = actx.zeros_like(restart_cv.mass)
+        restart_av_smu = actx.np.zeros_like(restart_cv.mass)
+        restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
+        restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -1646,7 +1646,7 @@ def main(ctx_factory=cl.create_some_context,
         restart_wv = WallVars(
             mass=wall_mass,
             energy=wall_mass * wall_cp * temp_wall,
-            ox_mass=actx.zeros_like(wall_mass))
+            ox_mass=actx.np.zeros_like(wall_mass))
 
     restart_wv = force_evaluation(actx, restart_wv)
 
@@ -2936,7 +2936,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         wdv = wall_model.dependent_vars(wv)
-        tseed_rhs = actx.zeros_like(fluid_state.temperature)
+        tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
 
         """
         # Steps common to NS and AV (and wall model needs grad(temperature))
@@ -2974,9 +2974,9 @@ def main(ctx_factory=cl.create_some_context,
                 ignition_source(x_vec=fluid_nodes, state=fluid_state,
                                 eos=gas_model.eos, time=t)/current_dt
 
-        av_smu_rhs = actx.zeros_like(cv.mass)
-        av_sbeta_rhs = actx.zeros_like(cv.mass)
-        av_skappa_rhs = actx.zeros_like(cv.mass)
+        av_smu_rhs = actx.np.zeros_like(cv.mass)
+        av_sbeta_rhs = actx.np.zeros_like(cv.mass)
+        av_skappa_rhs = actx.np.zeros_like(cv.mass)
         # work good for shock 1d
         tau = current_dt/smoothness_tau
         epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
@@ -3021,23 +3021,23 @@ def main(ctx_factory=cl.create_some_context,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        #sponge_rhs = actx.zeros_like(cv)
+        #sponge_rhs = actx.np.zeros_like(cv)
         if use_sponge:
             fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
             #sponge_rhs = _sponge_source(cv=cv)
 
         # wall mass loss
-        wall_mass_rhs = actx.zeros_like(wv.mass)
+        wall_mass_rhs = actx.np.zeros_like(wv.mass)
         if use_wall_mass:
             wall_mass_rhs = -wall_model.mass_loss_rate(
                 mass=wv.mass, ox_mass=wv.ox_mass,
                 temperature=wdv.temperature)
 
         # wall oxygen diffusion
-        wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+        wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
         if use_wall_ox:
             if nspecies == 0:
-                fluid_ox_mass = actx.zeros_like(cv.mass)
+                fluid_ox_mass = actx.np.zeros_like(cv.mass)
             elif nspecies > 3:
                 fluid_ox_mass = cv.species_mass[i_ox]
             else:
