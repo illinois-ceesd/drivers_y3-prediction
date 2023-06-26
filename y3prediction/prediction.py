@@ -140,6 +140,11 @@ class StepperState:
         from dataclasses import replace
         return replace(self, **kwargs)
 
+    def get_obj_array(self):
+        """Return an object array containing all the stored quantitines."""
+        return make_obj_array([self.cv, self.tseed,
+                               self.av_smu, self.av_sbeta, self.av_skappa])
+
 
 @with_container_arithmetic(bcast_obj_array=False,
                            bcast_container_types=(DOFArray, np.ndarray),
@@ -155,6 +160,12 @@ class WallStepperState(StepperState):
 
     wv: WallVars
 
+    def get_obj_array(self):
+        """Return an object array containing all the stored quantitines."""
+        return make_obj_array([self.cv, self.tseed,
+                               self.av_smu, self.av_sbeta, self.av_skappa,
+                               self.wv])
+
 
 def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv=None):
     if wv is not None:
@@ -163,6 +174,15 @@ def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv=None):
     else:
         return StepperState(cv=cv, tseed=tseed, av_smu=av_smu,
                             av_sbeta=av_sbeta, av_skappa=av_skappa)
+
+
+def make_stepper_state_obj(ary):
+    if ary.size > 5:
+        return WallStepperState(cv=ary[0], tseed=ary[1], av_smu=ary[2],
+                                av_sbeta=ary[3], av_skappa=ary[4], wv=ary[5])
+    else:
+        return StepperState(cv=ary[0], tseed=ary[1], av_smu=ary[2],
+                                av_sbeta=ary[3], av_skappa=ary[4])
 
 
 class SingleLevelFilter(logging.Filter):
@@ -2911,6 +2931,8 @@ def main(ctx_factory=cl.create_some_context,
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
 
+        stepper_state = make_stepper_state_obj(state)
+
         if check_step(step=step, interval=ngarbage):
             with gc_timer:
                 from warnings import warn
@@ -2924,17 +2946,17 @@ def main(ctx_factory=cl.create_some_context,
         # must pass back the filtered CV in the state.
         if check_step(step=step, interval=soln_nfilter):
             #cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-            cv = filter_cv_compiled(state.cv)
-            state = state.replace(cv=cv)
+            cv = filter_cv_compiled(stepper_state.cv)
+            stepper_state = stepper_state.replace(cv=cv)
 
-        fluid_state = create_fluid_state(cv=state.cv,
-                                         temperature_seed=state.tseed,
-                                         smoothness_mu=state.av_smu,
-                                         smoothness_beta=state.av_sbeta,
-                                         smoothness_kappa=state.av_skappa)
+        fluid_state = create_fluid_state(cv=stepper_state.cv,
+                                         temperature_seed=stepper_state.tseed,
+                                         smoothness_mu=stepper_state.av_smu,
+                                         smoothness_beta=stepper_state.av_sbeta,
+                                         smoothness_kappa=stepper_state.av_skappa)
 
         if use_wall:
-            wdv = create_wall_dependent_vars_compiled(state.wv)
+            wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
         cv = fluid_state.cv  # reset cv to limited version
 
         try:
@@ -2953,19 +2975,20 @@ def main(ctx_factory=cl.create_some_context,
             # This re-creation of the state resets *tseed* to current temp
             # and forces the limited cv into state
 
-            state = state.replace(cv=cv, tseed=fluid_state.temperature)
+            stepper_state = stepper_state.replace(cv=cv,
+                                                  tseed=fluid_state.temperature)
 
             if any([do_viz, do_restart, do_health, do_status]):
 
                 # pass through, removes a bunch of tagging to avoid recomplie
                 if use_wall:
-                    wv = get_wv(state.wv)
+                    wv = get_wv(stepper_state.wv)
 
                 if not force_eval:
-                    #fluid_state = force_evaluation(actx, fluid_state)
-                    state = force_evaluation(actx, state)
-                    #if use_wall:
-                        #wv = force_evaluation(actx, state.wv)
+                    fluid_state = force_evaluation(actx, fluid_state)
+                    #state = force_evaluation(actx, state)
+                    if use_wall:
+                        wv = force_evaluation(actx, stepper_state.wv)
 
                 dv = fluid_state.dv
 
@@ -3049,7 +3072,7 @@ def main(ctx_factory=cl.create_some_context,
                     raise MyRuntimeError("Failed simulation health check.")
 
             if do_restart:
-                my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
+                my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
 
             if do_viz:
                 # pack things up
@@ -3092,10 +3115,10 @@ def main(ctx_factory=cl.create_some_context,
                 ts_field_wall=ts_field_wall,
                 dump_number=dump_number)
 
-            my_write_restart(step=step, t=t, t_wall=t_wall, state=state)
+            my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
             raise
 
-        return state, dt
+        return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
 
@@ -3117,11 +3140,12 @@ def main(ctx_factory=cl.create_some_context,
 
     def unfiltered_rhs(t, state):
 
-        cv = state.cv
-        tseed = state.tseed
-        av_smu = state.av_smu
-        av_sbeta = state.av_sbeta
-        av_skappa = state.av_skappa
+        stepper_state = make_stepper_state_obj(state)
+        cv = stepper_state.cv
+        tseed = stepper_state.tseed
+        av_smu = stepper_state.av_smu
+        av_sbeta = stepper_state.av_sbeta
+        av_skappa = stepper_state.av_skappa
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
@@ -3134,7 +3158,7 @@ def main(ctx_factory=cl.create_some_context,
 
         # update wall model
         if use_wall:
-            wv = state.wv
+            wv = stepper_state.wv
             wdv = wall_model.dependent_vars(wv)
 
             # update the boundaries and compute the gradients
@@ -3349,13 +3373,15 @@ def main(ctx_factory=cl.create_some_context,
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
-        return make_stepper_state(
+        rhs_stepper_state = make_stepper_state(
             cv=fluid_rhs,
             tseed=tseed_rhs,
             wv=wall_rhs,
             av_smu=av_smu_rhs,
             av_sbeta=av_sbeta_rhs,
             av_skappa=av_skappa_rhs)
+
+        return rhs_stepper_state.get_obj_array()
 
     unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
@@ -3370,10 +3396,14 @@ def main(ctx_factory=cl.create_some_context,
         rhs_state = unfiltered_rhs_compiled(t, state)
         # Use a spectral filter on the RHS
         if use_rhs_filter:
-            rhs_state = rhs_state.replace(cv=filter_rhs_fluid_compiled(rhs_state.cv))
+            rhs_state_filtered = make_stepper_state_obj(rhs_state)
+            rhs_state_filtered = rhs_state_filtered.replace(
+                cv=filter_rhs_fluid_compiled(rhs_state_filtered.cv))
             if use_wall:
-                rhs_state = rhs_state.replace(
-                    wv=filter_rhs_wall_compiled(rhs_state.wv))
+                rhs_state_filtered = rhs_state_filtered.replace(
+                    wv=filter_rhs_wall_compiled(rhs_state_filtered.wv))
+
+            rhs_state = rhs_state_filtered.get_obj_array()
 
         return rhs_state
 
@@ -3383,28 +3413,31 @@ def main(ctx_factory=cl.create_some_context,
     """
 
     if advance_time:
-        current_step, current_t, stepper_state = \
+        current_step, current_t, current_stepper_state_obj = \
             advance_state(rhs=my_rhs, timestepper=timestepper,
                           pre_step_callback=my_pre_step,
+                          #pre_step_callback=None,
                           post_step_callback=my_post_step,
                           istep=current_step, dt=current_dt,
                           t=current_t, t_final=t_final,
                           force_eval=force_eval,
-                          state=stepper_state,
+                          state=stepper_state.get_obj_array(),
                           compile_rhs=False)
 
-    current_cv = stepper_state.cv
-    tseed = stepper_state.tseed
-    current_av_smu = stepper_state.av_smu
-    current_av_sbeta = stepper_state.av_sbeta
-    current_av_skappa = stepper_state.av_skappa
+    current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
+
+    current_cv = current_stepper_state.cv
+    tseed = current_stepper_state.tseed
+    current_av_smu = current_stepper_state.av_smu
+    current_av_sbeta = current_stepper_state.av_sbeta
+    current_av_skappa = current_stepper_state.av_skappa
 
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              smoothness_mu=current_av_smu,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa)
     if use_wall:
-        current_wv = stepper_state.wv
+        current_wv = current_stepper_state.wv
         current_wdv = create_wall_dependent_vars_compiled(current_wv)
 
     # Dump the final data
@@ -3456,7 +3489,7 @@ def main(ctx_factory=cl.create_some_context,
         dump_number=dump_number)
 
     my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
-                     state=stepper_state)
+                     state=current_stepper_state)
 
     if logmgr:
         logmgr.close()
