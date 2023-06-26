@@ -2909,7 +2909,7 @@ def main(ctx_factory=cl.create_some_context,
     def my_pre_step(step, t, dt, state):
 
         # I don't think this should be needed, but shouldn't hurt anything
-        state = force_evaluation(actx, state)
+        #state = force_evaluation(actx, state)
 
         if check_step(step=step, interval=ngarbage):
             with gc_timer:
@@ -2962,9 +2962,10 @@ def main(ctx_factory=cl.create_some_context,
                     wv = get_wv(state.wv)
 
                 if not force_eval:
-                    fluid_state = force_evaluation(actx, fluid_state)
-                    if use_wall:
-                        wv = force_evaluation(actx, state.wv)
+                    #fluid_state = force_evaluation(actx, fluid_state)
+                    state = force_evaluation(actx, state)
+                    #if use_wall:
+                        #wv = force_evaluation(actx, state.wv)
 
                 dv = fluid_state.dv
 
