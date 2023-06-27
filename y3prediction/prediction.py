@@ -64,9 +64,12 @@ from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
                                   euler_step)
-from mirgecom.inviscid import (inviscid_facial_flux_rusanov,
-                               inviscid_facial_flux_hll)
+from mirgecom.inviscid import (
+    inviscid_facial_flux_rusanov,
+    inviscid_facial_flux_hll
+)
 from grudge.shortcuts import compiled_lsrk45_step
+from mirgecom.viscous import viscous_facial_flux_harmonic
 
 from mirgecom.fluid import make_conserved
 from mirgecom.limiter import bound_preserving_limiter
@@ -94,7 +97,10 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     coupled_grad_t_operator,
     coupled_ns_heat_operator
 )
-from mirgecom.navierstokes import grad_cv_operator, grad_t_operator
+from mirgecom.navierstokes import (
+    grad_cv_operator, grad_t_operator,
+    ns_operator
+)
 # driver specific utilties
 from y3prediction.utils import (
     getIsentropicPressure,
@@ -201,7 +207,7 @@ def main(ctx_factory=cl.create_some_context,
          restart_filename=None, target_filename=None,
          use_profiling=False, use_logmgr=True, user_input_file=None,
          use_overintegration=False, actx_class=None, casename=None,
-         lazy=False, log_path="log_data"):
+         lazy=False, log_path="log_data", use_esdg=False):
 
     if actx_class is None:
         raise RuntimeError("Array context class missing.")
@@ -313,6 +319,7 @@ def main(ctx_factory=cl.create_some_context,
 
     # discretization and model control
     order = configurate("order", input_data, 2)
+    quadrature_order = configurate("quadrature_order", input_data, -1)
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
@@ -618,11 +625,12 @@ def main(ctx_factory=cl.create_some_context,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
+    viscous_numerical_flux_func = viscous_facial_flux_harmonic
     if inv_num_flux == "rusanov":
         inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
         if rank == 0:
             print("\nRusanov inviscid flux")
-    if inv_num_flux == "hll":
+    elif inv_num_flux == "hll":
         inviscid_numerical_flux_func = inviscid_facial_flux_hll
         if rank == 0:
             print("\nHLL inviscid flux")
@@ -682,7 +690,7 @@ def main(ctx_factory=cl.create_some_context,
         # working gas: Ar #
         mu_ar = 4.22e-5
         mu = mu_ar
-    if fluid_mu > 0:
+    if not fluid_mu < 0:
         mu = fluid_mu
 
     kappa = cp*mu/Pr
@@ -1158,12 +1166,17 @@ def main(ctx_factory=cl.create_some_context,
     if rank == 0:
         logger.info("Making discretization")
 
+    rhs_operator = partial(ns_operator, use_esdg=use_esdg,
+                           inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                           viscous_numerical_flux_func=viscous_numerical_flux_func)
+
     dcoll = create_discretization_collection(
         actx,
         volume_meshes={
             vol: mesh
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-        order=order)
+        order=order,
+        quadrature_order=quadrature_order)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -2956,12 +2969,12 @@ def main(ctx_factory=cl.create_some_context,
             fluid_boundaries=fluid_boundaries,
             wall_boundaries=wall_boundaries,
             interface_noslip=noslip,
-            #interface_noslip=True,
-            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+            # interface_noslip=True,
+            # inviscid_numerical_flux_func=inviscid_numerical_flux_func,
             fluid_state=fluid_state,
             wall_kappa=wdv.thermal_conductivity,
             wall_temperature=wdv.temperature,
-            time=t,
+            time=t, ns_operator=rhs_operator,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag)
 
