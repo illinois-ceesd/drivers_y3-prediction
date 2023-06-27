@@ -47,13 +47,13 @@ order:  2
 ##############
 # equation of state
 ##############
-#nspecies:  7
-nspecies:  2
+nspecies:  7
+#nspecies:  2
 #nspecies:  0
 pyro_temp_iter: 1
 pyro_temp_tol: 1.
-#transport: 1
-transport: 0
+transport: 1
+#transport: 0
 
 ##############
 # ignition parameters
