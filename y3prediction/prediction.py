@@ -396,7 +396,7 @@ def main(ctx_factory=cl.create_some_context,
          restart_filename=None, target_filename=None,
          use_profiling=False, use_logmgr=True, user_input_file=None,
          use_overintegration=False, actx_class=None, casename=None,
-         lazy=False, log_path="log_data"):
+         lazy=False, log_path="log_data", use_esdg=False):
 
     if actx_class is None:
         raise RuntimeError("Array context class missing.")
@@ -508,6 +508,7 @@ def main(ctx_factory=cl.create_some_context,
 
     # discretization and model control
     order = configurate("order", input_data, 2)
+    quadrature_order = configurate("quadrature_order", input_data, -1)
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
@@ -820,7 +821,7 @@ def main(ctx_factory=cl.create_some_context,
         inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
         if rank == 0:
             print("\nRusanov inviscid flux")
-    if inv_num_flux == "hll":
+    elif inv_num_flux == "hll":
         inviscid_numerical_flux_func = inviscid_facial_flux_hll
         if rank == 0:
             print("\nHLL inviscid flux")
@@ -889,7 +890,7 @@ def main(ctx_factory=cl.create_some_context,
         # working gas: Ar #
         mu_ar = 4.22e-5
         mu = mu_ar
-    if fluid_mu > 0:
+    if not fluid_mu < 0:
         mu = fluid_mu
 
     kappa = cp*mu/Pr
@@ -1377,7 +1378,8 @@ def main(ctx_factory=cl.create_some_context,
         volume_meshes={
             vol: mesh
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-        order=order)
+        order=order,
+        quadrature_order=quadrature_order)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -1416,7 +1418,8 @@ def main(ctx_factory=cl.create_some_context,
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
-    char_length_fluid = char_length_fluid + actx.zeros_like(xpos_fluid)
+    xpos_wall = wall_nodes[0]
+    char_length_fluid = char_length_fluid + actx.np.zeros_like(xpos_fluid)
 
     smoothness_diffusivity = \
         smooth_char_length_alpha*char_length_fluid**2/current_dt
@@ -1497,6 +1500,14 @@ def main(ctx_factory=cl.create_some_context,
     if use_wall:
         smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
 
+    """
+    # this is strange, but maybe fixes a compile issue and get it evaluated now
+    smoothed_char_length_fluid = smoothed_char_length_fluid + \
+                                 actx.np.zeros_like(char_length_fluid)
+    smoothed_char_length_wall = smoothed_char_length_wall + \
+                                actx.np.zeros_like(char_length_wall)
+                                """
+
     if rank == 0:
         logger.info("Before restart/init")
 
@@ -1514,7 +1525,7 @@ def main(ctx_factory=cl.create_some_context,
         ])
 
         # limit the sum to 1.0
-        aux = actx.zeros_like(cv.mass)
+        aux = actx.np.zeros_like(cv.mass)
         for i in range(0, nspecies):
             aux = aux + spec_lim[i]
         spec_lim = spec_lim/aux
@@ -1910,12 +1921,12 @@ def main(ctx_factory=cl.create_some_context,
             time=0)
 
         restart_cv = force_evaluation(actx, restart_cv)
-        temperature_seed = actx.zeros_like(restart_cv.mass) + init_temperature
+        temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
         temperature_seed = force_evaluation(actx, temperature_seed)
 
-        restart_av_smu = actx.zeros_like(restart_cv.mass)
-        restart_av_sbeta = actx.zeros_like(restart_cv.mass)
-        restart_av_skappa = actx.zeros_like(restart_cv.mass)
+        restart_av_smu = actx.np.zeros_like(restart_cv.mass)
+        restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
+        restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -3356,12 +3367,15 @@ def main(ctx_factory=cl.create_some_context,
                                        grad_cv=grad_fluid_cv,
                                        grad_t=grad_fluid_t)
 
-        tseed_rhs = actx.zeros_like(fluid_state.temperature)
+        # update wall model
+        wdv = wall_model.dependent_vars(wv)
+        tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
 
         # have all the gradients and states, compute the rhs sources
         fluid_rhs = ns_operator(
             dcoll=dcoll,
             gas_model=gas_model,
+            use_esdg=use_esdg,
             dd=dd_vol_fluid,
             operator_states_quad=fluid_operator_states_quad,
             grad_cv=grad_fluid_cv,
@@ -3396,9 +3410,9 @@ def main(ctx_factory=cl.create_some_context,
                 ignition_source(x_vec=fluid_nodes, state=fluid_state,
                                 eos=gas_model.eos, time=t)/current_dt
 
-        av_smu_rhs = actx.zeros_like(cv.mass)
-        av_sbeta_rhs = actx.zeros_like(cv.mass)
-        av_skappa_rhs = actx.zeros_like(cv.mass)
+        av_smu_rhs = actx.np.zeros_like(cv.mass)
+        av_sbeta_rhs = actx.np.zeros_like(cv.mass)
+        av_skappa_rhs = actx.np.zeros_like(cv.mass)
         # work good for shock 1d
         tau = current_dt/smoothness_tau
         epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
@@ -3445,7 +3459,7 @@ def main(ctx_factory=cl.create_some_context,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        #sponge_rhs = actx.zeros_like(cv)
+        #sponge_rhs = actx.np.zeros_like(cv)
         if use_sponge:
             fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
             #sponge_rhs = _sponge_source(cv=cv)
