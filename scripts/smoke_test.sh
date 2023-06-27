@@ -48,9 +48,9 @@ declare -i numsuccess=0
 succeeded_tests=""
 failed_tests=""
 
-printf "Running serial tests...\n"
-# serial_test_names="smoke_test smoke_test_3d smoke_test_ks"
-serial_test_names="smoke_test smoke_test_ks"
+serial_test_names="smoke_test smoke_test_ks smoke_test_ks_3d"
+printf "Running serial tests ($serial_test_names)...\n"
+
 for test_name in $serial_test_names
 do
     test_path=${test_name}
@@ -58,11 +58,11 @@ do
     cd ${TOP_PATH}/${test_path}
 
     # Create 3d mesh if not already there
-    if [[ "${test_name}" == *"_3d"* ]]; then
+    if [[ "${test_name}" == "smoke_test_ks_3d" ]]; then
         cd data
-        rm actii.msh
-        if [[ -f "actii_24110.msh" ]]; then
-            ln -s actii_24110.msh actii.msh
+        rm -f actii.msh
+        if [[ -f "actii_23892.msh" ]]; then
+            ln -s actii_23892.msh actii.msh
         else
             ./mkmsh --size=48 --link  # will not overwrite if exists
         fi
@@ -88,9 +88,10 @@ done
 
 date
 printf "Serial tests done.\n"
-printf "Running parallel tests.\n"
 
-parallel_test_names="smoke_test_ks"
+parallel_test_names="smoke_test_ks smoke_test_ks_3d"
+printf "Running parallel tests ($parallel_test_names) ...\n"
+
 for test_name in $parallel_test_names
 do
     test_path=${test_name}
@@ -101,9 +102,9 @@ do
     # Create 3d mesh unless already there
     if [ "${test_name}" == "smoke_test_ks_3d" ]; then
         cd data 
-        rm actii.msh
-        if [[ -f "actii_47908.msh" ]]; then
-            ln -s actii_47908.msh actii.msh
+        rm -f actii.msh
+        if [[ -f "actii_23892.msh" ]]; then
+            ln -s actii_23892.msh actii.msh
         else
             ./mkmsh --size=30.5 --link  # will not overwrite if it exists
         fi
