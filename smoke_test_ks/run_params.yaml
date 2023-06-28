@@ -42,7 +42,9 @@ av2_mu0: 0.1
 av2_beta0: 6.0
 av2_kappa0: 1.0
 av2_prandtl0: 0.9
-order:  2
+order:  3
+use_rhs_filter: True
+rhs_filter_cutoff: 2
 
 ##############
 # equation of state

@@ -3562,7 +3562,8 @@ def main(ctx_factory=cl.create_some_context,
                 cv=filter_rhs_fluid_compiled(rhs_state_filtered.cv))
             if use_wall:
                 rhs_state_filtered = rhs_state_filtered.replace(
-                    wv=filter_rhs_wall_compiled(rhs_state_filtered.wv))
+                    wv=filter_rhs_wall_compiled(rhs_state_filtered.wv)
+                )  # pylint: disable=no-member
 
             rhs_state = rhs_state_filtered.get_obj_array()
 
