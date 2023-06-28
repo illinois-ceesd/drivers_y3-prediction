@@ -1418,13 +1418,13 @@ def main(ctx_factory=cl.create_some_context,
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
-    xpos_wall = wall_nodes[0]
     char_length_fluid = char_length_fluid + actx.np.zeros_like(xpos_fluid)
 
     smoothness_diffusivity = \
         smooth_char_length_alpha*char_length_fluid**2/current_dt
 
     if use_wall:
+        xpos_wall = wall_nodes[0]
         char_length_wall = force_evaluation(actx,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
@@ -3367,8 +3367,6 @@ def main(ctx_factory=cl.create_some_context,
                                        grad_cv=grad_fluid_cv,
                                        grad_t=grad_fluid_t)
 
-        # update wall model
-        wdv = wall_model.dependent_vars(wv)
         tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
 
         # have all the gradients and states, compute the rhs sources
