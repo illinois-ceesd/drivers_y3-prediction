@@ -225,7 +225,7 @@ class InitACTII:
         )
 
         # save the unsmoothed temerature, so we can use it with the injector init
-        unsmoothed_temperature = temperature
+        #unsmoothed_temperature = temperature
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
@@ -605,8 +605,8 @@ class InitACTII:
 
             # relax the pressure at the cavity/injector interface
             inj_pressure = pressure + (inj_pressure - pressure)*inj_weight
-            inj_temperature = (unsmoothed_temperature +
-                (inj_temperature - unsmoothed_temperature)*inj_weight)
+            inj_temperature = (temperature +
+                (inj_temperature - temperature)*inj_weight)
 
             # we need to calculate the velocity from a prescribed mass flow rate
             # this will need to take into account the velocity relaxation at the
