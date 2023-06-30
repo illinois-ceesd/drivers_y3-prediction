@@ -82,6 +82,5 @@ if __name__ == "__main__":
     main(actx_class, restart_filename=restart_filename,
          target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
-         use_profiling=args.profile,
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg)
