@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # default branch for building mirgecom for this driver
-mirge_branch="production"
+mirge_branch="production-esdg"
 # conda environment name
-conda_env="mirgeDriver.Y3prediction"
+conda_env="mirgeDriver.Y3prediction-esdg"
 
 usage()
 {
