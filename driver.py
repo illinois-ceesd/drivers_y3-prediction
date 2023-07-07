@@ -51,8 +51,9 @@ if __name__ == "__main__":
         if lazy:
             raise ValueError("Can't use lazy and profiling together.")
 
-    from grudge.array_context import get_reasonable_array_context_class
-    actx_class = get_reasonable_array_context_class(lazy=lazy, distributed=True)
+    from mirgecom.array_context import get_reasonable_array_context_class
+    actx_class = get_reasonable_array_context_class(
+        lazy=lazy, distributed=True, profiling=args.profile)
 
     restart_filename = None
     if args.restart_file:
@@ -78,9 +79,8 @@ if __name__ == "__main__":
     print(f"Running {sys.argv[0]}\n")
 
     from y3prediction.prediction import main
-    main(restart_filename=restart_filename, target_filename=target_filename,
+    main(actx_class, restart_filename=restart_filename,
+         target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
-         use_profiling=args.profile, use_logmgr=True,
          use_overintegration=args.overintegration or args.esdg,
-         actx_class=actx_class, casename=casename,
-         lazy=lazy, use_esdg=args.esdg)
+         casename=casename, use_esdg=args.esdg)

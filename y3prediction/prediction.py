@@ -26,7 +26,6 @@ THE SOFTWARE.
 import logging
 import sys
 import numpy as np
-import pyopencl as cl
 import numpy.linalg as la  # noqa
 import pyopencl.array as cla  # noqa
 import math
@@ -203,15 +202,10 @@ class _MuDiffFluidCommTag:
 
 
 @mpi_entry_point
-def main(ctx_factory=cl.create_some_context,
+def main(actx_class,
          restart_filename=None, target_filename=None,
-         use_profiling=False, use_logmgr=True, user_input_file=None,
-         use_overintegration=False, actx_class=None, casename=None,
-         lazy=False, log_path="log_data", use_esdg=False):
-
-    if actx_class is None:
-        raise RuntimeError("Array context class missing.")
-
+         user_input_file=None, use_overintegration=False,
+         casename=None, log_path="log_data", use_esdg=False):
     # control log messages
     logger = logging.getLogger(__name__)
     logger.propagate = False
@@ -230,8 +224,6 @@ def main(ctx_factory=cl.create_some_context,
     f2 = SingleLevelFilter(logging.INFO, True)
     h2.addFilter(f2)
     logger.addHandler(h2)
-
-    cl_ctx = ctx_factory()
 
     from mpi4py import MPI
     comm = MPI.COMM_WORLD
@@ -254,23 +246,14 @@ def main(ctx_factory=cl.create_some_context,
             os.makedirs(log_dir)
     comm.Barrier()
 
-    logmgr = initialize_logmgr(use_logmgr,
+    logmgr = initialize_logmgr(True,
         filename=logname, mode="wu", mpi_comm=comm)
 
-    if use_profiling:
-        queue = cl.CommandQueue(cl_ctx,
-            properties=cl.command_queue_properties.PROFILING_ENABLE)
-    else:
-        queue = cl.CommandQueue(cl_ctx)
-
-    # main array context for the simulation
-    from mirgecom.simutil import get_reasonable_memory_pool
-    alloc = get_reasonable_memory_pool(cl_ctx, queue)
-
-    if lazy:
-        actx = actx_class(comm, queue, mpi_base_tag=12000, allocator=alloc)
-    else:
-        actx = actx_class(comm, queue, allocator=alloc, force_device_scalars=True)
+    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
+    actx = initialize_actx(actx_class, comm)
+    queue = getattr(actx, "queue", None)
+    use_profiling = actx_class_is_profiling(actx_class)
+    alloc = getattr(actx, "allocator", None)
 
     # set up driver parameters
     from mirgecom.simutil import configurate
