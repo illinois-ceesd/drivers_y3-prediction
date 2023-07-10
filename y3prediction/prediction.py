@@ -310,7 +310,6 @@ def update_coupled_boundaries(
         *,
         time=0.,
         interface_noslip=True,
-        use_kappa_weighted_grad_flux_in_fluid=False,
         wall_penalty_amount=None,
         quadrature_tag=DISCR_TAG_BASE,
         limiter_func=None,
@@ -337,8 +336,6 @@ def update_coupled_boundaries(
             wall_boundaries=wall_boundaries,
             interface_noslip=interface_noslip,
             #interface_radiation,
-            use_kappa_weighted_grad_flux_in_fluid=(
-                use_kappa_weighted_grad_flux_in_fluid),
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
@@ -373,8 +370,6 @@ def update_coupled_boundaries(
             fluid_boundaries=fluid_boundaries,
             wall_boundaries=wall_boundaries,
             interface_noslip=interface_noslip,
-            use_kappa_weighted_grad_flux_in_fluid=(
-                use_kappa_weighted_grad_flux_in_fluid),
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
@@ -635,8 +630,6 @@ def main(ctx_factory=cl.create_some_context,
     wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
     wall_time_scale = configurate("wall_time_scale", input_data, 1)
     wall_material = configurate("wall_material", input_data, 0)
-    use_kappa_weighted_grad_flux = configurate(
-        "use_kappa_weighted_grad_flux", input_data, True)
 
     # use fluid average diffusivity by default
     wall_insert_ox_diff = spec_diff
@@ -1792,8 +1785,6 @@ def main(ctx_factory=cl.create_some_context,
                 fluid_state=fluid_state,
                 wall_kappa=wdv.thermal_conductivity,
                 wall_temperature=wdv.temperature,
-                use_kappa_weighted_grad_flux_in_fluid=(
-                    use_kappa_weighted_grad_flux),
                 time=time,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
@@ -2543,8 +2534,6 @@ def main(ctx_factory=cl.create_some_context,
             fluid_state=fluid_state,
             wall_kappa=wdv.thermal_conductivity,
             wall_temperature=wdv.temperature,
-            use_kappa_weighted_grad_flux_in_fluid=(
-                use_kappa_weighted_grad_flux),
             time=time,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
@@ -3375,8 +3364,6 @@ def main(ctx_factory=cl.create_some_context,
                 fluid_state=fluid_state,
                 wall_kappa=wdv.thermal_conductivity,
                 wall_temperature=wdv.temperature,
-                use_kappa_weighted_grad_flux_in_fluid=(
-                    use_kappa_weighted_grad_flux),
                 time=t,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
