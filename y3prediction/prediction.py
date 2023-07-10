@@ -564,8 +564,6 @@ def main(ctx_factory=cl.create_some_context,
     # outflow sponge location and strength
     use_sponge = configurate("use_sponge", input_data, True)
     sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
-    sponge_thickness = configurate("sponge_thickness", input_data, 0.09)
-    sponge_x0 = configurate("sponge_x0", input_data, 0.9)
 
     # artificial viscosity control
     #    0 - none
@@ -1055,6 +1053,13 @@ def main(ctx_factory=cl.create_some_context,
             pyro_class=Thermochemistry, temperature_niter=pyro_temp_iter,
             zero_level=chem_source_tol)(actx.np)
         eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
+        # seperate gas model for initialization,
+        # just to make sure we get converged temperature
+        pyro_mech_init = get_pyrometheus_wrapper_class(
+            pyro_class=Thermochemistry, temperature_niter=5,
+            zero_level=chem_source_tol)(actx.np)
+        eos_init = PyrometheusMixture(pyro_mech_init,
+                                      temperature_guess=init_temperature)
         species_names = pyro_mech.species_names
 
     gas_model = GasModel(eos=eos, transport=transport_model)
@@ -1533,7 +1538,8 @@ def main(ctx_factory=cl.create_some_context,
         kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
 
         mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
-                                   species_mass_fractions=spec_lim)
+                                   #species_mass_fractions=spec_lim)
+                                   species_mass_fractions=cv.species_mass_fractions)
 
         energy_lim = mass_lim*(
             gas_model.eos.get_internal_energy(temperature,
@@ -1546,6 +1552,8 @@ def main(ctx_factory=cl.create_some_context,
         return make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                               momentum=mom_lim,
                               species_mass=mass_lim*spec_lim)
+
+        #return cv
 
     if soln_filter_cutoff < 0:
         soln_filter_cutoff = int(soln_filter_frac * order)
@@ -1917,16 +1925,25 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
-            dcoll=dcoll, x_vec=fluid_nodes, eos=eos,
+            dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
             time=0)
 
         restart_cv = force_evaluation(actx, restart_cv)
+
         temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
         temperature_seed = force_evaluation(actx, temperature_seed)
 
         restart_av_smu = actx.np.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
+
+        # get the initial temperature field to use as a seed
+        restart_fluid_state = create_fluid_state(cv=restart_cv,
+                                                 temperature_seed=temperature_seed,
+                                                 smoothness_mu=restart_av_smu,
+                                                 smoothness_beta=restart_av_sbeta,
+                                                 smoothness_kappa=restart_av_skappa)
+        temperature_seed = restart_fluid_state.temperature
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -2159,7 +2176,8 @@ def main(ctx_factory=cl.create_some_context,
         return project_fluid_state(
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
-            target_fluid_state, gas_model
+            target_fluid_state, gas_model, limiter_func=limiter_func,
+            entropy_stable=use_esdg
         )
 
     flow_ref_state = \
@@ -2304,14 +2322,37 @@ def main(ctx_factory=cl.create_some_context,
     sponge_amp = sponge_sigma/current_dt/1000
 
     from y3prediction.utils import InitSponge
-    sponge_init = InitSponge(x0=sponge_x0, thickness=sponge_thickness,
-                             amplitude=sponge_amp)
+    inlet_sponge_x0 = 0.225
+    inlet_sponge_thickness = 0.015
+    outlet_sponge_x0 = 0.89
+    outlet_sponge_thickness = 0.04
+    inj_sponge_x0 = 0.645
+    inj_sponge_thickness = 0.005
+    sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                   thickness=inlet_sponge_thickness,
+                                   amplitude=sponge_amp,
+                                   direction=-1.0)
+    sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                    thickness=outlet_sponge_thickness,
+                                    amplitude=sponge_amp)
+    if use_injection:
+        sponge_init_injection = InitSponge(x0=inj_sponge_x0,
+                                           thickness=inj_sponge_thickness,
+                                           amplitude=sponge_amp,
+                                           xmax=0.66, ymax=-0.01)
 
-    def _sponge_sigma(x_vec):
-        return sponge_init(x_vec=x_vec)
+    def _sponge_sigma(sponge_field, x_vec):
+        sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
+        sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+        if use_injection:
+            sponge_field = sponge_init_injection(sponge_field=sponge_field,
+                                                 x_vec=x_vec)
+        return sponge_field
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
-    sponge_sigma = get_sponge_sigma(fluid_nodes)
+
+    sponge_sigma = actx.zeros_like(restart_cv.mass)
+    sponge_sigma = get_sponge_sigma(sponge_sigma, fluid_nodes)
 
     def _sponge_source(cv):
         """Create sponge source."""
