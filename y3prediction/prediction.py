@@ -336,7 +336,6 @@ def update_coupled_boundaries(
             wall_boundaries=wall_boundaries,
             interface_noslip=interface_noslip,
             #interface_radiation,
-            wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
 
