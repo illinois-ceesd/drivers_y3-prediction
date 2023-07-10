@@ -1039,6 +1039,7 @@ def main(ctx_factory=cl.create_some_context,
     # make the eos
     if eos_type == 0:
         eos = IdealSingleGas(gamma=gamma, gas_const=r)
+        eos_init = eos
         species_names = ["air", "fuel", "inert"]
     else:
         from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
