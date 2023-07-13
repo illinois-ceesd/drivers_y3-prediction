@@ -510,7 +510,6 @@ class InitACTII:
                                             velocity[i]*smoothing,
                                             velocity[i])
 
-
         mom = mass*velocity
         energy = (energy + np.dot(mom, mom)/(2.0*mass))
         return make_conserved(
@@ -521,18 +520,13 @@ class InitACTII:
             species_mass=mass*y
         )
 
-    def add_injection(self, cv, eos, *, time=0.0):
+    def add_injection(self, fluid_state, x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
 
         Parameters
         ----------
-        cv: mirgecom.fluid.ConservedVars
-            Current conserved variable state
-        eos:
-            Mixture-compatible equation-of-state object must provide
-            these functions:
-            `eos.get_density`
-            `eos.get_internal_energy`
+        fluid_state: mirgecom.gas_modle.FluidState
+            Current fluid state
         time: float
             Time at which solution is desired. The location is (optionally)
             dependent on time
@@ -542,12 +536,23 @@ class InitACTII:
         :class:`mirgecom.fluid.ConservedVars`
         """
 
-        actx = cv.array_context
-        mass = cv.mass
-        mom = cv.momentume
+        xpos = x_vec[0]
+        ypos = x_vec[1]
+        if self._dim == 3:
+            zpos = x_vec[2]
+        actx = xpos.array_context
 
-        zeros = actx.zeros_like(mass)
+        zeros = actx.zeros_like(xpos)
         ones = zeros + 1.0
+
+        # get the current mesh conditions
+        mass = fluid_state.mass_density
+        energy = fluid_state.energy_density
+        velocity = fluid_state.velocity
+        y = fluid_state.species_mass_fractions
+
+        temperature = fluid_state.temperature
+        pressure = fluid_state.temperature
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
@@ -590,7 +595,7 @@ class InitACTII:
 
         inj_y = ones*self._inj_mass_frac
 
-        inj_velocity = mach*np.zeros(self._dim, dtype=object)
+        inj_velocity = mass*np.zeros(self._dim, dtype=object)
         inj_velocity[0] = self._inj_vel[0]
 
         inj_mach = self._inj_mach*ones
@@ -633,7 +638,7 @@ class InitACTII:
         inj_energy = inj_mass*eos.get_internal_energy(
             temperature=inj_temperature, species_mass_fractions=inj_y)
 
-        inj_velocity = mach*np.zeros(self._dim, dtype=object)
+        inj_velocity = mass*np.zeros(self._dim, dtype=object)
         inj_mom = inj_mass*inj_velocity
 
         # the velocity magnitude

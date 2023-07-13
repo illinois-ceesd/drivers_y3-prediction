@@ -537,6 +537,7 @@ def main(actx_class,
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
     use_injection = configurate("use_injection", input_data, True)
+    init_injection = configurate("init_injection", input_data, False)
 
     # outflow sponge location and strength
     use_sponge = configurate("use_sponge", input_data, True)
@@ -1892,6 +1893,22 @@ def main(actx_class,
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
 
+        restart_fluid_state = create_fluid_state(
+            cv=restart_cv, temperature_seed=temperature_seed,
+            smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+            smoothness_kappa=restart_av_skappa)
+
+        # update current state with injection intialization
+        if init_injection:
+            restart_cv = bulk_init.add_injection(restart_fluid_state,
+                                                 eos=eos_init,
+                                                 x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
+            temperature_seed = restart_fluid_state.temperature
+
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
     else:
@@ -1901,9 +1918,6 @@ def main(actx_class,
         restart_cv = bulk_init(
             dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
             time=0)
-
-        if use_injection:
-            restart_cv = bulk_init.add_injection(restart_cv)
 
         restart_cv = force_evaluation(actx, restart_cv)
 
@@ -1921,6 +1935,17 @@ def main(actx_class,
                                                  smoothness_beta=restart_av_sbeta,
                                                  smoothness_kappa=restart_av_skappa)
         temperature_seed = restart_fluid_state.temperature
+
+        # update current state with injection intialization
+        if use_injection:
+            restart_cv = bulk_init.add_injection(restart_fluid_state,
+                                                 eos=eos_init,
+                                                 x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
+            temperature_seed = restart_fluid_state.temperature
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
