@@ -1902,6 +1902,9 @@ def main(actx_class,
             dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
             time=0)
 
+        if use_injection:
+            restart_cv = bulk_init.add_injection(restart_cv)
+
         restart_cv = force_evaluation(actx, restart_cv)
 
         temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
