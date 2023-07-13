@@ -1,6 +1,5 @@
 SetFactory("OpenCASCADE");
 surface_vector[] = ShapeFromFile("actii-2d.brep");
-//Merge "actii-3d.brep";
 
 // Millimeters to meters
 Mesh.ScalingFactor = 0.001;

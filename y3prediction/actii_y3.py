@@ -225,7 +225,7 @@ class InitACTII:
         )
 
         # save the unsmoothed temerature, so we can use it with the injector init
-        unsmoothed_temperature = temperature
+        #unsmoothed_temperature = temperature
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
@@ -514,13 +514,11 @@ class InitACTII:
             # initially in pressure/temperature equilibrium with the cavity
             #inj_left = 0.71
             # even with the bottom corner
-            inj_left = 0.70563
+            inj_left = 0.632
             # even with the top corner
-            #inj_left = 0.7074
-            #inj_left = 0.65
-            inj_right = 0.73
-            inj_top = -0.0226
-            inj_bottom = -0.025
+            inj_right = 0.651
+            inj_top = -0.0105
+            inj_bottom = -0.01213
             inj_fore = 1.59e-3
             inj_aft = -1.59e-3
             xc_left = zeros + inj_left
@@ -530,7 +528,7 @@ class InitACTII:
             zc_fore = zeros + inj_fore
             zc_aft = zeros + inj_aft
 
-            yc_center = zeros - 0.0283245 + 4e-3 + 1.59e-3/2.
+            yc_center = zeros - 0.01212 + 1.59e-3/2.
             zc_center = zeros
             inj_radius = 1.59e-3/2.
 
@@ -560,8 +558,8 @@ class InitACTII:
 
             # smooth out the injection profile
             # relax to the cavity temperature/pressure/velocity
-            inj_x0 = 0.712
-            inj_fuel_x0 = 0.712 - 0.002
+            inj_x0 = 0.64
+            inj_fuel_x0 = 0.645
             inj_sigma = 1500
 
             # left extent
@@ -607,8 +605,8 @@ class InitACTII:
 
             # relax the pressure at the cavity/injector interface
             inj_pressure = pressure + (inj_pressure - pressure)*inj_weight
-            inj_temperature = (unsmoothed_temperature +
-                (inj_temperature - unsmoothed_temperature)*inj_weight)
+            inj_temperature = (temperature +
+                (inj_temperature - temperature)*inj_weight)
 
             # we need to calculate the velocity from a prescribed mass flow rate
             # this will need to take into account the velocity relaxation at the

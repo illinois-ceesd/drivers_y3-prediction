@@ -294,7 +294,9 @@ class InitSponge:
     .. automethod:: __init__
     .. automethod:: __call__
     """
-    def __init__(self, *, x0, thickness, amplitude):
+    def __init__(self, *, x0, thickness, amplitude, direction=1.,
+                 xmin=-1000., xmax=1000., ymin=-1000., ymax=1000.,
+                 zmin=-1000., zmax=1000.):
         r"""Initialize the sponge parameters.
 
         Parameters
@@ -310,26 +312,55 @@ class InitSponge:
         self._x0 = x0
         self._thickness = thickness
         self._amplitude = amplitude
+        self._direction = direction
+        self._xmin = xmin
+        self._xmax = xmax
+        self._ymax = ymax
+        self._ymin = ymin
+        self._zmin = zmin
+        self._zmax = zmax
 
-    def __call__(self, x_vec, *, time=0.0):
+    def __call__(self, sponge_field, x_vec, *, time=0.0):
         """Create the sponge intensity at locations *x_vec*.
 
         Parameters
         ----------
         x_vec: numpy.ndarray
             Coordinates at which solution is desired
+        x_vec: numpy.ndarray
+            Current sponge field
         time: float
             Time at which solution is desired. The strength is (optionally)
             dependent on time
         """
         xpos = x_vec[0]
+        ypos = x_vec[1]
         actx = xpos.array_context
-        zeros = 0*xpos
+        zeros = actx.zeros_like(xpos)
         x0 = zeros + self._x0
 
-        return self._amplitude * actx.np.where(
-            actx.np.greater(xpos, x0),
-            (zeros + ((xpos - self._x0)/self._thickness) *
-            ((xpos - self._x0)/self._thickness)),
-            zeros + 0.0
-        )
+        if self._direction > 0:
+            new_sponge_field = self._amplitude * actx.np.where(
+                actx.np.greater(xpos, x0),
+                (zeros + ((xpos - self._x0)/self._thickness) *
+                ((xpos - self._x0)/self._thickness)),
+                zeros + 0.0)
+        else:
+            new_sponge_field = self._amplitude * actx.np.where(
+                actx.np.less(xpos, x0),
+                (zeros + ((xpos - self._x0)/self._thickness) *
+                ((xpos - self._x0)/self._thickness)),
+                zeros + 0.0)
+
+        left_edge = actx.np.greater(xpos, self._xmin)
+        right_edge = actx.np.less(xpos, self._xmax)
+        bottom_edge = actx.np.greater(ypos, self._ymin)
+        top_edge = actx.np.less(ypos, self._ymax)
+
+        inside_block = left_edge*right_edge*top_edge*bottom_edge
+
+        sponge_field = actx.np.where(inside_block,
+                                     sponge_field + new_sponge_field,
+                                     sponge_field)
+
+        return sponge_field
