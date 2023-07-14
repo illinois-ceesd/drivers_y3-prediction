@@ -13,8 +13,8 @@ t_viz_interval: 1.e-9
 constant_cfl: 0
 #constant_cfl: 1
 current_cfl: 0.05
-current_dt: 1.0e-10
-t_final: 2.e-9
+current_dt: 1.0e-13
+t_final: 2.e-12
 #current_dt: 1.0e-9
 #t_final: 2.e-8
 mesh_filename: data/actii.msh
@@ -48,7 +48,7 @@ use_av: 2
 alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
-order:  2
+order:  1
 
 ##############
 # equation of state
