@@ -61,10 +61,10 @@ do
     if [[ "${test_name}" == "smoke_test_ks_3d" ]]; then
         cd data
         rm -f actii.msh
-        if [[ -f "actii_23892.msh" ]]; then
-            ln -s actii_23892.msh actii.msh
+        if [[ -f "actii_48485.msh" ]]; then
+            ln -s actii_48485.msh actii.msh
         else
-            ./mkmsh --size=48 --link  # will not overwrite if exists
+            ./mkmsh --size=35 --link  # will not overwrite if exists
         fi
         cd ../
     fi
@@ -103,10 +103,10 @@ do
     if [ "${test_name}" == "smoke_test_ks_3d" ]; then
         cd data 
         rm -f actii.msh
-        if [[ -f "actii_23892.msh" ]]; then
-            ln -s actii_23892.msh actii.msh
+        if [[ -f "actii_48485.msh" ]]; then
+            ln -s actii_48485.msh actii.msh
         else
-            ./mkmsh --size=30.5 --link  # will not overwrite if it exists
+            ./mkmsh --size=35 --link  # will not overwrite if it exists
         fi
         cd ../
     fi
