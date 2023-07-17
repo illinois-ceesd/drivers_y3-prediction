@@ -538,6 +538,7 @@ def main(actx_class,
     use_ignition = configurate("use_ignition", input_data, 0)
     use_injection = configurate("use_injection", input_data, True)
     init_injection = configurate("init_injection", input_data, False)
+    use_upstream_injection = configurate("use_upstream_injection", input_data, False)
 
     # outflow sponge location and strength
     use_sponge = configurate("use_sponge", input_data, True)
@@ -876,6 +877,7 @@ def main(actx_class,
     if nspecies == 0:
         use_species_limiter = 0
         use_injection = False
+        use_upstream_injection = False
 
     # Turn off combustion unless EOS supports it
     if nspecies < 3:
@@ -1947,6 +1949,16 @@ def main(actx_class,
                 smoothness_kappa=restart_av_skappa)
             temperature_seed = restart_fluid_state.temperature
 
+        if use_upstream_injection:
+            restart_cv = bulk_init.add_injection_upstream(restart_fluid_state,
+                                                          eos=eos_init,
+                                                          x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
+            temperature_seed = restart_fluid_state.temperature
+
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
         # so we defer until after those are setup
@@ -2343,12 +2355,21 @@ def main(actx_class,
                                            amplitude=sponge_amp,
                                            xmax=0.66, ymax=-0.01)
 
+    if use_upstream_injection:
+        sponge_init_upstream_injection = InitSponge(x0=inj_sponge_x0,
+                                                    thickness=inj_sponge_thickness,
+                                                    amplitude=sponge_amp,
+                                                    xmax=0.66, ymax=-0.01)
+
     def _sponge_sigma(sponge_field, x_vec):
         sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
         sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
         if use_injection:
             sponge_field = sponge_init_injection(sponge_field=sponge_field,
                                                  x_vec=x_vec)
+        if use_upstream_injection:
+            sponge_field = sponge_init_upstream_injection(sponge_field=sponge_field,
+                                                          x_vec=x_vec)
         return sponge_field
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
