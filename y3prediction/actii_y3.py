@@ -603,8 +603,8 @@ class InitACTII:
 
         # smooth out the injection profile
         # relax to the cavity temperature/pressure/velocity
-        inj_x0 = 0.64
-        inj_fuel_x0 = 0.645
+        inj_x0 = 0.6375
+        inj_fuel_x0 = 0.6425
         inj_sigma = 1500
 
         # left extent
@@ -792,8 +792,8 @@ class InitACTII:
 
         # smooth out the injection profile
         # relax to the cavity temperature/pressure/velocity
-        inj_y0 = -0.015
-        inj_fuel_y0 = -0.02
+        inj_y0 = -0.012
+        inj_fuel_y0 = -0.015
         inj_sigma = 1500
 
         inj_tanh = inj_sigma*(ypos - inj_fuel_y0)

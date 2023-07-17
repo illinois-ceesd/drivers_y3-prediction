@@ -2342,6 +2342,7 @@ def main(actx_class,
     outlet_sponge_thickness = 0.04
     inj_sponge_x0 = 0.645
     inj_sponge_thickness = 0.005
+    upstream_inj_sponge_y0 = -0.02253 + inj_sponge_thickness
     sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                    thickness=inlet_sponge_thickness,
                                    amplitude=sponge_amp,
@@ -2356,10 +2357,12 @@ def main(actx_class,
                                            xmax=0.66, ymax=-0.01)
 
     if use_upstream_injection:
-        sponge_init_upstream_injection = InitSponge(x0=inj_sponge_x0,
+        sponge_init_upstream_injection = InitSponge(x0=upstream_inj_sponge_y0,
                                                     thickness=inj_sponge_thickness,
                                                     amplitude=sponge_amp,
-                                                    xmax=0.66, ymax=-0.01)
+                                                    xmin=0.53, xmax=0.535,
+                                                    ymin=-0.02253,
+                                                    direction=-2.0)
 
     def _sponge_sigma(sponge_field, x_vec):
         sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
