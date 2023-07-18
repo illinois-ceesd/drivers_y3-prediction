@@ -20,10 +20,10 @@ if __name__ == "__main__":
                         action="store", help="simulation case name")
     parser.add_argument("-g", "--logpath", type=ascii, dest="log_path", nargs="?",
                         action="store", help="simulation case name")
+    parser.add_argument("--esdg", action="store_true", default=False,
+                        help="enable entropy-stable for inviscid terms. [OFF]")
     parser.add_argument("--profile", action="store_true", default=False,
                         help="enable kernel profiling [OFF]")
-    parser.add_argument("--log", action="store_true", default=False,
-                        help="enable logging profiling [ON]")
     parser.add_argument("--lazy", action="store_true", default=False,
                         help="enable lazy evaluation [OFF]")
     parser.add_argument("--overintegration", action="store_true",
@@ -38,13 +38,22 @@ if __name__ == "__main__":
         casename = args.casename.replace("'", "")
     else:
         print(f"Default casename {casename}")
-    lazy = args.lazy
+
+    from warnings import warn
+    if args.esdg:
+        if not args.lazy:
+            warn("ESDG requires lazy-evaluation, enabling --lazy.")
+        if not args.overintegration:
+            warn("ESDG requires overintegration, enabling --overintegration.")
+
+    lazy = args.lazy or args.esdg
     if args.profile:
         if lazy:
             raise ValueError("Can't use lazy and profiling together.")
 
-    from grudge.array_context import get_reasonable_array_context_class
-    actx_class = get_reasonable_array_context_class(lazy=lazy, distributed=True)
+    from mirgecom.array_context import get_reasonable_array_context_class
+    actx_class = get_reasonable_array_context_class(
+        lazy=lazy, distributed=True, profiling=args.profile)
 
     restart_filename = None
     if args.restart_file:
@@ -70,8 +79,8 @@ if __name__ == "__main__":
     print(f"Running {sys.argv[0]}\n")
 
     from y3prediction.prediction import main
-    main(restart_filename=restart_filename, target_filename=target_filename,
+    main(actx_class, restart_filename=restart_filename,
+         target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
-         use_profiling=args.profile, use_logmgr=args.log,
-         use_overintegration=args.overintegration, lazy=lazy,
-         actx_class=actx_class, casename=casename)
+         use_overintegration=args.overintegration or args.esdg,
+         casename=casename, use_esdg=args.esdg)
