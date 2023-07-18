@@ -1426,8 +1426,10 @@ def main(actx_class,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
         char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
+        """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
+        """
 
     def compute_smoothed_char_length(href_fluid, comm_ind):
         # regular boundaries
@@ -1451,6 +1453,10 @@ def main(actx_class,
 
         return smooth_href_fluid_rhs
 
+    compute_smoothed_char_length_compiled = \
+        actx.compile(compute_smoothed_char_length)
+
+    """
     def compute_smoothed_char_length_wall(href_wall, comm_ind):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
@@ -1470,11 +1476,10 @@ def main(actx_class,
 
         return smooth_href_wall_rhs
 
-    compute_smoothed_char_length_compiled = \
-        actx.compile(compute_smoothed_char_length)
     if use_wall:
         compute_smoothed_char_length_wall_compiled = \
             actx.compile(compute_smoothed_char_length_wall)
+    """
 
     smoothed_char_length_fluid = char_length_fluid
     if use_smoothed_char_length:
@@ -1484,6 +1489,7 @@ def main(actx_class,
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
+        """
         if use_wall:
             smoothed_char_length_wall = char_length_wall
             for i in range(smooth_char_length):
@@ -1492,18 +1498,15 @@ def main(actx_class,
                         smoothed_char_length_wall, i)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
+        """
 
-    smoothed_char_length_fluid = force_evaluation(actx, smoothed_char_length_fluid)
-    if use_wall:
-        smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
-
-    """
-    # this is strange, but maybe fixes a compile issue and get it evaluated now
-    smoothed_char_length_fluid = smoothed_char_length_fluid + \
-                                 actx.np.zeros_like(char_length_fluid)
-    smoothed_char_length_wall = smoothed_char_length_wall + \
-                                actx.np.zeros_like(char_length_wall)
-                                """
+        smoothed_char_length_fluid = force_evaluation(actx,
+                                                      smoothed_char_length_fluid)
+        """
+        if use_wall:
+            smoothed_char_length_wall = force_evaluation(actx,
+                                                         smoothed_char_length_wall)
+                                                         """
 
     if rank == 0:
         logger.info("Before restart/init")

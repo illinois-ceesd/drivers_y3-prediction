@@ -553,14 +553,15 @@ class InitACTII:
         y = fluid_state.species_mass_fractions
 
         temperature = fluid_state.temperature
-        pressure = fluid_state.temperature
+        pressure = fluid_state.pressure
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
         #inj_left = 0.71
         # even with the bottom corner
-        inj_left = 0.632
+        #inj_left = 0.632
         # even with the top corner
+        inj_left = 0.6337
         inj_right = 0.651
         inj_top = -0.0105
         inj_bottom = -0.01213
@@ -743,7 +744,7 @@ class InitACTII:
         y = fluid_state.species_mass_fractions
 
         temperature = fluid_state.temperature
-        pressure = fluid_state.temperature
+        pressure = fluid_state.pressure
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity

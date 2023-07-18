@@ -12,7 +12,8 @@ nrestart: 10
 nhealth: 1
 nstatus: 1
 #constant_cfl: 1
-use_av: 2
+smooth_char_length: 5
+use_av: 0
 constant_cfl: 0
 current_cfl: 0.05
 current_dt: 1e-10
