@@ -63,7 +63,9 @@ from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
                                   euler_step)
 from mirgecom.inviscid import (inviscid_facial_flux_rusanov,
-                               inviscid_facial_flux_hll)
+                               inviscid_facial_flux_hll,
+                               entropy_stable_inviscid_flux_rusanov,
+                               entropy_stable_inviscid_flux_renac)
 from mirgecom.viscous import (viscous_facial_flux_central,
                               viscous_facial_flux_harmonic)
 from grudge.shortcuts import compiled_lsrk45_step
@@ -792,14 +794,25 @@ def main(actx_class,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    if inv_num_flux == "rusanov":
-        inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
-        if rank == 0:
-            print("\nRusanov inviscid flux")
-    elif inv_num_flux == "hll":
-        inviscid_numerical_flux_func = inviscid_facial_flux_hll
-        if rank == 0:
-            print("\nHLL inviscid flux")
+    if use_esdg:
+        print_msg = "\nSetting etropy stable inviscid flux to: "
+        if nspecies == 7:
+            inviscid_numerical_flux_func = entropy_stable_inviscid_flux_renac
+            print_msg = print_msg + "Renac."
+        else:
+            inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
+            print_msg = print_msg + "Chanrashekar."
+        print(print_msg)
+
+    else:
+        if inv_num_flux == "rusanov":
+            inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
+            if rank == 0:
+                print("\nRusanov inviscid flux")
+        elif inv_num_flux == "hll":
+            inviscid_numerical_flux_func = inviscid_facial_flux_hll
+            if rank == 0:
+                print("\nHLL inviscid flux")
 
     if use_wall:
         viscous_numerical_flux_func = viscous_facial_flux_harmonic
@@ -2581,6 +2594,7 @@ def main(actx_class,
             dcoll=dcoll,
             gas_model=gas_model,
             dd=dd_vol_fluid,
+            use_esdg=use_esdg,
             operator_states_quad=fluid_operator_states_quad,
             grad_cv=grad_fluid_cv,
             grad_t=grad_fluid_t,
