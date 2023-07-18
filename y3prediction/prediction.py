@@ -801,7 +801,7 @@ def main(actx_class,
             print_msg = print_msg + "Renac."
         else:
             inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
-            print_msg = print_msg + "Chanrashekar."
+            print_msg = print_msg + "Chandrashekar."
         print(print_msg)
 
     else:
