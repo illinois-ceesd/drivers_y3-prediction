@@ -798,10 +798,10 @@ def main(actx_class,
         print_msg = "\nSetting etropy stable inviscid flux to: "
         if nspecies == 7:  # only mixture at this point, should really check EOS
             inviscid_numerical_flux_func = entropy_stable_inviscid_flux_renac
-            print_msg = print_msg + "Renac (mixtures)."
+            print_msg = print_msg + "Renac (mixtures).\n"
         else:
             inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
-            print_msg = print_msg + "Chandrashekar (single gas, passive species)."
+            print_msg = print_msg + "Chandrashekar (single gas, passive species).\n"
         print(print_msg)
 
     else:
