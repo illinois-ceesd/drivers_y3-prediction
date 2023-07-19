@@ -145,10 +145,10 @@ Physical Surface('isothermal_wall') = {
     21, // cavity bottom
     18, // cavity back (ramp)
     17, // post-cavity flat
-    //15, // post-cavity flat, surround
+    15, // post-cavity flat, surround
     11, // combustor bottom before sample
     13, // combustor bottom after sample
-    //12, // combustor bottom around sample
+    12, // combustor bottom around sample
     10, // combustor flat
     26 // injector
 };
