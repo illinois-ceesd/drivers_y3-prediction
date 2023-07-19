@@ -126,36 +126,37 @@ Physical Volume('fluid') = {1};
 Physical Volume('wall_insert') = {2,4};
 Physical Volume('wall_surround') = {3,5};
 
-Physical Surface("inflow") = {2}; // inlet
-Physical Surface("outflow") = {9}; // outlet
-Physical Surface("injection") = {27}; // injection
-Physical Surface("flow") = {2, 9, 27}; // injection
+Physical Surface("inflow") = {27}; // inlet
+Physical Surface("outflow") = {13}; // outlet
+Physical Surface("injection") = {3, 29}; // injection
+Physical Surface("flow") = {27, 13, 3, 29}; // injection
 Physical Surface('isothermal_wall') = {
-    4, // fore wall
+    6, // fore wall
     5, // aft wall
-    1, // inflow top
-    3, // inflow ramp top
-    7, // nozzle top
-    8, // isolator top
-    6, // inflow bottom
-    25, // inflow ramp bottom
-    24, // inflow ramp bottom
-    23, // isolator bottom
-    22, // cavity front
-    21, // cavity bottom
-    18, // cavity back (ramp)
-    17, // post-cavity flat
-    15, // post-cavity flat, surround
-    11, // combustor bottom before sample
-    13, // combustor bottom after sample
-    12, // combustor bottom around sample
-    10, // combustor flat
-    26 // injector
+    9, // inflow top
+    10, // inflow ramp top
+    11, // nozzle top
+    12, // isolator top
+    26, // inflow bottom
+    8, // inflow ramp bottom
+    4, // inflow ramp bottom
+    2, // isolator bottom
+    7, // cavity front
+    25, // cavity bottom
+    22, // cavity back (ramp)
+    21, // post-cavity flat
+    //15, // post-cavity flat, surround
+    15, // combustor bottom before sample
+    17, // combustor bottom after sample
+    //12, // combustor bottom around sample
+    14, // combustor flat
+    1, // upstream injector
+    28 // injector
 };
 
 Physical Surface('wall_farfield') = {
-    34, 35, 36, 37, // cavity surround
-    49, 50, 48, 47, 51 // combustor surround
+    36, 37, 38, 39, // cavity surround
+    49, 50, 51, 52, 53 // combustor surround
 };
 
 // Create distance field from surfaces for wall meshing, excludes cavity, injector
