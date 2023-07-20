@@ -162,16 +162,16 @@ Physical Surface('wall_farfield') = {
 // Create distance field from surfaces for wall meshing, excludes cavity, injector
 Field[1] = Distance;
 Field[1].SurfacesList = {
-    4, // fore wall
+    6, // fore wall
     5, // aft wall
-    1, // inflow top
-    3, // inflow ramp top
-    7, // nozzle top
-    8, // isolator top
-    6, // inflow bottom
-    25, // inflow ramp bottom
-    24, // nozzle bottom
-    23 // isolator bottom
+    9, // inflow top
+    10, // inflow ramp top
+    11, // nozzle top
+    12, // isolator top
+    26, // inflow bottom
+    8, // inflow ramp bottom
+    4, // inflow ramp bottom
+    2 // isolator bottom
 };
 Field[1].Sampling = 1000;
 ////
@@ -223,10 +223,10 @@ Field[2011].F = Sprintf("F2 + (F2003 - F2)*(0.5*(1.0 - tanh(%g*(x - %g))))*(0.5*
 // Create distance field from corners for wall meshing, excludes cavity, injector
 Field[3001] = Distance;
 Field[3001].CurvesList = {
-    28, 29, // top fore
-    9, 12, // top aft
-    25, 24, 19, 15, 16, 17, // bottom aft
-    42, 41, 35, 36, 32, 33, 34 // bottom fore
+    31, 32, // top fore
+    13, 14, // top aft
+    5, 20, 21, 17, 18, 19, 16, // bottom aft
+    6, 38, 39, 35, 36, 37, 34  // bottom fore
 };
 Field[3001].Sampling = 1000;
 ////
@@ -243,11 +243,11 @@ Field[3002].StopAtDistMax = 1;
 // Create distance field from surfaces for wall meshing in the combustor
 Field[101] = Distance;
 Field[101].SurfacesList = {
-    17, // post-cavity flat
-    11, // combustor bottom before sample
-    13, // combustor bottom after sample
-    10, // combustor flat
-    12, 14 // combustor sample and surround
+    21, // post-cavity flat
+    15, // combustor bottom before sample
+    17, // combustor bottom after sample
+    14, // combustor flat
+    18, 16 // combustor sample and surround
 };
 Field[101].Sampling = 1000;
 ////
@@ -265,9 +265,9 @@ Field[102].StopAtDistMax = 1;
 // Create distance field from curves, cavity only
 Field[11] = Distance;
 Field[11].SurfacesList = {
-    22, // cavity front
-    21, // cavity bottom
-    18 // cavity back (ramp)
+    7, // cavity front
+    25, // cavity bottom
+    12 // cavity back (ramp)
 };
 Field[11].Sampling = 1000;
 
@@ -284,7 +284,7 @@ Field[12].StopAtDistMax = 1;
 // Create distance field from curves, injector only
 Field[13] = Distance;
 Field[13].SurfacesList = {
-26 // injector wall
+28, 1 // injector wall
 };
 Field[13].Sampling = 1000;
 //
@@ -302,8 +302,9 @@ Field[14].StopAtDistMax = 1;
 // Create distance field from curves, inside wall only
 Field[15] = Distance;
 Field[15].SurfacesList = {
-    28:33,
-    39:46
+    30:35,
+    39:46,
+    40:48
 };
 Field[15].Sampling = 1000;
 
@@ -321,8 +322,8 @@ Field[16].StopAtDistMax = 1;
 // Create distance field from curves, sample/fluid interface
 Field[17] = Distance;
 Field[17].SurfacesList = {
-    16, 20, 19, 15, // cavity sample/surround
-    12, 14  // combustor sample/surround
+    20, 24, 23, 37, // cavity sample/surround
+    18, 16  // combustor sample/surround
 };
 
 Field[17].Sampling = 1000;
@@ -341,8 +342,8 @@ Field[18].StopAtDistMax = 1;
 // Create distance field from curves, sample/fluid interface
 Field[117] = Distance;
 Field[117].CurvesList = {
-    68, // cavity sample corner
-    69, 62  // cavity surround corner
+    75, // cavity sample corner
+    68, 74  // cavity surround corner
 };
 
 Field[117].Sampling = 1000;
@@ -424,21 +425,66 @@ injector_start_y = -10;
 injector_end_y = -13;
 injector_start_z = -3;
 injector_end_z = 3;
-Field[7] = Box;
-Field[7].XMin = injector_start_x;
-Field[7].XMax = injector_end_x;
-Field[7].YMin = injector_start_y;
-Field[7].YMax = injector_end_y;
-Field[7].ZMin = injector_start_z;
-Field[7].ZMax = injector_end_z;
-Field[7].Thickness = 100;    // interpolate from VIn to Vout over a distance around the cylinder
-////Field[7] = Cylinder;
-////Field[7].XAxis = 1;
-////Field[7].YCenter = -0.0225295;
-////Field[7].ZCenter = 0.0157;
-////Field[7].Radius = 0.003;
+//Field[7] = Box;
+//Field[7].XMin = injector_start_x;
+//Field[7].XMax = injector_end_x;
+//Field[7].YMin = injector_start_y;
+//Field[7].YMax = injector_end_y;
+//Field[7].ZMin = injector_start_z;
+//Field[7].ZMax = injector_end_z;
+//Field[7].Thickness = 100;    // interpolate from VIn to Vout over a distance around the cylinder
+Field[7] = Cylinder;
+Field[7].XAxis = injector_end_x - injector_start_x;
+Field[7].XCenter = injector_start_x;
+Field[7].YCenter = -11.5;
+Field[7].ZCenter = 0.;
+Field[7].Radius = 3;
 Field[7].VIn = injectorsize;
 Field[7].VOut = bigsize;
+
+// background mesh size in the upstream injection region
+//injector_start_x = 530;
+//injector_end_x = 610;
+//injector_start_y = -0.0225*1000;
+//injector_start_y = -5;
+//injector_end_y = -8;
+//injector_start_z = -3;
+//injector_end_z = 3;
+Field[217] = Cylinder;
+Field[217].YAxis = 17.5;
+Field[217].XCenter =  533.2;
+Field[217].YCenter = -22.5;
+Field[217].ZCenter = 0.;
+Field[217].Radius = 3;
+Field[217].VIn = injectorsize;
+Field[217].VOut = bigsize;
+//Field[117] = Box;
+//Field[117].XMin = injector_start_x;
+//Field[117].XMax = injector_end_x;
+//Field[117].YMin = injector_start_y;
+//Field[117].YMax = injector_end_y;
+//Field[117].ZMin = injector_start_z;
+//Field[117].ZMax = injector_end_z;
+//Field[117].Thickness = 100;    // interpolate from VIn to Vout over a distance around the cylinder
+//Field[117].VIn = injectorsize;
+//Field[117].VOut = bigsize;
+//
+// background mesh size between upstream injection and cavity
+//injector_start_x = 530;
+//injector_end_x = 610;
+//injector_start_y = -0.0225*1000;
+//injector_start_y = -5;
+//injector_end_y = -8;
+//injector_start_z = -3;
+//injector_end_z = 3;
+Field[218] = Cylinder;
+Field[218].XAxis = 50;
+Field[218].XCenter =  580;
+Field[218].YCenter = -9;
+Field[218].ZCenter = 0.;
+Field[218].Radius = 6;
+Field[218].VIn = injectorsize;
+Field[218].VOut = bigsize;
 
 // background mesh size in the sample region
 //Field[8] = Constant;
@@ -484,6 +530,10 @@ Field[21] = Restrict;
 Field[21].VolumesList = {1};
 Field[21].InField = 7;
 
+Field[221] = Restrict;
+Field[221].VolumesList = {1};
+Field[221].InField = 218;
+
 // keep the cavity spacing in the fluid mesh only
 Field[22] = Restrict;
 Field[22].VolumesList = {1};
@@ -502,7 +552,7 @@ Field[100] = Min;
 //Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
 //
 //Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
-Field[100].FieldsList = {3002, 2010, 2011, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
+Field[100].FieldsList = {3002, 2010, 2011, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118, 221, 218};
 Background Field = 100;
 
 Mesh.MeshSizeExtendFromBoundary = 0;
@@ -518,7 +568,7 @@ Mesh.MeshSizeFromCurvature = 0;
 //Mesh.Algorithm = 8;
 // HXT, re-implemented Delaunay in parallel
 Mesh.Algorithm3D = 10;
-//Mesh.OptimizeNetgen = 1;
-//Mesh.Smoothing = 100;
-Mesh.Smoothing = 0;
-Mesh.OptimizeNetgen = 0;
+Mesh.OptimizeNetgen = 1;
+Mesh.Smoothing = 100;
+//Mesh.Smoothing = 0;
+//Mesh.OptimizeNetgen = 0;
