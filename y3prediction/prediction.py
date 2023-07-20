@@ -2204,7 +2204,6 @@ def main(actx_class,
                 effective_surface_area_func=_get_wall_effective_surface_area_fiber,
                 mass_loss_func=_mass_loss_rate_fiber,
                 oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
->>>>>>> main
 
     ##################################
     # Set up the boundary conditions #
