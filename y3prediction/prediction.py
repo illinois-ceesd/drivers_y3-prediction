@@ -531,7 +531,7 @@ def main(ctx_factory=cl.create_some_context,
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
-    mesh_filename = configurate("mesh_filename", input_data, "em18data/compressedRamp.msh")
+    mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
     noslip = configurate("noslip", input_data, True)
     adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
