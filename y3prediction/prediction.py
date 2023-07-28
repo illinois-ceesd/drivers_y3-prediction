@@ -26,7 +26,6 @@ THE SOFTWARE.
 import logging
 import sys
 import numpy as np
-import pyopencl as cl
 import numpy.linalg as la  # noqa
 import pyopencl.array as cla  # noqa
 import math
@@ -310,7 +309,6 @@ def update_coupled_boundaries(
         *,
         time=0.,
         interface_noslip=True,
-        use_kappa_weighted_grad_flux_in_fluid=False,
         wall_penalty_amount=None,
         quadrature_tag=DISCR_TAG_BASE,
         limiter_func=None,
@@ -337,9 +335,6 @@ def update_coupled_boundaries(
             wall_boundaries=wall_boundaries,
             interface_noslip=interface_noslip,
             #interface_radiation,
-            use_kappa_weighted_grad_flux_in_fluid=(
-                use_kappa_weighted_grad_flux_in_fluid),
-            wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
 
@@ -373,8 +368,6 @@ def update_coupled_boundaries(
             fluid_boundaries=fluid_boundaries,
             wall_boundaries=wall_boundaries,
             interface_noslip=interface_noslip,
-            use_kappa_weighted_grad_flux_in_fluid=(
-                use_kappa_weighted_grad_flux_in_fluid),
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
@@ -392,15 +385,10 @@ def update_coupled_boundaries(
 
 
 @mpi_entry_point
-def main(ctx_factory=cl.create_some_context,
+def main(actx_class,
          restart_filename=None, target_filename=None,
-         use_profiling=False, use_logmgr=True, user_input_file=None,
-         use_overintegration=False, actx_class=None, casename=None,
-         lazy=False, log_path="log_data", use_esdg=False):
-
-    if actx_class is None:
-        raise RuntimeError("Array context class missing.")
-
+         user_input_file=None, use_overintegration=False,
+         casename=None, log_path="log_data", use_esdg=False):
     # control log messages
     logger = logging.getLogger(__name__)
     logger.propagate = False
@@ -419,8 +407,6 @@ def main(ctx_factory=cl.create_some_context,
     f2 = SingleLevelFilter(logging.INFO, True)
     h2.addFilter(f2)
     logger.addHandler(h2)
-
-    cl_ctx = ctx_factory()
 
     from mpi4py import MPI
     comm = MPI.COMM_WORLD
@@ -443,23 +429,14 @@ def main(ctx_factory=cl.create_some_context,
             os.makedirs(log_dir)
     comm.Barrier()
 
-    logmgr = initialize_logmgr(use_logmgr,
+    logmgr = initialize_logmgr(True,
         filename=logname, mode="wu", mpi_comm=comm)
 
-    if use_profiling:
-        queue = cl.CommandQueue(cl_ctx,
-            properties=cl.command_queue_properties.PROFILING_ENABLE)
-    else:
-        queue = cl.CommandQueue(cl_ctx)
-
-    # main array context for the simulation
-    from mirgecom.simutil import get_reasonable_memory_pool
-    alloc = get_reasonable_memory_pool(cl_ctx, queue)
-
-    if lazy:
-        actx = actx_class(comm, queue, mpi_base_tag=12000, allocator=alloc)
-    else:
-        actx = actx_class(comm, queue, allocator=alloc, force_device_scalars=True)
+    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
+    actx = initialize_actx(actx_class, comm)
+    queue = getattr(actx, "queue", None)
+    use_profiling = actx_class_is_profiling(actx_class)
+    alloc = getattr(actx, "allocator", None)
 
     # set up driver parameters
     from mirgecom.simutil import configurate
@@ -563,12 +540,12 @@ def main(ctx_factory=cl.create_some_context,
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
     use_injection = configurate("use_injection", input_data, True)
+    init_injection = configurate("init_injection", input_data, False)
+    use_upstream_injection = configurate("use_upstream_injection", input_data, False)
 
     # outflow sponge location and strength
     use_sponge = configurate("use_sponge", input_data, True)
     sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
-    sponge_thickness = configurate("sponge_thickness", input_data, 0.09)
-    sponge_x0 = configurate("sponge_x0", input_data, 0.9)
 
     # artificial viscosity control
     #    0 - none
@@ -640,8 +617,6 @@ def main(ctx_factory=cl.create_some_context,
     wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
     wall_time_scale = configurate("wall_time_scale", input_data, 1)
     wall_material = configurate("wall_material", input_data, 0)
-    use_kappa_weighted_grad_flux = configurate(
-        "use_kappa_weighted_grad_flux", input_data, True)
 
     # use fluid average diffusivity by default
     wall_insert_ox_diff = spec_diff
@@ -905,6 +880,7 @@ def main(ctx_factory=cl.create_some_context,
     if nspecies == 0:
         use_species_limiter = 0
         use_injection = False
+        use_upstream_injection = False
 
     # Turn off combustion unless EOS supports it
     if nspecies < 3:
@@ -1051,6 +1027,7 @@ def main(ctx_factory=cl.create_some_context,
     # make the eos
     if eos_type == 0:
         eos = IdealSingleGas(gamma=gamma, gas_const=r)
+        eos_init = eos
         species_names = ["air", "fuel", "inert"]
     else:
         from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
@@ -1058,6 +1035,13 @@ def main(ctx_factory=cl.create_some_context,
             pyro_class=Thermochemistry, temperature_niter=pyro_temp_iter,
             zero_level=chem_source_tol)(actx.np)
         eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
+        # seperate gas model for initialization,
+        # just to make sure we get converged temperature
+        pyro_mech_init = get_pyrometheus_wrapper_class(
+            pyro_class=Thermochemistry, temperature_niter=5,
+            zero_level=chem_source_tol)(actx.np)
+        eos_init = PyrometheusMixture(pyro_mech_init,
+                                      temperature_guess=init_temperature)
         species_names = pyro_mech.species_names
 
     gas_model = GasModel(eos=eos, transport=transport_model)
@@ -1188,9 +1172,10 @@ def main(ctx_factory=cl.create_some_context,
             rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
-            inlet_gamma = (
-                pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
-                pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+            inlet_gamma = (pyro_mech.get_mixture_specific_heat_cp_mass(
+                temp_inflow, y) /
+                           pyro_mech.get_mixture_specific_heat_cv_mass(
+                               temp_inflow, y))
 
             gamma_error = (gamma - inlet_gamma)
             gamma_guess = inlet_gamma
@@ -1339,7 +1324,7 @@ def main(ctx_factory=cl.create_some_context,
                         (pyro_mech.get_mixture_specific_heat_cp_mass(
                             temp_injection, y) /
                          pyro_mech.get_mixture_specific_heat_cv_mass(
-                             temp_injection, y))
+                            temp_injection, y))
                     gamma_error = (gamma_guess - gamma_injection)
                     gamma_guess = gamma_injection
 
@@ -1375,7 +1360,6 @@ def main(ctx_factory=cl.create_some_context,
 
         inj_ymin = -0.0243245
         inj_ymax = -0.0227345
-
         bulk_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
                               P0=total_pres_inflow, T0=total_temp_inflow,
@@ -1626,7 +1610,8 @@ def main(ctx_factory=cl.create_some_context,
         kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
 
         mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
-                                   species_mass_fractions=spec_lim)
+                                   #species_mass_fractions=spec_lim)
+                                   species_mass_fractions=cv.species_mass_fractions)
 
         energy_lim = mass_lim*(
             gas_model.eos.get_internal_energy(temperature,
@@ -1639,6 +1624,8 @@ def main(ctx_factory=cl.create_some_context,
         return make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                               momentum=mom_lim,
                               species_mass=mass_lim*spec_lim)
+
+        #return cv
 
     if soln_filter_cutoff < 0:
         soln_filter_cutoff = int(soln_filter_frac * order)
@@ -1877,8 +1864,6 @@ def main(ctx_factory=cl.create_some_context,
                 fluid_state=fluid_state,
                 wall_kappa=wdv.thermal_conductivity,
                 wall_temperature=wdv.temperature,
-                use_kappa_weighted_grad_flux_in_fluid=(
-                    use_kappa_weighted_grad_flux),
                 time=time,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
@@ -2003,6 +1988,22 @@ def main(ctx_factory=cl.create_some_context,
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
 
+        restart_fluid_state = create_fluid_state(
+            cv=restart_cv, temperature_seed=temperature_seed,
+            smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+            smoothness_kappa=restart_av_skappa)
+
+        # update current state with injection intialization
+        if init_injection:
+            restart_cv = bulk_init.add_injection(restart_fluid_state,
+                                                 eos=eos_init,
+                                                 x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
+            temperature_seed = restart_fluid_state.temperature
+
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
     else:
@@ -2010,16 +2011,46 @@ def main(ctx_factory=cl.create_some_context,
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
-            dcoll=dcoll, x_vec=fluid_nodes, eos=eos,
+            dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
             time=0)
 
         restart_cv = force_evaluation(actx, restart_cv)
+
         temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
         temperature_seed = force_evaluation(actx, temperature_seed)
 
         restart_av_smu = actx.np.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
+
+        # get the initial temperature field to use as a seed
+        restart_fluid_state = create_fluid_state(cv=restart_cv,
+                                                 temperature_seed=temperature_seed,
+                                                 smoothness_mu=restart_av_smu,
+                                                 smoothness_beta=restart_av_sbeta,
+                                                 smoothness_kappa=restart_av_skappa)
+        temperature_seed = restart_fluid_state.temperature
+
+        # update current state with injection intialization
+        if use_injection:
+            restart_cv = bulk_init.add_injection(restart_fluid_state,
+                                                 eos=eos_init,
+                                                 x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
+            temperature_seed = restart_fluid_state.temperature
+
+        if use_upstream_injection:
+            restart_cv = bulk_init.add_injection_upstream(restart_fluid_state,
+                                                          eos=eos_init,
+                                                          x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
+            temperature_seed = restart_fluid_state.temperature
 
         # Ideally we would compute the smoothness variables here,
         # but we need the boundary conditions (and hence the target state) first,
@@ -2252,7 +2283,8 @@ def main(ctx_factory=cl.create_some_context,
         return project_fluid_state(
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
-            target_fluid_state, gas_model
+            target_fluid_state, gas_model, limiter_func=limiter_func,
+            entropy_stable=use_esdg
         )
 
     flow_ref_state = \
@@ -2437,7 +2469,9 @@ def main(ctx_factory=cl.create_some_context,
         return sponge_field
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
-    sponge_sigma = get_sponge_sigma(fluid_nodes)
+
+    sponge_sigma = actx.zeros_like(restart_cv.mass)
+    sponge_sigma = get_sponge_sigma(sponge_sigma, fluid_nodes)
 
     def _sponge_source(cv):
         """Create sponge source."""
@@ -2628,8 +2662,6 @@ def main(ctx_factory=cl.create_some_context,
             fluid_state=fluid_state,
             wall_kappa=wdv.thermal_conductivity,
             wall_temperature=wdv.temperature,
-            use_kappa_weighted_grad_flux_in_fluid=(
-                use_kappa_weighted_grad_flux),
             time=time,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
@@ -3460,8 +3492,6 @@ def main(ctx_factory=cl.create_some_context,
                 fluid_state=fluid_state,
                 wall_kappa=wdv.thermal_conductivity,
                 wall_temperature=wdv.temperature,
-                use_kappa_weighted_grad_flux_in_fluid=(
-                    use_kappa_weighted_grad_flux),
                 time=t,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
