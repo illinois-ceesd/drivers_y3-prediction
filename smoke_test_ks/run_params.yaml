@@ -33,7 +33,7 @@ smooth_char_length: 5
 #smooth_char_length: 0
 smoothness_alpha: 1.e-12
 smoothness_tau: 1.e-12
-use_av: 2
+use_av: 0
 #use_av: 0
 alpha_sc: 0.01
 s0_sc: -5.0
@@ -52,7 +52,7 @@ rhs_filter_cutoff: 2
 nspecies:  7
 #nspecies:  2
 #nspecies:  0
-pyro_temp_iter: 1
+pyro_temp_iter: 2
 pyro_temp_tol: 1.
 transport: 1
 #transport: 0
