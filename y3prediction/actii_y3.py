@@ -553,14 +553,15 @@ class InitACTII:
         y = fluid_state.species_mass_fractions
 
         temperature = fluid_state.temperature
-        pressure = fluid_state.temperature
+        pressure = fluid_state.pressure
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
         #inj_left = 0.71
         # even with the bottom corner
-        inj_left = 0.632
+        #inj_left = 0.632
         # even with the top corner
+        inj_left = 0.6337
         inj_right = 0.651
         inj_top = -0.0105
         inj_bottom = -0.01213
@@ -603,8 +604,8 @@ class InitACTII:
 
         # smooth out the injection profile
         # relax to the cavity temperature/pressure/velocity
-        inj_x0 = 0.64
-        inj_fuel_x0 = 0.645
+        inj_x0 = 0.6375
+        inj_fuel_x0 = 0.6425
         inj_sigma = 1500
 
         # left extent
@@ -743,7 +744,7 @@ class InitACTII:
         y = fluid_state.species_mass_fractions
 
         temperature = fluid_state.temperature
-        pressure = fluid_state.temperature
+        pressure = fluid_state.pressure
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
@@ -792,8 +793,8 @@ class InitACTII:
 
         # smooth out the injection profile
         # relax to the cavity temperature/pressure/velocity
-        inj_y0 = -0.015
-        inj_fuel_y0 = -0.02
+        inj_y0 = -0.012
+        inj_fuel_y0 = -0.015
         inj_sigma = 1500
 
         inj_tanh = inj_sigma*(ypos - inj_fuel_y0)

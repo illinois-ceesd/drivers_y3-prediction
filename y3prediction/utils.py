@@ -339,17 +339,23 @@ class InitSponge:
         zeros = actx.zeros_like(xpos)
         x0 = zeros + self._x0
 
+        if abs(self._direction) == 1:
+            coords = xpos
+        if abs(self._direction) == 2:
+            coords = ypos
+
         if self._direction > 0:
+
             new_sponge_field = self._amplitude * actx.np.where(
-                actx.np.greater(xpos, x0),
-                (zeros + ((xpos - self._x0)/self._thickness) *
-                ((xpos - self._x0)/self._thickness)),
+                actx.np.greater(coords, x0),
+                (zeros + ((coords - self._x0)/self._thickness) *
+                ((coords - self._x0)/self._thickness)),
                 zeros + 0.0)
         else:
             new_sponge_field = self._amplitude * actx.np.where(
-                actx.np.less(xpos, x0),
-                (zeros + ((xpos - self._x0)/self._thickness) *
-                ((xpos - self._x0)/self._thickness)),
+                actx.np.less(coords, x0),
+                (zeros + ((coords - self._x0)/self._thickness) *
+                ((coords - self._x0)/self._thickness)),
                 zeros + 0.0)
 
         left_edge = actx.np.greater(xpos, self._xmin)

@@ -1519,8 +1519,10 @@ def main(ctx_factory=cl.create_some_context,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
         char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
+        """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
+        """
 
     def compute_smoothed_char_length(href_fluid, comm_ind):
         # regular boundaries
@@ -1544,6 +1546,10 @@ def main(ctx_factory=cl.create_some_context,
 
         return smooth_href_fluid_rhs
 
+    compute_smoothed_char_length_compiled = \
+        actx.compile(compute_smoothed_char_length)
+
+    """
     def compute_smoothed_char_length_wall(href_wall, comm_ind):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
@@ -1563,11 +1569,10 @@ def main(ctx_factory=cl.create_some_context,
 
         return smooth_href_wall_rhs
 
-    compute_smoothed_char_length_compiled = \
-        actx.compile(compute_smoothed_char_length)
     if use_wall:
         compute_smoothed_char_length_wall_compiled = \
             actx.compile(compute_smoothed_char_length_wall)
+    """
 
     smoothed_char_length_fluid = char_length_fluid
     if use_smoothed_char_length:
@@ -1577,6 +1582,7 @@ def main(ctx_factory=cl.create_some_context,
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
+        """
         if use_wall:
             smoothed_char_length_wall = char_length_wall
             for i in range(smooth_char_length):
@@ -1585,18 +1591,15 @@ def main(ctx_factory=cl.create_some_context,
                         smoothed_char_length_wall, i)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
+        """
 
-    smoothed_char_length_fluid = force_evaluation(actx, smoothed_char_length_fluid)
-    if use_wall:
-        smoothed_char_length_wall = force_evaluation(actx, smoothed_char_length_wall)
-
-    """
-    # this is strange, but maybe fixes a compile issue and get it evaluated now
-    smoothed_char_length_fluid = smoothed_char_length_fluid + \
-                                 actx.np.zeros_like(char_length_fluid)
-    smoothed_char_length_wall = smoothed_char_length_wall + \
-                                actx.np.zeros_like(char_length_wall)
-                                """
+        smoothed_char_length_fluid = force_evaluation(actx,
+                                                      smoothed_char_length_fluid)
+        """
+        if use_wall:
+            smoothed_char_length_wall = force_evaluation(actx,
+                                                         smoothed_char_length_wall)
+                                                         """
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -2394,11 +2397,44 @@ def main(ctx_factory=cl.create_some_context,
     sponge_amp = sponge_sigma/current_dt/1000
 
     from y3prediction.utils import InitSponge
-    sponge_init = InitSponge(x0=sponge_x0, thickness=sponge_thickness,
-                             amplitude=sponge_amp)
+    inlet_sponge_x0 = 0.225
+    inlet_sponge_thickness = 0.015
+    outlet_sponge_x0 = 0.89
+    outlet_sponge_thickness = 0.04
+    inj_sponge_x0 = 0.645
+    inj_sponge_thickness = 0.005
+    upstream_inj_sponge_y0 = -0.02253 + inj_sponge_thickness
+    sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                   thickness=inlet_sponge_thickness,
+                                   amplitude=sponge_amp,
+                                   direction=-1.0)
+    sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                    thickness=outlet_sponge_thickness,
+                                    amplitude=sponge_amp)
+    if use_injection:
+        sponge_init_injection = InitSponge(x0=inj_sponge_x0,
+                                           thickness=inj_sponge_thickness,
+                                           amplitude=sponge_amp,
+                                           xmax=0.66, ymax=-0.01)
 
-    def _sponge_sigma(x_vec):
-        return sponge_init(x_vec=x_vec)
+    if use_upstream_injection:
+        sponge_init_upstream_injection = InitSponge(x0=upstream_inj_sponge_y0,
+                                                    thickness=inj_sponge_thickness,
+                                                    amplitude=sponge_amp,
+                                                    xmin=0.53, xmax=0.535,
+                                                    ymin=-0.02253,
+                                                    direction=-2.0)
+
+    def _sponge_sigma(sponge_field, x_vec):
+        sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
+        sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+        if use_injection:
+            sponge_field = sponge_init_injection(sponge_field=sponge_field,
+                                                 x_vec=x_vec)
+        if use_upstream_injection:
+            sponge_field = sponge_init_upstream_injection(sponge_field=sponge_field,
+                                                          x_vec=x_vec)
+        return sponge_field
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
     sponge_sigma = get_sponge_sigma(fluid_nodes)
