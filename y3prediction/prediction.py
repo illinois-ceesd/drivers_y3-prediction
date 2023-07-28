@@ -212,6 +212,12 @@ class MyRuntimeError(RuntimeError):
     pass
 
 
+class SimulationConfigError(RuntimeError):
+    """Simple exception to kill the simulation."""
+
+    pass
+
+
 class _InitCommTag:
     pass
 
@@ -792,14 +798,36 @@ def main(actx_class,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    if inv_num_flux == "rusanov":
-        inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
-        if rank == 0:
-            print("\nRusanov inviscid flux")
-    elif inv_num_flux == "hll":
-        inviscid_numerical_flux_func = inviscid_facial_flux_hll
-        if rank == 0:
-            print("\nHLL inviscid flux")
+    inv_flux_msg = "\nSetting inviscid numerical flux to: "
+    if use_esdg:
+        try:
+            from mirgecom.inviscid import (
+                entropy_stable_inviscid_flux_rusanov,
+                entropy_stable_inviscid_flux_renac)
+        except ImportError:
+            raise SimulationConfigError("ESDG option specified, but MIRGE-Com "
+                                        "is installed without ESDG support. "
+                                        "Try switching your MIRGE-Com branch to "
+                                        "mirgecom@production.")
+
+        if nspecies == 7:  # only mixture at this point, should really check EOS
+            inviscid_numerical_flux_func = entropy_stable_inviscid_flux_renac
+            inv_flux_msg = inv_flux_msg + "Entropy-conserving Renac (mixtures).\n"
+        else:
+            inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
+            inv_flux_msg = (inv_flux_msg + "Entropy-conserving Chandrashekar "
+                            "(single gas, passive species).\n")
+
+    else:
+        if inv_num_flux == "rusanov":
+            inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
+            inv_flux_msg = inv_flux_msg + "Rusanov\n"
+        elif inv_num_flux == "hll":
+            inviscid_numerical_flux_func = inviscid_facial_flux_hll
+            inv_flux_msg = inv_flux_msg + "HLL\n"
+
+    if rank == 0:
+        print(inv_flux_msg)
 
     if use_wall:
         viscous_numerical_flux_func = viscous_facial_flux_harmonic
@@ -2584,6 +2612,7 @@ def main(actx_class,
             dcoll=dcoll,
             gas_model=gas_model,
             dd=dd_vol_fluid,
+            use_esdg=use_esdg,
             operator_states_quad=fluid_operator_states_quad,
             grad_cv=grad_fluid_cv,
             grad_t=grad_fluid_t,
