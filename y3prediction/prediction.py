@@ -29,6 +29,7 @@ import numpy as np
 import numpy.linalg as la  # noqa
 import pyopencl.array as cla  # noqa
 import math
+from dataclasses import replace
 import grudge.op as op
 from pytools.obj_array import make_obj_array
 from functools import partial
@@ -102,7 +103,7 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
 from mirgecom.navierstokes import (
     grad_cv_operator,
     grad_t_operator as fluid_grad_t_operator,
-    ns_operator
+    ns_operator as general_ns_operator
 )
 # driver specific utilties
 from y3prediction.utils import (
@@ -146,7 +147,6 @@ class StepperState:
 
     def replace(self, **kwargs):
         """Return a copy of *self* with the attributes in *kwargs* replaced."""
-        from dataclasses import replace
         return replace(self, **kwargs)
 
     def get_obj_array(self):
@@ -300,7 +300,24 @@ class _FluidOpStatesCommTag:
     pass
 
 
-def update_coupled_boundaries(
+def make_coupled_operator_fluid_states(
+        dcoll, fluid_state, gas_model, boundaries, fluid_dd, wall_dd,
+        quadrature_tag=DISCR_TAG_BASE, comm_tag=None, limiter_func=None):
+    """Prepare gas model-consistent fluid states for use in coupled operators."""
+
+    all_boundaries = {}
+    all_boundaries.update(boundaries)
+    all_boundaries.update({
+        dd_bdry.domain_tag: None  # Don't need the full boundaries, just the tags
+        for dd_bdry in filter_part_boundaries(
+            dcoll, volume_dd=fluid_dd, neighbor_volume_dd=wall_dd)})
+
+    return make_operator_fluid_states(
+        dcoll, fluid_state, gas_model, all_boundaries, quadrature_tag,
+        dd=fluid_dd, comm_tag=comm_tag, limiter_func=limiter_func)
+
+
+def coupled_grad_operator(
         dcoll,
         gas_model,
         fluid_dd, wall_dd,
@@ -309,19 +326,13 @@ def update_coupled_boundaries(
         *,
         time=0.,
         interface_noslip=True,
-        wall_penalty_amount=None,
         quadrature_tag=DISCR_TAG_BASE,
+        fluid_operator_states_quad=None,
         limiter_func=None,
         comm_tag=None):
-    r"""
-    Update the fluid and wall subdomain boundaries.
+    """Compute the gradients for the coupled fluid/wall."""
 
-    Augments *fluid_boundaries* and *wall_boundaries* with the boundaries for the
-    fluid-wall interface that are needed to enforce continuity of temperature and
-    heat flux.
-    """
-
-    # Insert the interface boundaries for computing the gradient
+    # Insert the interface boundaries
     fluid_all_boundaries_no_grad, wall_all_boundaries_no_grad = \
         add_interface_boundaries_no_grad(
             dcoll=dcoll,
@@ -339,22 +350,55 @@ def update_coupled_boundaries(
             comm_tag=comm_tag)
 
     # Get the operator fluid states
-    fluid_operator_states_quad = make_operator_fluid_states(
-        dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
-        quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
-        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+    # Note: Don't need to use the make_coupled_* version here because we're passing
+    # in the augmented boundaries
+    if fluid_operator_states_quad is None:
+        fluid_operator_states_quad = make_operator_fluid_states(
+            dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
+            quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+            comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
-    # Compute the temperature gradient for both subdomains
+    # Compute the gradient operators for both subdomains
+
+    fluid_grad_cv = grad_cv_operator(
+        dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
+        dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
+        operator_states_quad=fluid_operator_states_quad, comm_tag=comm_tag)
     fluid_grad_temperature = fluid_grad_t_operator(
         dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
         time=time, quadrature_tag=quadrature_tag,
         dd=fluid_dd, operator_states_quad=fluid_operator_states_quad)
+
     wall_grad_temperature = wall_grad_t_operator(
         dcoll, wall_kappa, wall_all_boundaries_no_grad, wall_temperature,
         quadrature_tag=quadrature_tag, dd=wall_dd)
 
-    # Insert boundaries for the fluid-wall interface, now with the temperature
-    # gradient
+    return fluid_grad_cv, fluid_grad_temperature, wall_grad_temperature
+
+
+def coupled_ns_heat_operator(
+        dcoll,
+        gas_model,
+        fluid_boundaries,
+        wall_boundaries,
+        fluid_dd, wall_dd,
+        fluid_state,
+        wall_kappa, wall_temperature,
+        fluid_grad_cv,
+        fluid_grad_temperature,
+        wall_grad_temperature,
+        *,
+        time=0.,
+        interface_noslip=True,
+        wall_penalty_amount=None,
+        quadrature_tag=DISCR_TAG_BASE,
+        fluid_operator_states_quad=None,
+        limiter_func=None,
+        ns_operator=general_ns_operator,
+        comm_tag=None):
+    """Compute the NS and heat operators for the coupled fluid/wall."""
+
+    # Insert the interface boundaries
     fluid_all_boundaries, wall_all_boundaries = \
         add_interface_boundaries(
             dcoll=dcoll,
@@ -368,20 +412,38 @@ def update_coupled_boundaries(
             fluid_boundaries=fluid_boundaries,
             wall_boundaries=wall_boundaries,
             interface_noslip=interface_noslip,
+            #interface_radiation,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
 
-    fluid_grad_cv = grad_cv_operator(
-        dcoll, gas_model, fluid_all_boundaries, fluid_state,
-        dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
-        comm_tag=comm_tag)
+    # Compute the operators for both subdomains
 
-    return (fluid_all_boundaries, wall_all_boundaries,
-            fluid_operator_states_quad,
-            fluid_grad_cv,
-            fluid_grad_temperature,
-            wall_grad_temperature)
+    ns_result = ns_operator(
+        dcoll=dcoll,
+        gas_model=gas_model,
+        dd=fluid_dd,
+        operator_states_quad=fluid_operator_states_quad,
+        grad_cv=fluid_grad_cv,
+        grad_t=fluid_grad_temperature,
+        boundaries=fluid_all_boundaries,
+        state=fluid_state,
+        time=time,
+        quadrature_tag=quadrature_tag,
+        comm_tag=(comm_tag, _FluidOperatorCommTag))
+
+    diff_result = diffusion_operator(
+        dcoll=dcoll,
+        kappa=wall_kappa,
+        boundaries=wall_all_boundaries,
+        u=wall_temperature,
+        penalty_amount=wall_penalty_amount,
+        quadrature_tag=quadrature_tag,
+        dd=wall_dd,
+        grad_u=wall_grad_temperature,
+        comm_tag=(comm_tag, _WallOperatorCommTag))
+
+    return ns_result, diff_result
 
 
 @mpi_entry_point
@@ -1939,78 +2001,35 @@ def main(actx_class,
             wv = state.wv
             wdv = wall_model.dependent_vars(wv)
 
-            # update the boundaries and compute the gradients
-            # shared by artificial viscosity and the operators
-            # this updates the coupling between the fluid and wall
-            (updated_fluid_boundaries,
-             updated_wall_boundaries,
-             fluid_operator_states_quad,
-             grad_fluid_cv,
-             grad_fluid_t,
-             grad_wall_t) = update_coupled_boundaries(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                fluid_boundaries=uncoupled_fluid_boundaries,
-                wall_boundaries=uncoupled_wall_boundaries,
-                interface_noslip=noslip,
-                fluid_state=fluid_state,
-                wall_kappa=wdv.thermal_conductivity,
-                wall_temperature=wdv.temperature,
+            grad_fluid_cv, grad_fluid_t, grad_wall_t = coupled_grad_operator(
+                dcoll,
+                gas_model,
+                dd_vol_fluid, dd_vol_wall,
+                uncoupled_fluid_boundaries,
+                uncoupled_wall_boundaries,
+                fluid_state, wdv.thermal_conductivity, wdv.temperature,
                 time=time,
-                wall_penalty_amount=wall_penalty_amount,
+                interface_noslip=noslip,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
                 comm_tag=_InitCommTag)
 
-            # try making sure the stuff that comes back is used
-            # even if it's a zero contribution
-            fluid_rhs = ns_operator(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                dd=dd_vol_fluid,
-                operator_states_quad=fluid_operator_states_quad,
-                grad_cv=grad_fluid_cv,
-                grad_t=grad_fluid_t,
-                boundaries=updated_fluid_boundaries,
-                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-                viscous_numerical_flux_func=viscous_numerical_flux_func,
-                state=fluid_state,
-                time=time,
-                quadrature_tag=quadrature_tag,
-                comm_tag=(_InitCommTag, _FluidOperatorCommTag))
-
-            wall_energy_rhs = diffusion_operator(
-                dcoll=dcoll,
-                kappa=wdv.thermal_conductivity,
-                boundaries=updated_wall_boundaries,
-                u=wdv.temperature,
-                quadrature_tag=quadrature_tag,
-                dd=dd_vol_wall,
-                grad_u=grad_wall_t,
-                comm_tag=(_InitCommTag, _WallOperatorCommTag))
-
-            cv = cv + 0.*fluid_rhs
-
-            wall_mass_rhs = actx.np.zeros_like(wv.mass)
-            wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
-            wall_rhs = wall_time_scale * WallVars(
-                mass=wall_mass_rhs,
-                energy=wall_energy_rhs,
-                ox_mass=wall_ox_mass_rhs)
-
-            wv = wv + 0.*wall_rhs
-
         else:
+            fluid_operator_states_quad = make_operator_fluid_states(
+                dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
+                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+
             grad_fluid_cv = grad_cv_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                time=time, quadrature_tag=quadrature_tag)
+                time=time, quadrature_tag=quadrature_tag,
+                operator_states_quad=fluid_operator_states_quad)
 
             grad_fluid_t = fluid_grad_t_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                time=time, quadrature_tag=quadrature_tag)
+                time=time, quadrature_tag=quadrature_tag,
+                operator_states_quad=fluid_operator_states_quad)
 
         # now compute the smoothness part
         if use_av == 1:
@@ -2025,6 +2044,9 @@ def main(actx_class,
                               av_sbeta=av_sbeta,
                               av_skappa=av_skappa)
         if use_wall:
+            # Make sure wall_grad_t gets used so the communication ends up in the DAG
+            for idim in range(dim):
+                wv = replace(wv, energy=wv.energy + 0.*grad_wall_t[idim])
             state = state.replace(wv=wv)
 
         return state
@@ -2860,68 +2882,18 @@ def main(actx_class,
         cv = fluid_state.cv
         dv = fluid_state.dv
 
-        # update the boundaries and compute the gradients
-        # shared by artificial viscosity and the operators
-        # this updates the coupling between the fluid and wall
-        (updated_fluid_boundaries,
-         updated_wall_boundaries,
-         fluid_operator_states_quad,
-         grad_fluid_cv,
-         grad_fluid_t,
-         grad_wall_t) = update_coupled_boundaries(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-            fluid_boundaries=uncoupled_fluid_boundaries,
-            wall_boundaries=uncoupled_wall_boundaries,
-            interface_noslip=noslip,
-            fluid_state=fluid_state,
-            wall_kappa=wdv.thermal_conductivity,
-            wall_temperature=wdv.temperature,
+        grad_fluid_cv, grad_fluid_t, grad_wall_t = coupled_grad_operator(
+            dcoll,
+            gas_model,
+            dd_vol_fluid, dd_vol_wall,
+            uncoupled_fluid_boundaries,
+            uncoupled_wall_boundaries,
+            fluid_state, wdv.thermal_conductivity, wdv.temperature,
             time=time,
-            wall_penalty_amount=wall_penalty_amount,
+            interface_noslip=noslip,
             quadrature_tag=quadrature_tag,
             limiter_func=limiter_func,
             comm_tag=_InitCommTag)
-
-        # try making sure the stuff that comes back is used
-        # even if it's a zero contribution
-        fluid_rhs = ns_operator(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            dd=dd_vol_fluid,
-            use_esdg=use_esdg,
-            operator_states_quad=fluid_operator_states_quad,
-            grad_cv=grad_fluid_cv,
-            grad_t=grad_fluid_t,
-            boundaries=updated_fluid_boundaries,
-            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-            viscous_numerical_flux_func=viscous_numerical_flux_func,
-            state=fluid_state,
-            time=time,
-            quadrature_tag=quadrature_tag,
-            comm_tag=(_InitCommTag, _FluidOperatorCommTag))
-
-        wall_energy_rhs = diffusion_operator(
-            dcoll=dcoll,
-            kappa=wdv.thermal_conductivity,
-            boundaries=updated_wall_boundaries,
-            u=wdv.temperature,
-            quadrature_tag=quadrature_tag,
-            dd=dd_vol_wall,
-            grad_u=grad_wall_t,
-            comm_tag=(_InitCommTag, _WallOperatorCommTag))
-
-        cv = cv + 0.*fluid_rhs
-
-        wall_mass_rhs = actx.np.zeros_like(wv.mass)
-        wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
-        wall_rhs = wall_time_scale * WallVars(
-            mass=wall_mass_rhs,
-            energy=wall_energy_rhs,
-            ox_mass=wall_ox_mass_rhs)
-
-        wv = wv + 0.*wall_rhs
 
         # now compute the smoothness part
         if use_av == 1:
@@ -3696,45 +3668,40 @@ def main(actx_class,
             wv = stepper_state.wv
             wdv = wall_model.dependent_vars(wv)
 
-            # update the boundaries and compute the gradients
-            # shared by artificial viscosity and the operators
-            # this updates the coupling between the fluid and wall
-            (updated_fluid_boundaries,
-             updated_wall_boundaries,
-             fluid_operator_states_quad,
-             grad_fluid_cv,
-             grad_fluid_t,
-             grad_wall_t) = update_coupled_boundaries(
-                dcoll=dcoll,
-                gas_model=gas_model,
-                fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
-                fluid_boundaries=uncoupled_fluid_boundaries,
-                wall_boundaries=uncoupled_wall_boundaries,
-                interface_noslip=noslip,
-                fluid_state=fluid_state,
-                wall_kappa=wdv.thermal_conductivity,
-                wall_temperature=wdv.temperature,
+            fluid_operator_states_quad = make_coupled_operator_fluid_states(
+                dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
+                dd_vol_fluid, dd_vol_wall, quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func)
+
+            grad_fluid_cv, grad_fluid_t, grad_wall_t = coupled_grad_operator(
+                dcoll,
+                gas_model,
+                dd_vol_fluid, dd_vol_wall,
+                uncoupled_fluid_boundaries,
+                uncoupled_wall_boundaries,
+                fluid_state, wdv.thermal_conductivity, wdv.temperature,
                 time=t,
-                wall_penalty_amount=wall_penalty_amount,
+                interface_noslip=noslip,
                 quadrature_tag=quadrature_tag,
-                limiter_func=limiter_func,
-                comm_tag=_UpdateCoupledBoundariesCommTag)
+                fluid_operator_states_quad=fluid_operator_states_quad,
+                limiter_func=limiter_func)
+
         else:
-            updated_fluid_boundaries = uncoupled_fluid_boundaries
+            fluid_operator_states_quad = make_operator_fluid_states(
+                dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
+                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+
             grad_fluid_cv = grad_cv_operator(
-                dcoll, gas_model, updated_fluid_boundaries, fluid_state,
+                dcoll, gas_model, uncoupled_fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag)
+                time=t, quadrature_tag=quadrature_tag,
+                operator_states_quad=fluid_operator_states_quad)
 
             grad_fluid_t = fluid_grad_t_operator(
                 dcoll, gas_model, uncoupled_fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag)
-
-            # Get the operator fluid states
-            fluid_operator_states_quad = make_operator_fluid_states(
-                dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
-                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+                time=t, quadrature_tag=quadrature_tag,
+                operator_states_quad=fluid_operator_states_quad)
 
         if use_av == 1:
             smoothness_mu = compute_smoothness(
@@ -3747,35 +3714,50 @@ def main(actx_class,
 
         tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
 
-        # have all the gradients and states, compute the rhs sources
-        fluid_rhs = ns_operator(
-            dcoll=dcoll,
-            gas_model=gas_model,
-            use_esdg=use_esdg,
-            dd=dd_vol_fluid,
-            operator_states_quad=fluid_operator_states_quad,
-            grad_cv=grad_fluid_cv,
-            grad_t=grad_fluid_t,
-            boundaries=updated_fluid_boundaries,
+        ns_operator = partial(
+            general_ns_operator,
             inviscid_numerical_flux_func=inviscid_numerical_flux_func,
             viscous_numerical_flux_func=viscous_numerical_flux_func,
-            state=fluid_state,
-            time=t,
-            quadrature_tag=quadrature_tag,
-            comm_tag=_FluidOperatorCommTag)
+            use_esdg=use_esdg)
 
-        wall_rhs = None
+        # have all the gradients and states, compute the rhs sources
         if use_wall:
-            wall_energy_rhs = diffusion_operator(
+            fluid_rhs, wall_energy_rhs = coupled_ns_heat_operator(
                 dcoll=dcoll,
-                kappa=wdv.thermal_conductivity,
-                boundaries=updated_wall_boundaries,
-                u=wdv.temperature,
+                gas_model=gas_model,
+                fluid_dd=dd_vol_fluid,
+                wall_dd=dd_vol_wall,
+                fluid_boundaries=uncoupled_fluid_boundaries,
+                wall_boundaries=uncoupled_wall_boundaries,
+                fluid_state=fluid_state,
+                wall_kappa=wdv.thermal_conductivity,
+                wall_temperature=wdv.temperature,
+                fluid_grad_cv=grad_fluid_cv,
+                fluid_grad_temperature=grad_fluid_t,
+                wall_grad_temperature=grad_wall_t,
+                time=t,
+                interface_noslip=noslip,
+                wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
-                dd=dd_vol_wall,
-                grad_u=grad_wall_t,
-                comm_tag=_WallOperatorCommTag
-                )
+                fluid_operator_states_quad=fluid_operator_states_quad,
+                limiter_func=limiter_func,
+                ns_operator=ns_operator)
+
+        else:
+            fluid_rhs = ns_operator(
+                dcoll=dcoll,
+                gas_model=gas_model,
+                dd=dd_vol_fluid,
+                operator_states_quad=fluid_operator_states_quad,
+                grad_cv=grad_fluid_cv,
+                grad_t=grad_fluid_t,
+                boundaries=uncoupled_fluid_boundaries,
+                state=fluid_state,
+                time=t,
+                quadrature_tag=quadrature_tag,
+                comm_tag=_FluidOperatorCommTag)
+
+            wall_rhs = None
 
         if use_combustion:
             fluid_rhs = fluid_rhs + \
