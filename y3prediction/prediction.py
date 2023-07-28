@@ -458,7 +458,7 @@ def main(actx_class,
     viz_interval_type = configurate("viz_interval_type", input_data, 0)
 
     # default timestepping control
-    advance_time = configurate("advance_time", input_data, "True")
+    advance_time = configurate("advance_time", input_data, True)
     integrator = configurate("integrator", input_data, "rk4")
     current_dt = configurate("current_dt", input_data, 1.e-8)
     t_final = configurate("t_final", input_data, 1.e-7)
@@ -485,6 +485,7 @@ def main(actx_class,
 
     # discretization and model control
     order = configurate("order", input_data, 2)
+    viz_order = configurate("viz_order", input_data, order)
     quadrature_order = configurate("quadrature_order", input_data, -1)
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
@@ -2446,9 +2447,11 @@ def main(actx_class,
         if use_profiling:
             logmgr.add_watches(["pyopencl_array_time.max"])
 
-    fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
+    fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid,
+                                       vis_order=viz_order)
     if use_wall:
-        wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
+        wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall,
+                                          vis_order=viz_order)
 
     #    initname = initializer.__class__.__name__
     eosname = eos.__class__.__name__
@@ -3650,8 +3653,9 @@ def main(actx_class,
                           force_eval=force_eval,
                           state=stepper_state.get_obj_array(),
                           compile_rhs=False)
-
-    current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
+        current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
+    else:
+        current_stepper_state = stepper_state
 
     current_cv = current_stepper_state.cv
     tseed = current_stepper_state.tseed
@@ -3700,23 +3704,25 @@ def main(actx_class,
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
 
-    # pack things up
-    if use_wall:
-        viz_state = make_obj_array([current_fluid_state, current_wv])
-        viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
-    else:
-        viz_state = current_fluid_state
-        viz_dv = current_fluid_state.dv
+    if nviz > 0:
+        # pack things up
+        if use_wall:
+            viz_state = make_obj_array([current_fluid_state, current_wv])
+            viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
+        else:
+            viz_state = current_fluid_state
+            viz_dv = current_fluid_state.dv
 
-    my_write_viz(
-        step=current_step, t=current_t, t_wall=current_t_wall,
-        viz_state=viz_state, viz_dv=viz_dv,
-        ts_field_fluid=ts_field_fluid,
-        ts_field_wall=ts_field_wall,
-        dump_number=dump_number)
+        my_write_viz(
+            step=current_step, t=current_t, t_wall=current_t_wall,
+            viz_state=viz_state, viz_dv=viz_dv,
+            ts_field_fluid=ts_field_fluid,
+            ts_field_wall=ts_field_wall,
+            dump_number=dump_number)
 
-    my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
-                     state=current_stepper_state)
+    if nrestart > 0:
+        my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
+                         state=current_stepper_state)
 
     if logmgr:
         logmgr.close()
