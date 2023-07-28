@@ -2,14 +2,6 @@
 import numpy as np
 from mirgecom.fluid import make_conserved
 
-from y3prediction.utils import (
-    getIsentropicPressure,
-    getIsentropicTemperature,
-    getMachFromAreaRatio,
-    get_theta_from_data,
-    smooth_step
-)
-
 
 class InitCompressionRamp:
     r"""Solution initializer for flow with a discontinuity.
@@ -128,9 +120,6 @@ class InitCompressionRamp:
                              f" expected {self._dim}.")
 
         xpos = x_vec[0]
-        ypos = x_vec[1]
-        if self._dim == 3:
-            zpos = x_vec[2]
 
         actx = xpos.array_context
         #if isinstance(self._disc_location, Number):
@@ -168,7 +157,8 @@ class InitCompressionRamp:
         #     smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
         #     smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
         #     temperature = (wall_temperature +
-        #                    (temperature - wall_temperature)*smoothing_top*smoothing_bottom)
+        #                    (temperature -
+        #                     wall_temperature)*smoothing_top*smoothing_bottom)
 
         # # modify the velocity in the near wall region to match the
         # # noslip boundaries

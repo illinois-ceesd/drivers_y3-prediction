@@ -466,6 +466,9 @@ def main(ctx_factory=cl.create_some_context,
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
 
+    # case selection
+    do_compression_ramp = configurate("do_compression_ramp", input_data, False)
+
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
     nrestart = configurate("nrestart", input_data, 5000)
@@ -531,7 +534,7 @@ def main(ctx_factory=cl.create_some_context,
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
-    mesh_filename = configurate("mesh_filename", input_data, "em18data/compressedRamp.msh")
+    mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
     noslip = configurate("noslip", input_data, True)
     adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
@@ -1059,179 +1062,199 @@ def main(ctx_factory=cl.create_some_context,
 
     gas_model = GasModel(eos=eos, transport=transport_model)
 
-    # initialize eos and species mass fractions
-    y = np.zeros(nspecies)
-    y_fuel = np.zeros(nspecies)
-    if nspecies == 2:
-        y[0] = 1
-        y_fuel[1] = 1
-    elif nspecies > 4:
-        # find name species indicies
-        for i in range(nspecies):
-            if species_names[i] == "C2H4":
-                i_c2h4 = i
-            if species_names[i] == "H2":
-                i_h2 = i
-            if species_names[i] == "O2":
-                i_ox = i
-            if species_names[i] == "N2":
-                i_di = i
+    # case-specific initialization
+    if do_compression_ramp:
+        # ambient fluid conditions
+        #   100 Pa
+        #   298 K
+        #   rho = 1.77619667e-3 kg/m^3
+        #   velocity = 0,0,0
+        pres_bkrnd = 100
+        temp_bkrnd = 300
+        mach = 2.0
 
-        # Set the species mass fractions to the free-stream flow
-        y[i_ox] = mf_o2
-        y[i_di] = 1. - mf_o2
-        # Set the species mass fractions to the free-stream flow
-        y_fuel[i_c2h4] = mf_c2h4
-        y_fuel[i_h2] = mf_h2
+        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
+        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
+        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
+        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+        #mach2 = math.sqrt(((gamma-1.)*mach*mach+2.)/(2.*gamma*mach*mach-(gamma-1.)))
 
-    inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
-                                      gamma=gamma,
-                                      mach_guess=0.01)
-    pres_inflow = getIsentropicPressure(mach=inlet_mach,
-                                        P0=total_pres_inflow,
-                                        gamma=gamma)
-    temp_inflow = getIsentropicTemperature(mach=inlet_mach,
-                                           T0=total_temp_inflow,
-                                           gamma=gamma)
+        rho1 = rho_bkrnd
+        pressure1 = pres_bkrnd
+        temperature1 = pressure1/rho1/r
+        rho2 = rho1*density_ratio
+        pressure2 = pressure1*pressure_ratio
+        temperature2 = pressure2/rho2/r
+        velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
+        temp_wall = temperature1
 
-    if eos_type == 0:
-        rho_inflow = pres_inflow/temp_inflow/r
-        sos = math.sqrt(gamma*pres_inflow/rho_inflow)
-        inlet_gamma = gamma
+        vel_left = np.zeros(shape=(dim,))
+        vel_right = np.zeros(shape=(dim,))
+        vel_cross = np.zeros(shape=(dim,))
+        vel_cross[1] = 0
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tShock Mach number {mach}")
+            print(f"\tgamma {gamma}")
+            print(f"\tambient temperature {temperature1}")
+            print(f"\tambient pressure {pressure1}")
+            print(f"\tambient rho {rho1}")
+            print(f"\tambient velocity {vel_right[0]}")
+            print(f"\tpost-shock temperature {temperature2}")
+            print(f"\tpost-shock pressure {pressure2}")
+            print(f"\tpost-shock rho {rho2}")
+            print(f"\tpost-shock velocity {velocity2}")
+
+        plane_normal = np.zeros(shape=(dim,))
+        mesh_angle = 0.
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        shock_loc_x = -0.4
+
+        fuel_location = np.zeros(shape=(dim,))
+        fuel_loc_x = 0.07
+
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = fuel_loc_x
+        theta = mesh_angle/180.*np.pi/2.
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        vel_left = velocity2*plane_normal
+
+        from y3prediction.compressionRamp import InitCompressionRamp
+        bulk_init = InitCompressionRamp(dim=dim,
+                                        normal_dir=plane_normal,
+                                        disc_location=disc_location,
+                                        disc_location_species=fuel_location,
+                                        nspecies=nspecies,
+                                        sigma=0.00001,
+                                        pressure_left=pressure2,
+                                        pressure_right=pressure1,
+                                        temperature_left=temperature2,
+                                        temperature_right=temperature1,
+                                        velocity_left=vel_left,
+                                        velocity_right=vel_right,
+                                        velocity_cross=vel_cross,
+                                        #species_mass_left=y,
+                                        #species_mass_right= y_fuel,
+                                        temp_wall=temp_bkrnd,
+                                        vel_sigma=vel_sigma,
+                                        temp_sigma=temp_sigma)
     else:
-        rho_inflow = pyro_mech.get_density(p=pres_inflow,
-                                          temperature=temp_inflow,
-                                          mass_fractions=y)
-        inlet_gamma = (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
-                       pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
 
-        gamma_error = (gamma - inlet_gamma)
-        gamma_guess = inlet_gamma
-        toler = 1.e-6
-        # iterate over the gamma/mach since gamma = gamma(T)
-        while gamma_error > toler:
+        # initialize eos and species mass fractions
+        y = np.zeros(nspecies)
+        y_fuel = np.zeros(nspecies)
+        if nspecies == 2:
+            y[0] = 1
+            y_fuel[1] = 1
+        elif nspecies > 4:
+            # find name species indicies
+            for i in range(nspecies):
+                if species_names[i] == "C2H4":
+                    i_c2h4 = i
+                if species_names[i] == "H2":
+                    i_h2 = i
+                if species_names[i] == "O2":
+                    i_ox = i
+                if species_names[i] == "N2":
+                    i_di = i
 
-            inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
-                                              gamma=gamma_guess,
-                                              mach_guess=0.01)
-            pres_inflow = getIsentropicPressure(mach=inlet_mach,
-                                                P0=total_pres_inflow,
-                                                gamma=gamma_guess)
-            temp_inflow = getIsentropicTemperature(mach=inlet_mach,
-                                                   T0=total_temp_inflow,
-                                                   gamma=gamma_guess)
+            # Set the species mass fractions to the free-stream flow
+            y[i_ox] = mf_o2
+            y[i_di] = 1. - mf_o2
+            # Set the species mass fractions to the free-stream flow
+            y_fuel[i_c2h4] = mf_c2h4
+            y_fuel[i_h2] = mf_h2
 
+        inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                          gamma=gamma,
+                                          mach_guess=0.01)
+        pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                            P0=total_pres_inflow,
+                                            gamma=gamma)
+        temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                               T0=total_temp_inflow,
+                                               gamma=gamma)
+
+        if eos_type == 0:
+            rho_inflow = pres_inflow/temp_inflow/r
+            sos = math.sqrt(gamma*pres_inflow/rho_inflow)
+            inlet_gamma = gamma
+        else:
             rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
-            inlet_gamma = \
-                (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
-                 pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
-            gamma_error = (gamma_guess - inlet_gamma)
+            inlet_gamma = (
+                pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+
+            gamma_error = (gamma - inlet_gamma)
             gamma_guess = inlet_gamma
+            toler = 1.e-6
+            # iterate over the gamma/mach since gamma = gamma(T)
+            while gamma_error > toler:
 
-        sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
+                inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                                  gamma=gamma_guess,
+                                                  mach_guess=0.01)
+                pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                                    P0=total_pres_inflow,
+                                                    gamma=gamma_guess)
+                temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                                       T0=total_temp_inflow,
+                                                       gamma=gamma_guess)
 
-    vel_inflow[0] = inlet_mach*sos
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                                  temperature=temp_inflow,
+                                                  mass_fractions=y)
+                inlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+                gamma_error = (gamma_guess - inlet_gamma)
+                gamma_guess = inlet_gamma
 
-    if rank == 0:
-        print("#### Simluation initialization data: ####")
-        print(f"\tinlet Mach number {inlet_mach}")
-        print(f"\tinlet gamma {inlet_gamma}")
-        print(f"\tinlet temperature {temp_inflow}")
-        print(f"\tinlet pressure {pres_inflow}")
-        print(f"\tinlet rho {rho_inflow}")
-        print(f"\tinlet velocity {vel_inflow[0]}")
-        #print(f"final inlet pressure {pres_inflow_final}")
+            sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
-    outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
-                                       gamma=gamma,
-                                       mach_guess=1.1)
-    pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                         P0=total_pres_inflow,
-                                         gamma=gamma)
-    temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                            T0=total_temp_inflow,
-                                            gamma=gamma)
+        vel_inflow[0] = inlet_mach*sos
 
-    if eos_type == 0:
-        rho_outflow = pres_outflow/temp_outflow/r
-        sos = math.sqrt(gamma*pres_outflow/rho_outflow)
-        outlet_gamma = gamma
-    else:
-        rho_outflow = pyro_mech.get_density(p=pres_outflow,
-                                            temperature=temp_outflow,
-                                            mass_fractions=y)
-        outlet_gamma = \
-            (pyro_mech.get_mixture_specific_heat_cp_mass(temp_outflow, y) /
-             pyro_mech.get_mixture_specific_heat_cv_mass(temp_outflow, y))
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {inlet_mach}")
+            print(f"\tinlet gamma {inlet_gamma}")
+            print(f"\tinlet temperature {temp_inflow}")
+            print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet rho {rho_inflow}")
+            print(f"\tinlet velocity {vel_inflow[0]}")
+            #print(f"final inlet pressure {pres_inflow_final}")
 
-        gamma_error = (gamma - outlet_gamma)
-        gamma_guess = outlet_gamma
-        toler = 1.e-6
-        # iterate over the gamma/mach since gamma = gamma(T)
-        while gamma_error > toler:
+        outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
+                                           gamma=gamma,
+                                           mach_guess=1.1)
+        pres_outflow = getIsentropicPressure(mach=outlet_mach,
+                                             P0=total_pres_inflow,
+                                             gamma=gamma)
+        temp_outflow = getIsentropicTemperature(mach=outlet_mach,
+                                                T0=total_temp_inflow,
+                                                gamma=gamma)
 
-            outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
-                                              gamma=gamma_guess,
-                                              mach_guess=0.01)
-            pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                                P0=total_pres_inflow,
-                                                gamma=gamma_guess)
-            temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                                   T0=total_temp_inflow,
-                                                   gamma=gamma_guess)
+        if eos_type == 0:
+            rho_outflow = pres_outflow/temp_outflow/r
+            sos = math.sqrt(gamma*pres_outflow/rho_outflow)
+            outlet_gamma = gamma
+        else:
             rho_outflow = pyro_mech.get_density(p=pres_outflow,
                                                 temperature=temp_outflow,
                                                 mass_fractions=y)
             outlet_gamma = \
                 (pyro_mech.get_mixture_specific_heat_cp_mass(temp_outflow, y) /
                  pyro_mech.get_mixture_specific_heat_cv_mass(temp_outflow, y))
-            gamma_error = (gamma_guess - outlet_gamma)
+
+            gamma_error = (gamma - outlet_gamma)
             gamma_guess = outlet_gamma
-
-    vel_outflow[0] = outlet_mach*math.sqrt(gamma*pres_outflow/rho_outflow)
-
-    if rank == 0:
-        print("\t********")
-        print(f"\toutlet Mach number {outlet_mach}")
-        print(f"\toutlet gamma {outlet_gamma}")
-        print(f"\toutlet temperature {temp_outflow}")
-        print(f"\toutlet pressure {pres_outflow}")
-        print(f"\toutlet rho {rho_outflow}")
-        print(f"\toutlet velocity {vel_outflow[0]}")
-
-    gamma_injection = gamma
-    if nspecies > 0:
-        # injection mach number
-        if eos_type == 0:
-            gamma_injection = gamma
-        else:
-            #MJA: Todo, get the gamma from cantera to get the correct
-            # inflow properties
-            # needs to be iterative with the call below
-            gamma_injection = 0.5*(1.24 + 1.4)
-
-        pres_injection = getIsentropicPressure(mach=mach_inj,
-                                               P0=total_pres_inj,
-                                               gamma=gamma_injection)
-        temp_injection = getIsentropicTemperature(mach=mach_inj,
-                                                  T0=total_temp_inj,
-                                                  gamma=gamma_injection)
-
-        if eos_type == 0:
-            rho_injection = pres_injection/temp_injection/r
-            sos = math.sqrt(gamma*pres_injection/rho_injection)
-        else:
-            rho_injection = pyro_mech.get_density(p=pres_injection,
-                                                  temperature=temp_injection,
-                                                  mass_fractions=y)
-            gamma_injection = \
-                (pyro_mech.get_mixture_specific_heat_cp_mass(temp_injection, y) /
-                 pyro_mech.get_mixture_specific_heat_cv_mass(temp_injection, y))
-
-            gamma_error = (gamma - gamma_injection)
-            gamma_guess = gamma_injection
             toler = 1.e-6
             # iterate over the gamma/mach since gamma = gamma(T)
             while gamma_error > toler:
@@ -1240,66 +1263,133 @@ def main(ctx_factory=cl.create_some_context,
                                                   gamma=gamma_guess,
                                                   mach_guess=0.01)
                 pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                                    P0=total_pres_inj,
+                                                    P0=total_pres_inflow,
                                                     gamma=gamma_guess)
                 temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                                       T0=total_temp_inj,
+                                                       T0=total_temp_inflow,
                                                        gamma=gamma_guess)
+                rho_outflow = pyro_mech.get_density(p=pres_outflow,
+                                                    temperature=temp_outflow,
+                                                    mass_fractions=y)
+                outlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_outflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_outflow, y))
+                gamma_error = (gamma_guess - outlet_gamma)
+                gamma_guess = outlet_gamma
+
+        vel_outflow[0] = outlet_mach*math.sqrt(gamma*pres_outflow/rho_outflow)
+
+        if rank == 0:
+            print("\t********")
+            print(f"\toutlet Mach number {outlet_mach}")
+            print(f"\toutlet gamma {outlet_gamma}")
+            print(f"\toutlet temperature {temp_outflow}")
+            print(f"\toutlet pressure {pres_outflow}")
+            print(f"\toutlet rho {rho_outflow}")
+            print(f"\toutlet velocity {vel_outflow[0]}")
+
+        gamma_injection = gamma
+        if nspecies > 0:
+            # injection mach number
+            if eos_type == 0:
+                gamma_injection = gamma
+            else:
+                #MJA: Todo, get the gamma from cantera to get the correct
+                # inflow properties
+                # needs to be iterative with the call below
+                gamma_injection = 0.5*(1.24 + 1.4)
+
+            pres_injection = getIsentropicPressure(mach=mach_inj,
+                                                   P0=total_pres_inj,
+                                                   gamma=gamma_injection)
+            temp_injection = getIsentropicTemperature(mach=mach_inj,
+                                                      T0=total_temp_inj,
+                                                      gamma=gamma_injection)
+
+            if eos_type == 0:
+                rho_injection = pres_injection/temp_injection/r
+                sos = math.sqrt(gamma*pres_injection/rho_injection)
+            else:
                 rho_injection = pyro_mech.get_density(p=pres_injection,
                                                       temperature=temp_injection,
                                                       mass_fractions=y)
                 gamma_injection = \
                     (pyro_mech.get_mixture_specific_heat_cp_mass(temp_injection, y) /
                      pyro_mech.get_mixture_specific_heat_cv_mass(temp_injection, y))
-                gamma_error = (gamma_guess - gamma_injection)
+
+                gamma_error = (gamma - gamma_injection)
                 gamma_guess = gamma_injection
+                toler = 1.e-6
+                # iterate over the gamma/mach since gamma = gamma(T)
+                while gamma_error > toler:
 
-            sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
+                    outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
+                                                      gamma=gamma_guess,
+                                                      mach_guess=0.01)
+                    pres_outflow = getIsentropicPressure(mach=outlet_mach,
+                                                        P0=total_pres_inj,
+                                                        gamma=gamma_guess)
+                    temp_outflow = getIsentropicTemperature(mach=outlet_mach,
+                                                           T0=total_temp_inj,
+                                                           gamma=gamma_guess)
+                    rho_injection = pyro_mech.get_density(p=pres_injection,
+                                                          temperature=temp_injection,
+                                                          mass_fractions=y)
+                    gamma_injection = \
+                        (pyro_mech.get_mixture_specific_heat_cp_mass(
+                            temp_injection, y) /
+                         pyro_mech.get_mixture_specific_heat_cv_mass(
+                             temp_injection, y))
+                    gamma_error = (gamma_guess - gamma_injection)
+                    gamma_guess = gamma_injection
 
-        vel_injection[0] = -mach_inj*sos
+                sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
 
+            vel_injection[0] = -mach_inj*sos
+
+            if rank == 0:
+                print("\t********")
+                print(f"\tinjector Mach number {mach_inj}")
+                print(f"\tinjector gamma {gamma_injection}")
+                print(f"\tinjector temperature {temp_injection}")
+                print(f"\tinjector pressure {pres_injection}")
+                print(f"\tinjector rho {rho_injection}")
+                print(f"\tinjector velocity {vel_injection[0]}")
+                print("#### Simluation initialization data: ####\n")
+        else:
+            if rank == 0:
+                print("\t********")
+                print("\tnspecies=0, injection disabled")
+
+        # read geometry files
+        geometry_bottom = None
+        geometry_top = None
         if rank == 0:
-            print("\t********")
-            print(f"\tinjector Mach number {mach_inj}")
-            print(f"\tinjector gamma {gamma_injection}")
-            print(f"\tinjector temperature {temp_injection}")
-            print(f"\tinjector pressure {pres_injection}")
-            print(f"\tinjector rho {rho_injection}")
-            print(f"\tinjector velocity {vel_injection[0]}")
-            print("#### Simluation initialization data: ####\n")
-    else:
-        if rank == 0:
-            print("\t********")
-            print("\tnspecies=0, injection disabled")
+            from numpy import loadtxt
+            geometry_bottom = loadtxt("data/nozzleBottom.dat",
+                                      comments="#", unpack=False)
+            geometry_top = loadtxt("data/nozzleTop.dat",
+                                   comments="#", unpack=False)
+        geometry_bottom = comm.bcast(geometry_bottom, root=0)
+        geometry_top = comm.bcast(geometry_top, root=0)
 
-    # read geometry files
-    geometry_bottom = None
-    geometry_top = None
-    if rank == 0:
-        from numpy import loadtxt
-        geometry_bottom = loadtxt("data/nozzleBottom.dat",
-                                  comments="#", unpack=False)
-        geometry_top = loadtxt("data/nozzleTop.dat",
-                               comments="#", unpack=False)
-    geometry_bottom = comm.bcast(geometry_bottom, root=0)
-    geometry_top = comm.bcast(geometry_top, root=0)
+        inj_ymin = -0.0243245
+        inj_ymax = -0.0227345
 
-    inj_ymin = -0.0243245
-    inj_ymax = -0.0227345
-    bulk_init = InitACTII(dim=dim,
-                          geom_top=geometry_top, geom_bottom=geometry_bottom,
-                          P0=total_pres_inflow, T0=total_temp_inflow,
-                          temp_wall=temp_wall, temp_sigma=temp_sigma,
-                          vel_sigma=vel_sigma, nspecies=nspecies,
-                          mass_frac=y, gamma_guess=inlet_gamma,
-                          inj_gamma_guess=gamma_injection,
-                          inj_pres=total_pres_inj,
-                          inj_temp=total_temp_inj,
-                          inj_vel=vel_injection, inj_mass_frac=y_fuel,
-                          inj_temp_sigma=temp_sigma_inj,
-                          inj_vel_sigma=vel_sigma_inj,
-                          inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
-                          inj_mach=mach_inj, injection=use_injection)
+        bulk_init = InitACTII(dim=dim,
+                              geom_top=geometry_top, geom_bottom=geometry_bottom,
+                              P0=total_pres_inflow, T0=total_temp_inflow,
+                              temp_wall=temp_wall, temp_sigma=temp_sigma,
+                              vel_sigma=vel_sigma, nspecies=nspecies,
+                              mass_frac=y, gamma_guess=inlet_gamma,
+                              inj_gamma_guess=gamma_injection,
+                              inj_pres=total_pres_inj,
+                              inj_temp=total_temp_inj,
+                              inj_vel=vel_injection, inj_mass_frac=y_fuel,
+                              inj_temp_sigma=temp_sigma_inj,
+                              inj_vel_sigma=vel_sigma_inj,
+                              inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
+                              inj_mach=mach_inj, injection=use_injection)
 
     viz_path = "viz_data/"
     vizname = viz_path + casename

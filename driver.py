@@ -32,7 +32,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # for writing output
-    casename = "Compressed ramp prediction"
+    casename = "prediction"
     if args.casename:
         print(f"Custom casename {args.casename}")
         casename = args.casename.replace("'", "")
@@ -51,7 +51,6 @@ if __name__ == "__main__":
         if lazy:
             raise ValueError("Can't use lazy and profiling together.")
 
-    # from mirgecom.array_context import get_reasonable_array_context_class
     from mirgecom.array_context import get_reasonable_array_context_class
     actx_class = get_reasonable_array_context_class(
         lazy=lazy, distributed=True, profiling=args.profile)
@@ -79,7 +78,7 @@ if __name__ == "__main__":
 
     print(f"Running {sys.argv[0]}\n")
 
-    from y3prediction.predictionRamp import main
+    from y3prediction.prediction import main
     main(actx_class, restart_filename=restart_filename,
          target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
