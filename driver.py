@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
     print(f"Running {sys.argv[0]}\n")
 
-    from y3prediction.prediction import main
+    from y3prediction.prediction_mod import main
     main(actx_class, restart_filename=restart_filename,
          target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
