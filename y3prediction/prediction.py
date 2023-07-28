@@ -61,7 +61,7 @@ from mirgecom.restart import write_restart_file
 from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
-                                  euler_step)
+                                  euler_step, ssprk43_step)
 from mirgecom.inviscid import (inviscid_facial_flux_rusanov,
                                inviscid_facial_flux_hll)
 from mirgecom.viscous import (viscous_facial_flux_central,
@@ -604,7 +604,7 @@ def main(actx_class,
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
-    total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
+    total_pres_inj = configurate("total_pres_inj", input_data, 10000.)
     total_temp_inj = configurate("total_temp_inj", input_data, 300.)
     mach_inj = configurate("mach_inj", input_data, 1.0)
 
@@ -646,7 +646,7 @@ def main(actx_class,
     spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
 
     # param sanity check
-    allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144", "compiled_lsrk54"]
+    allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144", "compiled_lsrk54", "ssprk43"]
     if integrator not in allowed_integrators:
         error_message = "Invalid time integrator: {}".format(integrator)
         raise RuntimeError(error_message)
@@ -788,7 +788,9 @@ def main(actx_class,
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
 
-    timestepper = rk4_step
+    timestepper = ssprk43_step
+    if integrator == "rk4":
+        timestepper = rk4_step
     if integrator == "euler":
         timestepper = euler_step
     if integrator == "lsrk54":
