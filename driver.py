@@ -41,16 +41,9 @@ if __name__ == "__main__":
     else:
         print(f"Default casename {casename}")
 
-    from warnings import warn
     from mirgecom.simutil import ApplicationOptionsError
-    if args.esdg:
-        if not args.lazy and not args.numpy:
-            raise ApplicationOptionsError("ESDG requires lazy or numpy context.")
-        if not args.overintegration:
-            warn("ESDG requires overintegration, enabling --overintegration.")
-
-    if args.profile and args.lazy:
-        raise ApplicationOptionsError("Can't use lazy and profiling together.")
+    if args.esdg and not (args.lazy or args.numpy):
+        raise ApplicationOptionsError("ESDG requires lazy or numpy context.")
 
     from mirgecom.array_context import get_reasonable_array_context_class
     actx_class = get_reasonable_array_context_class(

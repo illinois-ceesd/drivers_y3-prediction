@@ -1354,8 +1354,12 @@ def main(actx_class,
     else:
         logger.warning("No target file specied, using restart as target")
 
+    disc_msg = f"Making {dim}D order {order} discretization"
+    if use_overintegration:
+        disc_msg = disc_msg + f" with quadrature order {quadrature_order}"
+    disc_msg = disc_msg + "."
     if rank == 0:
-        logger.info("Making discretization")
+        logger.info(disc_msg)
 
     dcoll = create_discretization_collection(
         actx,
