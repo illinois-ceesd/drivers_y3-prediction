@@ -1,4 +1,4 @@
---- !SliceData
+--- !Density
 dataName: "cv_mass"
 dataRange: [0.02, 0.1]
 camera: [0.625, 0.0, 0.023]

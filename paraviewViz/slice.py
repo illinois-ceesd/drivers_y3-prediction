@@ -21,7 +21,8 @@ import numpy as np
 
 class SliceData():
     def __init__(self, dataName, dataRange, camera, colorScheme,
-                 logScale, invert, cbTitle, pixels, normal, origin):
+                 logScale, invert, cbTitle, pixels, normal, origin,
+                 prefix=""):
         self.dataName = dataName
         self.dataRange = dataRange
         self.camera = camera
@@ -33,42 +34,53 @@ class SliceData():
         self.normal = normal
         self.origin = origin
 
+        self.hasPrefix = False
+        if prefix:
+            self.prefix = prefix
+            self.hasPrefix = True
+
     def __repr__(self):
         return "%s(dataName=%r, dataRange=%r, camera=%r, colorScheme=%r)" % (
             self.__class__.__name__, self.dataName, self.dataRange,
             self.camera, self.colorScheme)
 
 
-def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
-                colorScheme="Cool to Warm", logScale=0, invert=0,
-                func="", cbTitle="", prefix="",
-                pixels=None,
-                sliceNormal=None,
-                sliceOrigin=None):
+#def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
+                #colorScheme="Cool to Warm", logScale=0, invert=0,
+                #func="", cbTitle="", prefix="",
+                #pixels=None,
+                #sliceNormal=None,
+                #sliceOrigin=None):
+def SimpleSlice(dir, iter, sliceData):
 
-    if camera is None:
-       camera = [0.625, -0.0, 0.023]
+    varName = sliceData.dataName
+    camera = sliceData.camera
 
-    if varRange is None:
-       camera = [0.02, 0.1]
+    #if camera is None:
+        #camera = [0.625, -0.0, 0.023]
 
-    if pixels is None:
-        pixels = [1200, 600]
-        #pixels = np.zeros(shape=(2,))
-        #pixels[0] = 1200
-        #pixels[1] = 600
+    varRange = sliceData.dataRange
 
-    if sliceNormal is None:
-        sliceNormal = [0., 0., 1.0]
-        #sliceNormal[2] = 1.0
+    #if varRange is None:
+        #camera = [0.02, 0.1]
 
-    if sliceOrigin is None:
-        #sliceOrigin = np.zeros(shape=(3,))
-        sliceOrigin = [0., 0., 0.]
+    pixels = sliceData.pixels
 
-    if camera is None:
-       camera = [0.625, -0.0, 0.023]
+    #if pixels is None:
+        #pixels = [1200, 600]
+        ##pixels = np.zeros(shape=(2,))
+        ##pixels[0] = 1200
+        ##pixels[1] = 600
 
+    sliceNormal = sliceData.normal
+    #if sliceNormal is None:
+        #sliceNormal = [0., 0., 1.0]
+        ##sliceNormal[2] = 1.0
+
+    sliceOrigin = sliceData.origin
+    #if sliceOrigin is None:
+        ##sliceOrigin = np.zeros(shape=(3,))
+        #sliceOrigin = [0., 0., 0.]
 
     import os
     slice_img_dir = dir + "/slice_img"
@@ -77,7 +89,8 @@ def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
         os.makedirs(slice_img_dir)
 
     # Include prefix in output file name, if provided
-    if (prefix):
+    if sliceData.hasPrefix:
+        prefix = sliceData.prefix
         imageFile = f"{slice_img_dir}/{prefix}-{varName}_{iter:09d}.png"
     else:
         imageFile = f"{slice_img_dir}/{varName}_{iter:09d}.png"
@@ -85,8 +98,8 @@ def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
     #solutionFileWall = "{}/prediction-wall-{:09d}.pvtu".format(dir, iter)
 
     # If func not provided, simply set it to varName -- everything is a Calculator
-    if (not func):
-        func = varName
+    #if (not func):
+    func = varName
 
     # disable automatic camera reset on 'Show'
     _DisableFirstRenderCameraReset()
@@ -97,14 +110,14 @@ def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
     t0 = time.time()
 
     # Open XDMF
-    #data = XDMFReader(FileNames=[solutionFile])
     data = XMLPartitionedUnstructuredGridReader(FileName=[solutionFile])
-    data.PointArrayStatus = ["cv_mass", "cv_energy", "cv_momentum",
-                             "dv_temperature", "dv_pressure",
-                             "mach", "velocity", "sponge_sigma",
-                             "cfl",
-                             "Y_C2H4", "Y_H2", "Y_H2O",
-                             "Y_O2", "Y_CO", "Y_fuel", "Y_air", "mu"]
+    #data.PointArrayStatus = ["cv_mass", "cv_energy", "cv_momentum",
+                             #"dv_temperature", "dv_pressure",
+                             #"mach", "velocity", "sponge_sigma",
+                             #"cfl",
+                             #"Y_C2H4", "Y_H2", "Y_H2O",
+                             #"Y_O2", "Y_CO", "Y_fuel", "Y_air", "mu"]
+    data.PointArrayStatus = varName
     readTime = time.time() - t0
 
     # Properties modified on data
@@ -138,22 +151,23 @@ def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
     # Color scheme settings
     colorTF = GetColorTransferFunction(varName)
     opacityTF = GetOpacityTransferFunction(varName)
-    colorTF.ApplyPreset(colorScheme, True)
+    colorTF.ApplyPreset(sliceData.colorScheme, True)
     colorTF.RescaleTransferFunction(varRange[0], varRange[1])
     opacityTF.RescaleTransferFunction(varRange[0], varRange[1])
 
     # Log scale -- comes after rescaling color bar
-    if (logScale == 1):
+    if (sliceData.logScale == 1):
         colorTF.MapControlPointsToLogSpace()
         colorTF.UseLogScale = 1
 
     # Invert color scheme, if requested
+    invert = sliceData.invert
     if (invert == 1):
         colorTF.InvertTransferFunction()
 
     # Colorbar
     colorbar = GetScalarBar(colorTF, renderView)
-    colorbar.Title = cbTitle
+    colorbar.Title = sliceData.cbTitle
     colorbar.TitleJustification = "Centered"
     colorbar.TitleBold = 1
     colorbar.TitleItalic = 0
@@ -172,7 +186,7 @@ def SimpleSlice(dir, iter, varName="cv_mass", varRange=None, camera=None,
     # Adjust view, render, and write
 
     # Camera, view, lighting
-    print(f"camera {camera}")
+    #print(f"camera {camera}")
     renderView.ResetCamera()
     renderView.InteractionMode = "2D"
     renderView.CameraPosition = [camera[0], camera[1], camera[2]]

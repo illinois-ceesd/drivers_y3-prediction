@@ -1,8 +1,7 @@
 # Import Paraview functions
 import sys
 #from contour import *
-from slice import SimpleSlice
-import slice
+from slice import SimpleSlice, SliceData
 
 
 def main(user_input_file, viz_path, dump_index):
@@ -11,33 +10,41 @@ def main(user_input_file, viz_path, dump_index):
 
     # camera location (x, y, zoom)
     # camera location (bigger moves right, bigger moves up , smaller to zoom in)
-    camera = [0.625, -0.0, 0.023]
-    pixels = [1300, 700]
+    #camera = [0.625, -0.0, 0.023]
+    #pixels = [1300, 700]
     prefix = ""
 
-    print(f"{viz_path}")
-    print(f"{dump_index}")
-    print(f"{prefix}")
+    #print(f"{viz_path=}")
+    #print(f"{dump_index=}")
+    #print(f"{prefix=}")
+    sys.path.insert(0, '.')
+    #print(sys.path)
 
-    slice_data = slice.SliceData(
-        dataName="cv_mass",
-        dataRange=[0.02, 0.1],
-        camera=[0.625, 0.0, 0.023],
-        colorScheme="erdc_rainbow_dark",
-        logScale=0,
-        invert=0,
-        cbTitle="Density [kg/m^3]",
-        pixels=[1300, 700],
-        normal=[0, 0, 1],
-        origin=[0, 0, 0]
-    )
-
-    print(slice_data)
-
-    SimpleSlice(viz_path, dump_index, "cv_mass", [0.02, 0.1], camera,
-                invert=1, logScale=1, colorScheme="erdc_rainbow_dark",
-                prefix=prefix, pixels=pixels,
-                cbTitle="Density [kg/m^3]")
+    try:
+        import viz_config as input_data
+        for plt in input_data.slice_data:
+            print(plt)
+            SimpleSlice(viz_path, dump_index, plt)
+            #print(input_data.slice_data)
+            #SimpleSlice(viz_path, dump_index, input_data.slice_data)
+    except ModuleNotFoundError:
+        print("WARNING! Missing visualization configuration file, viz_config.py")
+        print("WARNING! Using default configuration")
+        slice_data = SliceData(
+            dataName="cv_mass",
+            dataRange=[0.02, 0.1],
+            camera=[0.625, 0.0, 0.023],
+            colorScheme="erdc_rainbow_dark",
+            logScale=0,
+            invert=0,
+            cbTitle="Density [kg/m^3]",
+            pixels=[1300, 700],
+            normal=[0, 0, 1],
+            origin=[0, 0, 0]
+        )
+        print(slice_data)
+        SimpleSlice(viz_path, dump_index, slice_data)
+        pass
 
     """
     simpleSlice(dir, dump_index, "dv_pressure", 1500.0, 10000, camera, invert=1,
@@ -85,7 +92,7 @@ if __name__ == "__main__":
 
     dump_index = 0
     if args.dump_index:
-        dump_index = args.dump_index.replace("'", "")
+        dump_index = args.dump_index
 
     print(f"Running {sys.argv[0]}\n")
 
