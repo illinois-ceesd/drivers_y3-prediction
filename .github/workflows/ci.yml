@@ -72,6 +72,12 @@ jobs:
             cd smoke_test
             ./run_lazy.sh
 
+        - name: Lazy smoke test without wall
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test_nw
+            ./run_lazy.sh
+
         - name: Kitchen sink smoke test
           run: |
             source emirge/config/activate_env.sh
@@ -82,7 +88,6 @@ jobs:
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test_ks_3d/data
-            ln -s actii_23892.msh actii.msh
             cd ..
             ./run_lazy.sh
 

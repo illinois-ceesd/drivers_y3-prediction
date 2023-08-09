@@ -123,8 +123,6 @@ Geometry.Tolerance = 1.e-3;
 Coherence;
 
 Physical Volume('fluid') = {1};
-Physical Volume('wall_insert') = {2,4};
-Physical Volume('wall_surround') = {3,5};
 
 Physical Surface("inflow") = {2}; // inlet
 Physical Surface("outflow") = {9}; // outlet
@@ -144,18 +142,15 @@ Physical Surface('isothermal_wall') = {
     22, // cavity front
     21, // cavity bottom
     18, // cavity back (ramp)
+    19, 20, 16, 15, // cavity sample interface
+    12, 14, // combustor sample interface
     17, // post-cavity flat
-    //15, // post-cavity flat, surround
+    15, // post-cavity flat, surround
     11, // combustor bottom before sample
     13, // combustor bottom after sample
-    //12, // combustor bottom around sample
+    12, // combustor bottom around sample
     10, // combustor flat
     26 // injector
-};
-
-Physical Surface('wall_farfield') = {
-    34, 35, 36, 37, // cavity surround
-    49, 50, 48, 47, 51 // combustor surround
 };
 
 // Create distance field from surfaces for wall meshing, excludes cavity, injector
@@ -297,25 +292,6 @@ Field[14].SizeMax = injectorsize/boundratioinjector*(2.-1./boundratioinjector);
 Field[14].DistMin = 0.001;
 Field[14].DistMax = 1.0;
 Field[14].StopAtDistMax = 1;
-
-// Create distance field from curves, inside wall only
-Field[15] = Distance;
-Field[15].SurfacesList = {
-    28:33,
-    39:46
-};
-Field[15].Sampling = 1000;
-
-//Create threshold field that varrries element size near boundaries
-Field[16] = Threshold;
-Field[16].InField = 15;
-Field[16].SizeMin = samplesize / boundratiosurround;
-//Field[16].SizeMax = samplesize;
-//Field[16].SizeMax = bigsize;
-Field[16].SizeMax = samplesize/boundratiosurround*(2.-1./boundratiosurround);
-Field[16].DistMin = 0.02;
-Field[16].DistMax = 5;
-Field[16].StopAtDistMax = 1;
 
 // Create distance field from curves, sample/fluid interface
 Field[17] = Distance;
@@ -501,7 +477,7 @@ Field[100] = Min;
 //Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
 //
 //Field[100].FieldsList = {2, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
-Field[100].FieldsList = {3002, 2010, 2011, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118};
+Field[100].FieldsList = {3002, 2010, 2011, 3, 4, 5, 9, 12, 18, 20, 21, 22, 23, 102, 105, 118};
 Background Field = 100;
 
 Mesh.MeshSizeExtendFromBoundary = 0;
