@@ -58,26 +58,25 @@ jobs:
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
-            mpirun -n 2 python -m mpi4py driver.py -i run_params.yaml --log --casename smoke_test-eager
+            ./run.sh
 
         - name: Eager smoke restart test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
-            ls restart_data
-            mpirun -n 2 python -u -O -m mpi4py driver.py -i restart_params.yaml -r restart_data/smoke_test-eager-000000010 -t restart_data/smoke_test-eager-000000000 --log
+            ./run_restart.sh
 
         - name: Numpy smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
-            mpirun -n 2 python -m mpi4py driver.py -i run_params.yaml --log --numpy --casename smoke_test-numpy
+            ./run_numpy.sh
 
         - name: Lazy smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
-            mpirun -n 2 python -m mpi4py driver.py -i run_params.yaml --log --lazy --casename smoke_test-lazy
+            ./run_lazy.sh
 
         - name: Compare smoke_test accuracy
           run: |
