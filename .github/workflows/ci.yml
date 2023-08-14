@@ -39,7 +39,7 @@ jobs:
         - uses: actions/checkout@v3
         - name: Install emirge
           run: |
-            [[ $(uname) == Linux ]] && sudo apt-get update && sudo apt-get install -y openmpi-bin libopenmpi-dev
+            [[ $(uname) == Linux ]] && sudo apt-get update && sudo apt-get install -y openmpi-bin libopenmpi-dev bsdmainutils libgl1-mesa-glx libegl1
             [[ $(uname) == Darwin ]] && brew update && brew install mpich
             ./buildMirge.sh
             cd emirge
@@ -66,11 +66,33 @@ jobs:
             cd smoke_test
             ./run_restart.sh
 
+        - name: Numpy smoke test
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test
+            ./run_numpy.sh
+
         - name: Lazy smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run_lazy.sh
+
+        - name: Compare smoke_test accuracy
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test/viz_data
+
+            TOL_LAZY=1e-2
+            TOL_NUMPY=1e-2
+
+            set -x
+            for vizfile in $(ls *-eager-*.vtu); do
+                lazy_vizfile=$(echo ${vizfile/eager/lazy})
+                python ../../emirge/mirgecom/bin/mirgecompare.py --tolerance $TOL_LAZY ${vizfile} ${lazy_vizfile}
+                numpy_vizfile=$(echo ${vizfile/eager/numpy})
+                python ../../emirge/mirgecom/bin/mirgecompare.py --tolerance $TOL_NUMPY ${vizfile} ${numpy_vizfile}
+            done
 
         - name: Lazy smoke test without wall
           run: |

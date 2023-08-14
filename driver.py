@@ -28,6 +28,8 @@ if __name__ == "__main__":
                         help="enable lazy evaluation [OFF]")
     parser.add_argument("--overintegration", action="store_true",
         help="use overintegration in the RHS computations")
+    parser.add_argument("--numpy", action="store_true",
+        help="use numpy-based eager actx.")
 
     args = parser.parse_args()
 
@@ -39,21 +41,13 @@ if __name__ == "__main__":
     else:
         print(f"Default casename {casename}")
 
-    from warnings import warn
-    if args.esdg:
-        if not args.lazy:
-            warn("ESDG requires lazy-evaluation, enabling --lazy.")
-        if not args.overintegration:
-            warn("ESDG requires overintegration, enabling --overintegration.")
-
-    lazy = args.lazy or args.esdg
-    if args.profile:
-        if lazy:
-            raise ValueError("Can't use lazy and profiling together.")
+    from mirgecom.simutil import ApplicationOptionsError
+    if args.esdg and not (args.lazy or args.numpy):
+        raise ApplicationOptionsError("ESDG requires lazy or numpy context.")
 
     from mirgecom.array_context import get_reasonable_array_context_class
     actx_class = get_reasonable_array_context_class(
-        lazy=lazy, distributed=True, profiling=args.profile)
+        lazy=args.lazy, distributed=True, profiling=args.profile, numpy=args.numpy)
 
     restart_filename = None
     if args.restart_file:

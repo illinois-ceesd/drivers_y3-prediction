@@ -1355,8 +1355,12 @@ def main(actx_class,
     else:
         logger.warning("No target file specied, using restart as target")
 
+    disc_msg = f"Making {dim}D order {order} discretization"
+    if use_overintegration:
+        disc_msg = disc_msg + f" with quadrature order {quadrature_order}"
+    disc_msg = disc_msg + "."
     if rank == 0:
-        logger.info("Making discretization")
+        logger.info(disc_msg)
 
     dcoll = create_discretization_collection(
         actx,
@@ -1413,7 +1417,7 @@ def main(actx_class,
         char_length_wall = force_evaluation(actx,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
-        char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
+        char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
         """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
@@ -1810,8 +1814,8 @@ def main(actx_class,
 
             cv = cv + 0.*fluid_rhs
 
-            wall_mass_rhs = actx.zeros_like(wv.mass)
-            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            wall_mass_rhs = actx.np.zeros_like(wv.mass)
+            wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
             wall_rhs = wall_time_scale * WallVars(
                 mass=wall_mass_rhs,
                 energy=wall_energy_rhs,
@@ -1978,7 +1982,7 @@ def main(actx_class,
             restart_wv = WallVars(
                 mass=wall_mass,
                 energy=wall_mass * wall_cp * temp_wall,
-                ox_mass=actx.zeros_like(wall_mass))
+                ox_mass=actx.np.zeros_like(wall_mass))
 
     if use_wall:
         restart_wv = force_evaluation(actx, restart_wv)
@@ -2381,7 +2385,7 @@ def main(actx_class,
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
 
-    sponge_sigma = actx.zeros_like(restart_cv.mass)
+    sponge_sigma = actx.np.zeros_like(restart_cv.mass)
     sponge_sigma = get_sponge_sigma(sponge_sigma, fluid_nodes)
 
     def _sponge_source(cv):
@@ -2437,12 +2441,18 @@ def main(actx_class,
 
             logmgr.add_watches([
                 ("memory_usage_hwm.max",
-                 "| \t memory hwm: {value:7g} Mb\n"),
-                ("memory_usage_mempool_managed.max",
-                 "| \t mempool total: {value:7g} Mb\n"),
-                ("memory_usage_mempool_active.max",
-                 "| \t mempool active: {value:7g} Mb")
-            ])
+                 "| \t memory hwm: {value:7g} Mb\n")])
+
+            from mirgecom.array_context import actx_class_is_numpy
+
+            if not actx_class_is_numpy(actx_class):
+                # numpy has no CL mempool
+                logmgr.add_watches([
+                    ("memory_usage_mempool_managed.max",
+                    "| \t mempool total: {value:7g} Mb\n"),
+                    ("memory_usage_mempool_active.max",
+                    "| \t mempool active: {value:7g} Mb")
+                ])
 
         if use_profiling:
             logmgr.add_watches(["pyopencl_array_time.max"])
@@ -2610,8 +2620,8 @@ def main(actx_class,
 
         cv = cv + 0.*fluid_rhs
 
-        wall_mass_rhs = actx.zeros_like(wv.mass)
-        wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+        wall_mass_rhs = actx.np.zeros_like(wv.mass)
+        wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
         wall_rhs = wall_time_scale * WallVars(
             mass=wall_mass_rhs,
             energy=wall_energy_rhs,
@@ -3533,17 +3543,17 @@ def main(actx_class,
 
         if use_wall:
             # wall mass loss
-            wall_mass_rhs = actx.zeros_like(wv.mass)
+            wall_mass_rhs = actx.np.zeros_like(wv.mass)
             if use_wall_mass:
                 wall_mass_rhs = -wall_model.mass_loss_rate(
                     mass=wv.mass, ox_mass=wv.ox_mass,
                     temperature=wdv.temperature)
 
             # wall oxygen diffusion
-            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
             if use_wall_ox:
                 if nspecies == 0:
-                    fluid_ox_mass = actx.zeros_like(cv.mass)
+                    fluid_ox_mass = actx.np.zeros_like(cv.mass)
                 elif nspecies > 3:
                     fluid_ox_mass = cv.species_mass[i_ox]
                 else:
