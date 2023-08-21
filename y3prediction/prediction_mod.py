@@ -742,7 +742,7 @@ def main(actx_class,
     spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
 
 
-    viz_level = 2  # not working with "3"
+    viz_level = 3  # not working with "3"
     nspecies = 7
     transport_type = 1
     eos_type = 1
@@ -3014,10 +3014,10 @@ def main(actx_class,
 
             if use_wall:
                 viz_stuff = compute_viz_fields_coupled_compiled(
-                    fluid_state=fluid_state,
-                    wv=wv,
-                    wdv=wdv,
-                    time=t)
+                    states=viz_state,
+                    boundaries=make_obj_array([uncoupled_fluid_boundaries, {}, uncoupled_wall_boundaries]),
+                    time=t
+                    )
             else:
                 viz_stuff = compute_viz_fields_compiled(
                     fluid_state=fluid_state,
