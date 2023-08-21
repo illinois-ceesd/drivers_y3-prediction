@@ -1324,6 +1324,11 @@ def main(actx_class,
                 "fluid": ["fluid"]}
             if use_wall:
                 volume_to_tags["wall"] = ["wall_insert", "wall_surround"]
+            else:
+                from mirgecom.simutil import extract_volumes
+                mesh, tag_to_elements = extract_volumes(
+                    mesh, tag_to_elements, volume_to_tags["fluid"],
+                    "wall_interface")
             return mesh, tag_to_elements, volume_to_tags
 
         def my_partitioner(mesh, tag_to_elements, num_ranks):
@@ -1388,6 +1393,9 @@ def main(actx_class,
     flow_bnd = dd_vol_fluid.trace("flow")
     wall_bnd = dd_vol_fluid.trace("isothermal_wall")
 
+    if not use_wall:
+        interface_bnd = dd_vol_fluid.trace("wall_interface")
+
     if use_wall:
         dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
         wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
@@ -1436,6 +1444,9 @@ def main(actx_class,
                  dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
                  for dd_bdry in filter_part_boundaries(
                      dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
+        else:
+            fluid_smoothness_boundaries.update({
+                interface_bnd.domain_tag: smooth_neumann})
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
@@ -2065,6 +2076,9 @@ def main(actx_class,
                 wall_bnd.domain_tag:  # pylint: disable=no-member
                 IsothermalWallBoundary()
             }
+            if not use_wall:
+                target_boundaries.update({
+                    interface_bnd.domain_tag: IsothermalWallBoundary()})
         else:
             target_boundaries = {
                 inflow_bnd.domain_tag:   # pylint: disable=no-member
@@ -2076,6 +2090,9 @@ def main(actx_class,
                 wall_bnd.domain_tag:     # pylint: disable=no-member
                 IsothermalWallBoundary()
             }
+            if not use_wall:
+                target_boundaries.update({
+                    interface_bnd.domain_tag: IsothermalWallBoundary()})
 
             target_grad_cv = grad_cv_operator_target_compiled(
                 target_fluid_state, time=0.)
@@ -2259,6 +2276,10 @@ def main(actx_class,
             inj_bnd.domain_tag: fluid_wall,       # pylint: disable=no-member
             wall_bnd.domain_tag: fluid_wall       # pylint: disable=no-member
         }
+
+    if not use_wall:
+        uncoupled_fluid_boundaries.update({
+            interface_bnd.domain_tag: fluid_wall})
 
     if use_wall:
         uncoupled_wall_boundaries = {
@@ -3509,6 +3530,9 @@ def main(actx_class,
                      for dd_bdry in filter_part_boundaries(
                          dcoll, volume_dd=dd_vol_fluid,
                          neighbor_volume_dd=dd_vol_wall)})
+            else:
+                fluid_av_boundaries.update({
+                    interface_bnd.domain_tag: smooth_neumann})
 
             # av mu
             av_smu_rhs = (
