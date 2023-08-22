@@ -320,6 +320,9 @@ class _UpdateCoupledBoundariesCommTag:
 class _FluidOpStatesCommTag:
     pass
 
+class _WallOpStatesCommTag:
+    pass
+
 
 def update_coupled_boundaries(
         dcoll,
@@ -332,7 +335,7 @@ def update_coupled_boundaries(
         wall_penalty_amount=None,
         quadrature_tag=DISCR_TAG_BASE,
         limiter_func_fluid=None,
-        limiter_func_sample=None,
+        limiter_func_wall=None,
         comm_tag=None):
 
     dd_vol_fluid = dd[0]
@@ -347,16 +350,22 @@ def update_coupled_boundaries(
     sample_boundaries = boundaries[1]
     holder_boundaries = boundaries[2]
 
+    # FIXME
+    boundary_velocity = 0.0
+
+    # FIXME
+    emissivity = 0.9
+
     fluid_all_bnds_no_grad, sample_all_bnds_no_grad = \
         add_multiphysics_interface_boundaries_no_grad(
             dcoll, dd_vol_fluid, dd_vol_sample,
             gas_model_fluid, gas_model_sample,
             fluid_state, sample_state,
             fluid_boundaries, sample_boundaries,
-            limiter_func_fluid=_limit_fluid_cv,
-            limiter_func_wall=_limit_sample_cv,
+            limiter_func_fluid=limiter_func_fluid,
+            limiter_func_wall=limiter_func_wall,
             interface_noslip=True,
-            interface_radiation=use_radiation,
+            interface_radiation=interface_radiation,
             boundary_velocity=boundary_velocity)
 
     fluid_all_bnds_no_grad, holder_all_bnds_no_grad = \
@@ -367,7 +376,7 @@ def update_coupled_boundaries(
             holder_state.dv.temperature,
             fluid_all_bnds_no_grad, holder_boundaries,
             interface_noslip=True,
-            interface_radiation=use_radiation,
+            interface_radiation=interface_radiation,
         )
 
     sample_all_bnds_no_grad, holder_all_bnds_no_grad = \
@@ -385,14 +394,14 @@ def update_coupled_boundaries(
 
     fluid_operator_states_quad = make_operator_fluid_states(
         dcoll, fluid_state, gas_model_fluid, fluid_all_bnds_no_grad,
-        quadrature_tag, dd=dd_vol_fluid, comm_tag=_FluidOpStatesTag,
+        quadrature_tag, dd=dd_vol_fluid, comm_tag=_FluidOpStatesCommTag,
         limiter_func=limiter_func_fluid
     )
 
     sample_operator_states_quad = make_operator_fluid_states(
         dcoll, sample_state, gas_model_sample, sample_all_bnds_no_grad,
-        quadrature_tag, dd=dd_vol_sample, comm_tag=_WallOpStatesTag,
-        limiter_func=limiter_func_sample
+        quadrature_tag, dd=dd_vol_sample, comm_tag=_WallOpStatesCommTag,
+        limiter_func=limiter_func_wall
     )
 
     # ~~~~~~~~~~~~~~
@@ -406,7 +415,7 @@ def update_coupled_boundaries(
     )
 
     # fluid grad T
-    fluid_grad_temperature = grad_t_operator(
+    fluid_grad_temperature = fluid_grad_t_operator(
         dcoll, gas_model_fluid, fluid_all_bnds_no_grad, fluid_state,
         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
         operator_states_quad=fluid_operator_states_quad,
@@ -423,7 +432,7 @@ def update_coupled_boundaries(
     )
 
     # sample grad T
-    sample_grad_temperature = grad_t_operator(
+    sample_grad_temperature = fluid_grad_t_operator(
         dcoll, gas_model_sample, sample_all_bnds_no_grad,
         sample_state,
         quadrature_tag=quadrature_tag, dd=dd_vol_sample,
@@ -450,10 +459,10 @@ def update_coupled_boundaries(
             fluid_grad_temperature, sample_grad_temperature,
             fluid_boundaries, sample_boundaries,
             limiter_func_fluid=limiter_func_fluid,
-            limiter_func_wall=limiter_func_sample,
+            limiter_func_wall=limiter_func_wall,
             interface_noslip=True,
             boundary_velocity=boundary_velocity,
-            interface_radiation=use_radiation,
+            interface_radiation=interface_radiation,
             wall_emissivity=emissivity, sigma=5.67e-8,
             ambient_temperature=300.0,
             wall_penalty_amount=wall_penalty_amount)
@@ -466,7 +475,7 @@ def update_coupled_boundaries(
             fluid_grad_temperature, holder_grad_temperature,
             fluid_all_boundaries, holder_boundaries,
             interface_noslip=True,
-            interface_radiation=use_radiation,
+            interface_radiation=interface_radiation,
             wall_emissivity=emissivity, sigma=5.67e-8,
             ambient_temperature=300.0,
             wall_penalty_amount=wall_penalty_amount)
@@ -749,6 +758,7 @@ def main(actx_class,
     use_species_limiter = 1
     wall_material = 2
     my_material = "fiber"
+    use_av = 2
 
 
     # param sanity check
@@ -1124,7 +1134,7 @@ def main(actx_class,
             av_prandtl=av2_prandtl0)
 
     if use_wall and wall_material == 2:
-        from mirgecom.transport import PorousWallTransport
+        from mirgecom.wall_model import PorousWallTransport
         base_transport = PowerLawTransport(lewis=np.ones(nspecies,), beta=4.093e-7)
         sample_transport = PorousWallTransport(base_transport=base_transport)
 
@@ -1134,14 +1144,15 @@ def main(actx_class,
 
         if my_material == "fiber":
             import mirgecom.materials.carbon_fiber as material_sample
-            material = material_sample.SolidProperties(char_mass=0.0,
-                                                       virgin_mass=160.0)
-            decomposition = material_sample.Y3_Oxidation_Model(wall_material=material)
+            material = material_sample.FiberEOS(char_mass=0.0,
+                                                virgin_mass=160.0)
+            decomposition = \
+                material_sample.Y3_Oxidation_Model(wall_material=material)
 
         if my_material == "composite":
             import mirgecom.materials.tacot as material_sample
-            material = material_sample.SolidProperties(char_mass=220.0,
-                                                       virgin_mass=280.0)
+            material = material_sample.TacotEOS(char_mass=220.0,
+                                                virgin_mass=280.0)
             decomposition = material_sample.Pyrolysis()   
 
         # }}}
@@ -1190,8 +1201,8 @@ def main(actx_class,
         if eos_type == 0:
             print('Gotta use eos = 1 for the Y3 prediction.')
             sys.exit()
-        gas_model_sample = PorousFlowModel(eos=eos, transport=sample_transport,
-                                           wall_model=material)
+        gas_model_sample = PorousFlowModel(eos=eos,
+            transport=sample_transport, wall_eos=material)
         
 
     # initialize eos and species mass fractions
@@ -1472,7 +1483,7 @@ def main(actx_class,
                 return_tag_to_elements_map=True)
             volume_to_tags = {
                 "fluid": ["fluid"]}
-            if use_wall:  #FIXME
+            if use_wall:  # FIXME
                 volume_to_tags["sample"] = ["wall_insert"]
                 volume_to_tags["holder"] = ["wall_surround"]
             return mesh, tag_to_elements, volume_to_tags
@@ -1585,11 +1596,13 @@ def main(actx_class,
             fluid_smoothness_boundaries.update({
                  dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
                  for dd_bdry in filter_part_boundaries(
-                     dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_sample)})
+                     dcoll, volume_dd=dd_vol_fluid,
+                     neighbor_volume_dd=dd_vol_sample)})
             fluid_smoothness_boundaries.update({
                  dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
                  for dd_bdry in filter_part_boundaries(
-                     dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_holder)})
+                     dcoll, volume_dd=dd_vol_fluid,
+                     neighbor_volume_dd=dd_vol_holder)})
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
@@ -1729,7 +1742,7 @@ def main(actx_class,
         )
 
         energy_solid = \
-            wv.density*gas_model_sample.wall_model.enthalpy(temperature, wv.tau)
+            wv.density*gas_model_sample.wall_eos.enthalpy(temperature, wv.tau)
 
         energy = energy_gas + energy_solid
 
@@ -1834,7 +1847,8 @@ def main(actx_class,
             return wall_surround_cp
 
         def _get_holder_thermal_conductivity(temperature):
-            return wall_surround_kappa
+            actx = temperature.array_context
+            return wall_surround_kappa + actx.np.zeros_like(temperature)
 
         holder_wall_model = SolidWallModel(
             density_func=_get_holder_density,
@@ -2017,7 +2031,24 @@ def main(actx_class,
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
+        sample_state = make_fluid_state(cv=state.sample_cv,
+                                        gas_model=gas_model_sample,
+                                        temperature_seed=state.sample_tseed,
+                                        material_densities=state.sample_mass,
+                                        limiter_func=limiter_sample_state,
+                                        limiter_dd=dd_vol_sample)
+
+        holder_state = SolidWallState(cv=state.holder_cv,
+            dv=holder_wall_model.dependent_vars(state.holder_cv))
+
+        states = make_obj_array([fluid_state, sample_state, holder_state])
+
         if use_wall:
+
+            dd = make_obj_array([dd_vol_fluid, dd_vol_sample, dd_vol_holder])
+            boundaries = make_obj_array([uncoupled_fluid_boundaries,
+                                         {},
+                                         uncoupled_wall_boundaries])
 
             (updated_fluid_boundaries, updated_sample_boundaries, updated_holder_boundaries,
              fluid_operator_states_quad, grad_fluid_cv, grad_fluid_t,
@@ -2031,8 +2062,8 @@ def main(actx_class,
                 interface_radiation=True,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
-                limiter_func_fluid=limiter_func_fluid,
-                limiter_func_wall=limiter_func_sample,
+                limiter_func_fluid=limit_fluid_state,
+                limiter_func_wall=limit_sample_state,
                 comm_tag=_InitCommTag)
 
 #            # try making sure the stuff that comes back is used
@@ -2744,10 +2775,16 @@ def main(actx_class,
 
     def compute_viz_fields_coupled(states, boundaries, time):
 
+        dd = make_obj_array([dd_vol_fluid, dd_vol_sample, dd_vol_holder])
+
+        fluid_state = states[0]
+        sample_state = states[1]
+        holder_state = states[2]
+
         (updated_fluid_boundaries, updated_sample_boundaries, updated_holder_boundaries,
          fluid_operator_states_quad, grad_fluid_cv, grad_fluid_t,
-         sample_operator_states_quad, sample_grad_cv, sample_grad_temperature,
-         holder_grad_temperature) = update_coupled_boundaries(
+         sample_operator_states_quad, grad_sample_cv, grad_sample_t,
+         grad_holder_t) = update_coupled_boundaries(
             dcoll,
             gas_model_fluid, gas_model_sample,
             dd, boundaries, states,
@@ -2756,8 +2793,8 @@ def main(actx_class,
             interface_radiation=True,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
-            limiter_func_fluid=limiter_func_fluid,
-            limiter_func_wall=limiter_func_sample,
+            limiter_func_fluid=limit_fluid_state,
+            limiter_func_wall=limit_sample_state,
             comm_tag=_InitCommTag)
 
 #        # try making sure the stuff that comes back is used
@@ -2798,6 +2835,10 @@ def main(actx_class,
 
 #        wv = wv + 0.*wall_rhs
 
+        fluid_cv = fluid_state.cv
+        sample_cv = sample_state.cv
+        holder_wv = holder_state.cv
+
         # now compute the smoothness part
         if use_av == 1:
             av_smu = compute_smoothness(fluid_state.cv, fluid_state.dv, grad_fluid_cv)
@@ -2819,7 +2860,8 @@ def main(actx_class,
 
         return make_obj_array([av_smu, av_sbeta, av_skappa,
                                grad_v, grad_y, grad_fluid_t,
-                               grad_wall_t, cv, wv])
+                               grad_sample_cv, grad_sample_t,
+                               grad_holder_t, fluid_cv, sample_cv, holder_wv])
 
     compute_viz_fields_coupled_compiled = actx.compile(compute_viz_fields_coupled)
 
@@ -3031,7 +3073,9 @@ def main(actx_class,
             grad_fluid_t = viz_stuff[5]
 
             if use_wall:
-                grad_wall_t = viz_stuff[6]
+                grad_sample_cv = viz_stuff[6]
+                grad_sample_t = viz_stuff[7]
+                grad_holder_t = viz_stuff[8]
 
             viz_ext = [("smoothness_mu", av_smu),
                        ("smoothness_beta", av_sbeta),
@@ -3051,7 +3095,10 @@ def main(actx_class,
             fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
-                viz_ext = [("grad_temperature", holder_wall_t)]
+                viz_ext = [("grad_temperature", grad_sample_t)]
+                sample_viz_fields.extend(viz_ext)
+
+                viz_ext = [("grad_temperature", grad_holder_t)]
                 holder_viz_fields.extend(viz_ext)
 
         write_visfile(
@@ -3079,7 +3126,7 @@ def main(actx_class,
 
     
 
-    viz_state = make_obj_array([current_fluid_state, current_sample_state, current_holder_state, sample_mass])
+    viz_state = make_obj_array([current_fluid_state, current_sample_state, current_holder_state])
     viz_dv = None
     ts_field_fluid = None
     ts_field_wall = None
