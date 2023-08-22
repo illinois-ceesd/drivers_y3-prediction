@@ -5,7 +5,7 @@ nviz: 5
 nrestart: 10
 nhealth: 1
 nstatus: 1
-viz_level: 2
+viz_level: 3
 viz_interval_type: 0
 #viz_interval_type: 1
 #viz_interval_type: 2
@@ -33,7 +33,7 @@ smooth_char_length: 5
 #smooth_char_length: 0
 smoothness_alpha: 1.e-12
 smoothness_tau: 1.e-12
-use_av: 0
+use_av: 2
 #use_av: 0
 alpha_sc: 0.01
 s0_sc: -5.0
