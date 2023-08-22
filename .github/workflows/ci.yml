@@ -66,6 +66,12 @@ jobs:
             cd smoke_test
             ./run_restart.sh
 
+        - name: Eager smoke restart n2 to n7 transition test
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test
+            ./run_transition.sh
+
         - name: Numpy smoke test
           run: |
             source emirge/config/activate_env.sh

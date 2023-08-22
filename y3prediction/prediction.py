@@ -1309,8 +1309,15 @@ def main(actx_class,
         global_nelements = restart_data["global_nelements"]
         restart_order = int(restart_data["order"])
 
-        assert restart_data["nparts"] == nparts
-        assert restart_data["nspecies"] == nspecies
+        restart_nspecies = restart_data["nspecies"]
+        #assert restart_data["nparts"] == nparts
+
+        restart_nparts = restart_data["num_parts"]
+        if restart_nparts != nparts:
+            error_message = \
+                "Incorrect number or ranks in target: {}".format(restart_nparts)
+            raise RuntimeError(error_message)
+
     else:  # generate the grid from scratch
         if rank == 0:
             print(f"Reading mesh from {mesh_filename}")
@@ -1349,9 +1356,23 @@ def main(actx_class,
         global_nelements = target_data["global_nelements"]
         target_order = int(target_data["order"])
 
-        assert target_data["nparts"] == nparts
-        assert target_data["nspecies"] == nspecies
-        assert target_data["global_nelements"] == global_nelements
+        target_nparts = target_data["num_parts"]
+        if target_nparts != nparts:
+            error_message = \
+                "Incorrect number or ranks in target: {}".format(target_nparts)
+            raise RuntimeError(error_message)
+
+        target_nspecies = target_data["nspecies"]
+        if target_nspecies != nspecies:
+            error_message = \
+                "Incorrect number of species in target: {}".format(target_nspecies)
+            raise RuntimeError(error_message)
+
+        target_nelements = target_data["global_nelements"]
+        if target_nelements != global_nelements:
+            error_message = \
+                "Incorrect number of elements in target: {}".format(target_nelements)
+            raise RuntimeError(error_message)
     else:
         logger.warning("No target file specied, using restart as target")
 
@@ -1903,6 +1924,61 @@ def main(actx_class,
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
 
+        if restart_nspecies != nspecies:
+            if rank == 0:
+                print(f"Transitioning restart from {restart_nspecies} to {nspecies}")
+                print("Preserving pressure and temperature")
+
+            restart_eos = IdealSingleGas(gamma=gamma, gas_const=r)
+
+            mass = restart_cv.mass
+            velocity = restart_cv.momentum/mass
+            species_mass_frac_multi = 0.*mass*y
+
+            pressure = restart_eos.pressure(restart_cv)
+            temperature = restart_eos.temperature(restart_cv, temperature_seed)
+
+            if nspecies > 2:
+                if restart_nspecies == 0:
+                    species_mass_frac_multi[i_ox] = mf_o2
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)
+
+                if restart_nspecies > 0:
+                    species = restart_cv.species_mass_fractions
+
+                    # air is species 0 in scalar sim
+                    species_mass_frac_multi[i_ox] = mf_o2*species[0]
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)*species[0]
+
+                    # fuel is species 1 in scalar sim
+                    species_mass_frac_multi[i_c2h4] = mf_c2h4*species[1]
+                    species_mass_frac_multi[i_h2] = mf_h2*species[1]
+
+                internal_energy = eos.get_internal_energy(temperature=temperature,
+                    species_mass_fractions=species_mass_frac_multi)
+
+                modified_mass = eos.get_density(pressure, temperature,
+                                                species_mass_frac_multi)
+
+                total_energy = modified_mass*(
+                    internal_energy + np.dot(velocity, velocity)/(2.0))
+
+                modified_cv = make_conserved(
+                    dim,
+                    mass=modified_mass,
+                    momentum=modified_mass*velocity,
+                    energy=total_energy,
+                    species_mass=modified_mass*species_mass_frac_multi)
+            else:
+                modified_cv = make_conserved(
+                    dim,
+                    mass=restart_cv.mass,
+                    momentum=restart_cv.momentum,
+                    energy=restart_cv.energy,
+                    species_mass=restart_cv.mass*y)
+
+            restart_cv = modified_cv
+
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -2016,23 +2092,81 @@ def main(actx_class,
             target_av_smu = target_data["av_smu"]
             target_av_sbeta = target_data["av_sbeta"]
             target_av_skappa = target_data["av_skappa"]
+
+        if target_nspecies != nspecies:
+            if rank == 0:
+                print(f"Transitioning target from {target_nspecies} to {nspecies}")
+                print("Preserving pressure and temperature")
+
+            target_eos = IdealSingleGas(gamma=gamma, gas_const=r)
+
+            mass = target_cv.mass
+            velocity = target_cv.momentum/mass
+            species_mass_frac_multi = 0.*mass*y
+
+            pressure = target_eos.pressure(target_cv)
+            temperature = target_eos.temperature(target_cv, temperature_seed)
+
+            if nspecies > 2:
+                if target_nspecies == 0:
+                    species_mass_frac_multi[i_ox] = mf_o2
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)
+
+                if target_nspecies > 0:
+                    species = target_cv.species_mass_fractions
+
+                    # air is species 0 in scalar sim
+                    species_mass_frac_multi[i_ox] = mf_o2*species[0]
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)*species[0]
+
+                    # fuel is species 1 in scalar sim
+                    species_mass_frac_multi[i_c2h4] = mf_c2h4*species[1]
+                    species_mass_frac_multi[i_h2] = mf_h2*species[1]
+
+                internal_energy = eos.get_internal_energy(temperature=temperature,
+                    species_mass_fractions=species_mass_frac_multi)
+
+                modified_mass = eos.get_density(pressure, temperature,
+                                                species_mass_frac_multi)
+
+                total_energy = modified_mass*(
+                    internal_energy + np.dot(velocity, velocity)/(2.0))
+
+                modified_cv = make_conserved(
+                    dim,
+                    mass=modified_mass,
+                    momentum=modified_mass*velocity,
+                    energy=total_energy,
+                    species_mass=modified_mass*species_mass_frac_multi)
+            else:
+                modified_cv = make_conserved(
+                    dim,
+                    mass=target_cv.mass,
+                    momentum=target_cv.momentum,
+                    energy=target_cv.energy,
+                    species_mass=target_cv.mass*y)
+
+            target_cv = modified_cv
+
+        target_cv = force_evaluation(actx, target_cv)
+        target_av_smu = force_evaluation(actx, target_av_smu)
+        target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+        target_av_skappa = force_evaluation(actx, target_av_skappa)
+
+        target_fluid_state = create_fluid_state(cv=target_cv,
+                                                temperature_seed=temperature_seed,
+                                                smoothness_mu=target_av_smu,
+                                                smoothness_beta=target_av_sbeta,
+                                                smoothness_kappa=target_av_skappa)
+
     else:
         # Set the current state from time 0
-        target_cv = restart_cv
-        target_av_smu = restart_av_smu
-        target_av_sbeta = restart_av_sbeta
-        target_av_skappa = restart_av_skappa
+        #target_cv = restart_cv
+        #target_av_smu = restart_av_smu
+        #target_av_sbeta = restart_av_sbeta
+        #target_av_skappa = restart_av_skappa
 
-    target_cv = force_evaluation(actx, target_cv)
-    target_av_smu = force_evaluation(actx, target_av_smu)
-    target_av_sbeta = force_evaluation(actx, target_av_sbeta)
-    target_av_skappa = force_evaluation(actx, target_av_skappa)
-
-    target_fluid_state = create_fluid_state(cv=target_cv,
-                                            temperature_seed=temperature_seed,
-                                            smoothness_mu=target_av_smu,
-                                            smoothness_beta=target_av_sbeta,
-                                            smoothness_kappa=target_av_skappa)
+        target_fluid_state = restart_fluid_state
 
     def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
