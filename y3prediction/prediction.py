@@ -212,12 +212,6 @@ class MyRuntimeError(RuntimeError):
     pass
 
 
-class SimulationConfigError(RuntimeError):
-    """Simple exception to kill the simulation."""
-
-    pass
-
-
 class _InitCommTag:
     pass
 
@@ -799,45 +793,41 @@ def main(actx_class,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    inv_flux_msg = "\nSetting inviscid numerical flux to: "
+    flux_msg = "\nSetting inviscid numerical flux to: "
     if use_esdg:
         try:
-            from mirgecom.inviscid import (
-                entropy_stable_inviscid_flux_rusanov,
-                entropy_stable_inviscid_flux_renac)
+            from mirgecom.inviscid import entropy_stable_inviscid_facial_flux_rusanov
         except ImportError:
-            raise SimulationConfigError("ESDG option specified, but MIRGE-Com "
-                                        "is installed without ESDG support. "
-                                        "Try switching your MIRGE-Com branch to "
-                                        "mirgecom@production.")
-
-        if nspecies == 7:  # only mixture at this point, should really check EOS
-            inviscid_numerical_flux_func = entropy_stable_inviscid_flux_renac
-            inv_flux_msg = inv_flux_msg + "Entropy-conserving Renac (mixtures).\n"
+            from mirgecom.simutil import SimulationConfigurationError
+            raise SimulationConfigurationError("ESDG option specified, but MIRGE-Com "
+                                               "is installed without ESDG support. "
+                                               "Try switching your MIRGE-Com branch to "
+                                               "mirgecom@production.")
+        inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
+        flux_msg = flux_msg + "ESDG/Rusanov with EC/"
+        if nspecies == 7:  # FIXME: Add support for 7 passive species?
+            inv_flux_type = "Renac for mixtures.\n"
         else:
-            inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
-            inv_flux_msg = (inv_flux_msg + "Entropy-conserving Chandrashekar "
-                            "(single gas, passive species).\n")
-
+            inv_flux_type = "Chandrashekar for single gas or passive species.\n"
+        flux_msg = inv_flux_msg + inv_flux_type
     else:
         if inv_num_flux == "rusanov":
             inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
-            inv_flux_msg = inv_flux_msg + "Rusanov\n"
+            flux_msg = flux_msg + "Rusanov\n"
         elif inv_num_flux == "hll":
             inviscid_numerical_flux_func = inviscid_facial_flux_hll
-            inv_flux_msg = inv_flux_msg + "HLL\n"
+            flux_msg = flux_msg + "HLL\n"
 
-    if rank == 0:
-        print(inv_flux_msg)
-
+    flux_msg = flux_msg + "Setting viscous numerical flux to: "
     if use_wall:
         viscous_numerical_flux_func = viscous_facial_flux_harmonic
-        if rank == 0:
-            print("\nHarmonic viscous flux")
+        flux_msg = flux_msg + "Harmonic\n"
     else:
         viscous_numerical_flux_func = viscous_facial_flux_central
-        if rank == 0:
-            print("\nCentral viscous flux")
+        flux_msg = flux_msg + "Central\n"
+
+    if rank == 0:
+        print(flux_msg)
 
     # }}}
 
