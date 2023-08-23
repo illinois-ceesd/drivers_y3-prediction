@@ -1434,8 +1434,8 @@ def main(actx_class,
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
 
-    fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
-    wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
+    # fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
+    # wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
