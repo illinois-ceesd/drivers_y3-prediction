@@ -36,7 +36,7 @@ from mirgecom.discretization import create_discretization_collection
 
 from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
-from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE, DD_VOLUME_ALL
+from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE
 from grudge.op import nodal_max, nodal_min
 from grudge.trace_pair import inter_volume_trace_pairs
 from grudge.discretization import filter_part_boundaries
@@ -57,7 +57,7 @@ from mirgecom.simutil import (
     check_naninf_local,
     check_range_local,
 )
-from mirgecom.utils import force_evaluation
+from mirgecom.utils import force_evaluation, HashableTag
 from mirgecom.restart import write_restart_file
 from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
@@ -215,91 +215,91 @@ class MyRuntimeError(RuntimeError):
     pass
 
 
-class _InitCommTag:
+class _InitCommTag(HashableTag):
     pass
 
 
-class _SmoothnessCVGradCommTag:
+class _SmoothnessCVGradCommTag(HashableTag):
     pass
 
 
-class _OxCommTag:
+class _OxCommTag(HashableTag):
     pass
 
 
-class _FluidOxDiffCommTag:
+class _FluidOxDiffCommTag(HashableTag):
     pass
 
 
-class _WallOxDiffCommTag:
+class _WallOxDiffCommTag(HashableTag):
     pass
 
 
-class _SmoothDiffCommTag:
+class _SmoothDiffCommTag(HashableTag):
     pass
 
 
-class _SmoothCharDiffCommTag:
+class _SmoothCharDiffCommTag(HashableTag):
     pass
 
 
-class _SmoothCharDiffFluidCommTag:
+class _SmoothCharDiffFluidCommTag(HashableTag):
     pass
 
 
-class _SmoothCharDiffWallCommTag:
+class _SmoothCharDiffWallCommTag(HashableTag):
     pass
 
 
-class _BetaDiffCommTag:
+class _BetaDiffCommTag(HashableTag):
     pass
 
 
-class _BetaDiffWallCommTag:
+class _BetaDiffWallCommTag(HashableTag):
     pass
 
 
-class _BetaDiffFluidCommTag:
+class _BetaDiffFluidCommTag(HashableTag):
     pass
 
 
-class _KappaDiffCommTag:
+class _KappaDiffCommTag(HashableTag):
     pass
 
 
-class _KappaDiffWallCommTag:
+class _KappaDiffWallCommTag(HashableTag):
     pass
 
 
-class _KappaDiffFluidCommTag:
+class _KappaDiffFluidCommTag(HashableTag):
     pass
 
 
-class _MuDiffCommTag:
+class _MuDiffCommTag(HashableTag):
     pass
 
 
-class _MuDiffWallCommTag:
+class _MuDiffWallCommTag(HashableTag):
     pass
 
 
-class _MuDiffFluidCommTag:
+class _MuDiffFluidCommTag(HashableTag):
     pass
 
 
-class _WallOperatorCommTag:
+class _WallOperatorCommTag(HashableTag):
     pass
 
 
-class _FluidOperatorCommTag:
+class _FluidOperatorCommTag(HashableTag):
     pass
 
 
-class _UpdateCoupledBoundariesCommTag:
+class _UpdateCoupledBoundariesCommTag(HashableTag):
     pass
 
 
-class _FluidOpStatesCommTag:
+class _FluidOpStatesCommTag(HashableTag):
     pass
 
 
@@ -345,7 +345,7 @@ def update_coupled_boundaries(
     fluid_operator_states_quad = make_operator_fluid_states(
         dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
         quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
-        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+        comm_tag=(comm_tag, _FluidOpStatesCommTag()))
 
     # Compute the temperature gradient for both subdomains
     fluid_grad_temperature = fluid_grad_t_operator(
@@ -1733,28 +1733,40 @@ def main(actx_class,
         wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
     from grudge.dt_utils import characteristic_lengthscales
-    char_length_fluid = force_evaluation(actx,
-        characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
+    char_length_fluid = characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid)
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
-    char_length_fluid = char_length_fluid + actx.np.zeros_like(xpos_fluid)
+    fluid_zeros = actx.np.zeros_like(xpos_fluid)
+    char_length_fluid_old = char_length_fluid
+    char_length_fluid_unevaled = char_length_fluid_old + fluid_zeros
 
-    smoothness_diffusivity = \
-        smooth_char_length_alpha*char_length_fluid**2/current_dt
+    if rank == 0:
+        print(f"main: {hash(xpos_fluid[0])=}")
+        print(f"main: {hash(fluid_zeros[0])=}")
+        print(f"main: {hash(char_length_fluid_old[0])=}")
+        print(f"main: {char_length_fluid_old[0].shape=}")
+        print(f"main: {hash(char_length_fluid_unevaled[0])=}")
+
+    char_length_fluid = force_evaluation(actx, char_length_fluid_unevaled)
+
+    if rank == 0:
+        print(f"main: {hash(char_length_fluid[0])=}")
+
+    smoothness_diffusivity = force_evaluation(actx,
+        smooth_char_length_alpha*char_length_fluid**2/current_dt)
 
     if use_wall:
         xpos_wall = wall_nodes[0]
+        char_length_wall = characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall)
         char_length_wall = force_evaluation(actx,
-            characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
-        xpos_wall = wall_nodes[0]
-        char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
+            char_length_wall + actx.np.zeros_like(xpos_wall))
         """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
         """
 
-    def compute_smoothed_char_length(href_fluid, comm_ind):
+    def compute_smoothed_char_length(href_fluid):
         # regular boundaries
 
         smooth_neumann = NeumannDiffusionBoundary(0)
@@ -1784,7 +1796,7 @@ def main(actx_class,
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
             href_fluid,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-            comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
+            comm_tag=_SmoothCharDiffFluidCommTag())*current_dt
 
         return smooth_href_fluid_rhs
 
@@ -1792,7 +1804,7 @@ def main(actx_class,
         actx.compile(compute_smoothed_char_length)
 
     """
-    def compute_smoothed_char_length_wall(href_wall, comm_ind):
+    def compute_smoothed_char_length_wall(href_wall):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
             wall_ffld_bnd.domain_tag: smooth_neumann,
@@ -1807,7 +1819,7 @@ def main(actx_class,
                 dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
                 href_wall,
                 quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                comm_tag=(_SmoothCharDiffWallCommTag, comm_ind))*current_dt
+                comm_tag=_SmoothCharDiffWallCommTag())*current_dt
 
         return smooth_href_wall_rhs
 
@@ -1819,9 +1831,9 @@ def main(actx_class,
     smoothed_char_length_fluid = char_length_fluid
 
     if use_smoothed_char_length:
-        for i in range(smooth_char_length):
+        for _ in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
-                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, i)
+                compute_smoothed_char_length_compiled(smoothed_char_length_fluid)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
@@ -1831,7 +1843,7 @@ def main(actx_class,
             for i in range(smooth_char_length):
                 smoothed_char_length_wall_rhs = \
                     compute_smoothed_char_length_wall_compiled(
-                        smoothed_char_length_wall, i)
+                        smoothed_char_length_wall)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
         """
@@ -2130,7 +2142,7 @@ def main(actx_class,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
-                comm_tag=_InitCommTag)
+                comm_tag=_InitCommTag())
 
             # try making sure the stuff that comes back is used
             # even if it's a zero contribution
@@ -2147,7 +2159,7 @@ def main(actx_class,
                 state=fluid_state,
                 time=time,
                 quadrature_tag=quadrature_tag,
-                comm_tag=(_InitCommTag, _FluidOperatorCommTag))
+                comm_tag=(_InitCommTag(), _FluidOperatorCommTag()))
 
             wall_energy_rhs = diffusion_operator(
                 dcoll=dcoll,
@@ -2157,7 +2169,7 @@ def main(actx_class,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
-                comm_tag=(_InitCommTag, _WallOperatorCommTag))
+                comm_tag=(_InitCommTag(), _WallOperatorCommTag()))
 
             cv = cv + 0.*fluid_rhs
 
@@ -3118,7 +3130,7 @@ def main(actx_class,
             wall_penalty_amount=wall_penalty_amount,
             quadrature_tag=quadrature_tag,
             limiter_func=limiter_func,
-            comm_tag=_InitCommTag)
+            comm_tag=_InitCommTag())
 
         # try making sure the stuff that comes back is used
         # even if it's a zero contribution
@@ -3136,7 +3148,7 @@ def main(actx_class,
             state=fluid_state,
             time=time,
             quadrature_tag=quadrature_tag,
-            comm_tag=(_InitCommTag, _FluidOperatorCommTag))
+            comm_tag=(_InitCommTag(), _FluidOperatorCommTag()))
 
         wall_energy_rhs = diffusion_operator(
             dcoll=dcoll,
@@ -3146,7 +3158,7 @@ def main(actx_class,
             quadrature_tag=quadrature_tag,
             dd=dd_vol_wall,
             grad_u=grad_wall_t,
-            comm_tag=(_InitCommTag, _WallOperatorCommTag))
+            comm_tag=(_InitCommTag(), _WallOperatorCommTag()))
 
         cv = cv + 0.*fluid_rhs
 
@@ -3577,7 +3589,7 @@ def main(actx_class,
 
         return health_error
 
-    def my_get_viscous_timestep(dcoll, fluid_state):
+    def _my_get_viscous_timestep(fluid_state):
 
         nu = 0
         d_alpha_max = 0
@@ -3596,8 +3608,10 @@ def main(actx_class,
             + ((nu + d_alpha_max) / char_length_fluid))
         )
 
+    my_get_viscous_timestep = actx.compile(_my_get_viscous_timestep)
+
     if use_wall:
-        def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
+        def _my_get_wall_timestep(wv, wall_kappa, wall_temperature):
 
             return (
                 char_length_wall*char_length_wall
@@ -3608,57 +3622,49 @@ def main(actx_class,
                             wv.mass, wall_temperature, wall_kappa),
                         wall_model.oxygen_diffusivity)))
 
-        def _my_get_timestep_wall(
-                dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
-                constant_cfl=False, wall_dd=DD_VOLUME_ALL):
+        my_get_wall_timestep = actx.compile(_my_get_wall_timestep)
+
+        # Can't be compiled due to global nodal_min/nodal_max
+        def my_get_timestep_wall(
+                wv, wall_kappa, wall_temperature, t, dt, cfl):
 
             actx = wall_kappa.array_context
             mydt = dt
             if constant_cfl:
                 from grudge.op import nodal_min
                 ts_field = cfl*my_get_wall_timestep(
-                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wv=wv, wall_kappa=wall_kappa,
                     wall_temperature=wall_temperature)
                 mydt = actx.to_numpy(
                     nodal_min(
-                        dcoll, wall_dd, ts_field, initial=np.inf))[()]
+                        dcoll, dd_vol_wall, ts_field, initial=np.inf))[()]
             else:
                 from grudge.op import nodal_max
                 ts_field = mydt/my_get_wall_timestep(
-                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wv=wv, wall_kappa=wall_kappa,
                     wall_temperature=wall_temperature)
                 cfl = actx.to_numpy(
                     nodal_max(
-                        dcoll, wall_dd, ts_field, initial=0.))[()]
+                        dcoll, dd_vol_wall, ts_field, initial=0.))[()]
 
             return ts_field, cfl, mydt
 
-    #my_get_timestep = actx.compile(_my_get_timestep)
-    if use_wall:
-        my_get_timestep_wall = _my_get_timestep_wall
-
-    def _my_get_timestep(
-            dcoll, fluid_state, t, dt, cfl, t_final, constant_cfl=False,
-            fluid_dd=DD_VOLUME_ALL):
+    # Can't be compiled due to global nodal_min/nodal_max
+    def my_get_timestep(fluid_state, t, dt, cfl):
 
         mydt = dt
         if constant_cfl:
             from grudge.op import nodal_min
-            ts_field = cfl*my_get_viscous_timestep(
-                dcoll=dcoll, fluid_state=fluid_state)
-            mydt = fluid_state.array_context.to_numpy(nodal_min(
-                    dcoll, fluid_dd, ts_field, initial=np.inf))[()]
+            ts_field = cfl*my_get_viscous_timestep(fluid_state)
+            mydt = actx.to_numpy(nodal_min(
+                    dcoll, dd_vol_fluid, ts_field, initial=np.inf))[()]
         else:
             from grudge.op import nodal_max
-            ts_field = mydt/my_get_viscous_timestep(
-                dcoll=dcoll, fluid_state=fluid_state)
-            cfl = fluid_state.array_context.to_numpy(nodal_max(
-                    dcoll, fluid_dd, ts_field, initial=0.))[()]
+            ts_field = mydt/my_get_viscous_timestep(fluid_state)
+            cfl = actx.to_numpy(nodal_max(
+                    dcoll, dd_vol_fluid, ts_field, initial=0.))[()]
 
         return ts_field, cfl, mydt
-
-    #my_get_timestep = actx.compile(_my_get_timestep)
-    my_get_timestep = _my_get_timestep
 
     def _check_time(time, dt, interval, interval_type):
         toler = 1.e-6
@@ -3763,17 +3769,14 @@ def main(actx_class,
                 dv = fluid_state.dv
 
                 ts_field_fluid, cfl_fluid, dt_fluid = my_get_timestep(
-                    dcoll=dcoll, fluid_state=fluid_state,
-                    t=t, dt=dt, cfl=current_cfl, t_final=t_final,
-                    constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+                    fluid_state=fluid_state, t=t, dt=dt, cfl=current_cfl)
 
                 ts_field_wall = None
                 if use_wall:
                     ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
-                        dcoll=dcoll, wv=wv, wall_kappa=wdv.thermal_conductivity,
+                        wv=wv, wall_kappa=wdv.thermal_conductivity,
                         wall_temperature=wdv.temperature, t=t, dt=dt,
-                        cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
-                        wall_dd=dd_vol_wall)
+                        cfl=current_cfl)
                 else:
                     cfl_wall = cfl_fluid
 
@@ -3954,7 +3957,7 @@ def main(actx_class,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
-                comm_tag=_UpdateCoupledBoundariesCommTag)
+                comm_tag=_UpdateCoupledBoundariesCommTag())
         else:
             updated_fluid_boundaries = uncoupled_fluid_boundaries
             grad_fluid_cv = grad_cv_operator(
@@ -3998,7 +4001,7 @@ def main(actx_class,
             state=fluid_state,
             time=t,
             quadrature_tag=quadrature_tag,
-            comm_tag=_FluidOperatorCommTag)
+            comm_tag=_FluidOperatorCommTag())
 
         wall_rhs = None
         if use_wall:
@@ -4010,7 +4013,7 @@ def main(actx_class,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
-                comm_tag=_WallOperatorCommTag
+                comm_tag=_WallOperatorCommTag()
                 )
 
         if use_combustion:
@@ -4051,7 +4054,7 @@ def main(actx_class,
                 diffusion_operator(
                     dcoll, epsilon_diff, fluid_av_boundaries, av_smu,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                    comm_tag=_MuDiffFluidCommTag
+                    comm_tag=_MuDiffFluidCommTag()
                 ) + 1/tau * (smoothness_mu - av_smu)
             )
 
@@ -4060,7 +4063,7 @@ def main(actx_class,
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_sbeta,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                        comm_tag=_BetaDiffFluidCommTag
+                        comm_tag=_BetaDiffFluidCommTag()
                     ) + 1/tau * (smoothness_beta - av_sbeta)
                 )
 
@@ -4068,7 +4071,7 @@ def main(actx_class,
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_skappa,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                        comm_tag=_KappaDiffFluidCommTag
+                        comm_tag=_KappaDiffFluidCommTag()
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
@@ -4096,7 +4099,7 @@ def main(actx_class,
                     (dd_vol_fluid, dd_vol_wall):
                         (fluid_ox_mass, wv.ox_mass)}
                 pairwise_ox_tpairs = inter_volume_trace_pairs(
-                    dcoll, pairwise_ox, comm_tag=_OxCommTag)
+                    dcoll, pairwise_ox, comm_tag=_OxCommTag())
                 ox_tpairs = pairwise_ox_tpairs[dd_vol_fluid, dd_vol_wall]
                 wall_ox_boundaries = {
                     wall_ffld_bnd.domain_tag:  # pylint: disable=no-member
@@ -4115,7 +4118,7 @@ def main(actx_class,
                     wall_ox_boundaries, wv.ox_mass,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                    comm_tag=_WallOxDiffCommTag)
+                    comm_tag=_WallOxDiffCommTag())
 
             wall_rhs = wall_time_scale * WallVars(
                 mass=wall_mass_rhs,
@@ -4141,7 +4144,7 @@ def main(actx_class,
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
                     dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-                    comm_tag=_FluidOxDiffCommTag)
+                    comm_tag=_FluidOxDiffCommTag())
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
 
@@ -4221,18 +4224,16 @@ def main(actx_class,
         logger.info("Checkpointing final state ...")
 
     final_dv = current_fluid_state.dv
-    ts_field_fluid, cfl, dt = my_get_timestep(dcoll=dcoll,
+    ts_field_fluid, cfl, dt = my_get_timestep(
         fluid_state=current_fluid_state,
-        t=current_t, dt=current_dt, cfl=current_cfl,
-        t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+        t=current_t, dt=current_dt, cfl=current_cfl)
 
     ts_field_wall = None
     if use_wall:
-        ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(dcoll=dcoll,
+        ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
             wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
             wall_temperature=current_wdv.temperature, t=current_t, dt=current_dt,
-            cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
-            wall_dd=dd_vol_wall)
+            cfl=current_cfl)
     current_t_wall = t_wall_start + (current_step - first_step)*dt*wall_time_scale
 
     my_write_status_lite(step=current_step, t=current_t,
