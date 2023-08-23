@@ -458,7 +458,7 @@ def main(actx_class,
     viz_interval_type = configurate("viz_interval_type", input_data, 0)
 
     # default timestepping control
-    advance_time = configurate("advance_time", input_data, "True")
+    advance_time = configurate("advance_time", input_data, True)
     integrator = configurate("integrator", input_data, "rk4")
     current_dt = configurate("current_dt", input_data, 1.e-8)
     t_final = configurate("t_final", input_data, 1.e-7)
@@ -485,6 +485,7 @@ def main(actx_class,
 
     # discretization and model control
     order = configurate("order", input_data, 2)
+    viz_order = configurate("viz_order", input_data, order)
     quadrature_order = configurate("quadrature_order", input_data, -1)
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
@@ -1308,8 +1309,15 @@ def main(actx_class,
         global_nelements = restart_data["global_nelements"]
         restart_order = int(restart_data["order"])
 
-        assert restart_data["nparts"] == nparts
-        assert restart_data["nspecies"] == nspecies
+        restart_nspecies = restart_data["nspecies"]
+        #assert restart_data["nparts"] == nparts
+
+        restart_nparts = restart_data["num_parts"]
+        if restart_nparts != nparts:
+            error_message = \
+                "Incorrect number or ranks in target: {}".format(restart_nparts)
+            raise RuntimeError(error_message)
+
     else:  # generate the grid from scratch
         if rank == 0:
             print(f"Reading mesh from {mesh_filename}")
@@ -1323,6 +1331,11 @@ def main(actx_class,
                 "fluid": ["fluid"]}
             if use_wall:
                 volume_to_tags["wall"] = ["wall_insert", "wall_surround"]
+            else:
+                from mirgecom.simutil import extract_volumes
+                mesh, tag_to_elements = extract_volumes(
+                    mesh, tag_to_elements, volume_to_tags["fluid"],
+                    "wall_interface")
             return mesh, tag_to_elements, volume_to_tags
 
         def my_partitioner(mesh, tag_to_elements, num_ranks):
@@ -1348,14 +1361,32 @@ def main(actx_class,
         global_nelements = target_data["global_nelements"]
         target_order = int(target_data["order"])
 
-        assert target_data["nparts"] == nparts
-        assert target_data["nspecies"] == nspecies
-        assert target_data["global_nelements"] == global_nelements
+        target_nparts = target_data["num_parts"]
+        if target_nparts != nparts:
+            error_message = \
+                "Incorrect number or ranks in target: {}".format(target_nparts)
+            raise RuntimeError(error_message)
+
+        target_nspecies = target_data["nspecies"]
+        if target_nspecies != nspecies:
+            error_message = \
+                "Incorrect number of species in target: {}".format(target_nspecies)
+            raise RuntimeError(error_message)
+
+        target_nelements = target_data["global_nelements"]
+        if target_nelements != global_nelements:
+            error_message = \
+                "Incorrect number of elements in target: {}".format(target_nelements)
+            raise RuntimeError(error_message)
     else:
         logger.warning("No target file specied, using restart as target")
 
+    disc_msg = f"Making {dim}D order {order} discretization"
+    if use_overintegration:
+        disc_msg = disc_msg + f" with quadrature order {quadrature_order}"
+    disc_msg = disc_msg + "."
     if rank == 0:
-        logger.info("Making discretization")
+        logger.info(disc_msg)
 
     dcoll = create_discretization_collection(
         actx,
@@ -1382,6 +1413,9 @@ def main(actx_class,
     inj_bnd = dd_vol_fluid.trace("injection")
     flow_bnd = dd_vol_fluid.trace("flow")
     wall_bnd = dd_vol_fluid.trace("isothermal_wall")
+
+    if not use_wall:
+        interface_bnd = dd_vol_fluid.trace("wall_interface")
 
     if use_wall:
         dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
@@ -1415,7 +1449,7 @@ def main(actx_class,
         char_length_wall = force_evaluation(actx,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
-        char_length_wall = char_length_wall + actx.zeros_like(xpos_wall)
+        char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
         """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
@@ -1434,6 +1468,9 @@ def main(actx_class,
                  dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
                  for dd_bdry in filter_part_boundaries(
                      dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
+        else:
+            fluid_smoothness_boundaries.update({
+                interface_bnd.domain_tag: smooth_neumann})
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
@@ -1816,8 +1853,8 @@ def main(actx_class,
 
             cv = cv + 0.*fluid_rhs
 
-            wall_mass_rhs = actx.zeros_like(wv.mass)
-            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            wall_mass_rhs = actx.np.zeros_like(wv.mass)
+            wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
             wall_rhs = wall_time_scale * WallVars(
                 mass=wall_mass_rhs,
                 energy=wall_energy_rhs,
@@ -1908,6 +1945,61 @@ def main(actx_class,
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
 
+        if restart_nspecies != nspecies:
+            if rank == 0:
+                print(f"Transitioning restart from {restart_nspecies} to {nspecies}")
+                print("Preserving pressure and temperature")
+
+            restart_eos = IdealSingleGas(gamma=gamma, gas_const=r)
+
+            mass = restart_cv.mass
+            velocity = restart_cv.momentum/mass
+            species_mass_frac_multi = 0.*mass*y
+
+            pressure = restart_eos.pressure(restart_cv)
+            temperature = restart_eos.temperature(restart_cv, temperature_seed)
+
+            if nspecies > 2:
+                if restart_nspecies == 0:
+                    species_mass_frac_multi[i_ox] = mf_o2
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)
+
+                if restart_nspecies > 0:
+                    species = restart_cv.species_mass_fractions
+
+                    # air is species 0 in scalar sim
+                    species_mass_frac_multi[i_ox] = mf_o2*species[0]
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)*species[0]
+
+                    # fuel is species 1 in scalar sim
+                    species_mass_frac_multi[i_c2h4] = mf_c2h4*species[1]
+                    species_mass_frac_multi[i_h2] = mf_h2*species[1]
+
+                internal_energy = eos.get_internal_energy(temperature=temperature,
+                    species_mass_fractions=species_mass_frac_multi)
+
+                modified_mass = eos.get_density(pressure, temperature,
+                                                species_mass_frac_multi)
+
+                total_energy = modified_mass*(
+                    internal_energy + np.dot(velocity, velocity)/(2.0))
+
+                modified_cv = make_conserved(
+                    dim,
+                    mass=modified_mass,
+                    momentum=modified_mass*velocity,
+                    energy=total_energy,
+                    species_mass=modified_mass*species_mass_frac_multi)
+            else:
+                modified_cv = make_conserved(
+                    dim,
+                    mass=restart_cv.mass,
+                    momentum=restart_cv.momentum,
+                    energy=restart_cv.energy,
+                    species_mass=restart_cv.mass*y)
+
+            restart_cv = modified_cv
+
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -1996,7 +2088,7 @@ def main(actx_class,
             restart_wv = WallVars(
                 mass=wall_mass,
                 energy=wall_mass * wall_cp * temp_wall,
-                ox_mass=actx.zeros_like(wall_mass))
+                ox_mass=actx.np.zeros_like(wall_mass))
 
     if use_wall:
         restart_wv = force_evaluation(actx, restart_wv)
@@ -2030,23 +2122,81 @@ def main(actx_class,
             target_av_smu = target_data["av_smu"]
             target_av_sbeta = target_data["av_sbeta"]
             target_av_skappa = target_data["av_skappa"]
+
+        if target_nspecies != nspecies:
+            if rank == 0:
+                print(f"Transitioning target from {target_nspecies} to {nspecies}")
+                print("Preserving pressure and temperature")
+
+            target_eos = IdealSingleGas(gamma=gamma, gas_const=r)
+
+            mass = target_cv.mass
+            velocity = target_cv.momentum/mass
+            species_mass_frac_multi = 0.*mass*y
+
+            pressure = target_eos.pressure(target_cv)
+            temperature = target_eos.temperature(target_cv, temperature_seed)
+
+            if nspecies > 2:
+                if target_nspecies == 0:
+                    species_mass_frac_multi[i_ox] = mf_o2
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)
+
+                if target_nspecies > 0:
+                    species = target_cv.species_mass_fractions
+
+                    # air is species 0 in scalar sim
+                    species_mass_frac_multi[i_ox] = mf_o2*species[0]
+                    species_mass_frac_multi[i_di] = (1. - mf_o2)*species[0]
+
+                    # fuel is species 1 in scalar sim
+                    species_mass_frac_multi[i_c2h4] = mf_c2h4*species[1]
+                    species_mass_frac_multi[i_h2] = mf_h2*species[1]
+
+                internal_energy = eos.get_internal_energy(temperature=temperature,
+                    species_mass_fractions=species_mass_frac_multi)
+
+                modified_mass = eos.get_density(pressure, temperature,
+                                                species_mass_frac_multi)
+
+                total_energy = modified_mass*(
+                    internal_energy + np.dot(velocity, velocity)/(2.0))
+
+                modified_cv = make_conserved(
+                    dim,
+                    mass=modified_mass,
+                    momentum=modified_mass*velocity,
+                    energy=total_energy,
+                    species_mass=modified_mass*species_mass_frac_multi)
+            else:
+                modified_cv = make_conserved(
+                    dim,
+                    mass=target_cv.mass,
+                    momentum=target_cv.momentum,
+                    energy=target_cv.energy,
+                    species_mass=target_cv.mass*y)
+
+            target_cv = modified_cv
+
+        target_cv = force_evaluation(actx, target_cv)
+        target_av_smu = force_evaluation(actx, target_av_smu)
+        target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+        target_av_skappa = force_evaluation(actx, target_av_skappa)
+
+        target_fluid_state = create_fluid_state(cv=target_cv,
+                                                temperature_seed=temperature_seed,
+                                                smoothness_mu=target_av_smu,
+                                                smoothness_beta=target_av_sbeta,
+                                                smoothness_kappa=target_av_skappa)
+
     else:
         # Set the current state from time 0
-        target_cv = restart_cv
-        target_av_smu = restart_av_smu
-        target_av_sbeta = restart_av_sbeta
-        target_av_skappa = restart_av_skappa
+        #target_cv = restart_cv
+        #target_av_smu = restart_av_smu
+        #target_av_sbeta = restart_av_sbeta
+        #target_av_skappa = restart_av_skappa
 
-    target_cv = force_evaluation(actx, target_cv)
-    target_av_smu = force_evaluation(actx, target_av_smu)
-    target_av_sbeta = force_evaluation(actx, target_av_sbeta)
-    target_av_skappa = force_evaluation(actx, target_av_skappa)
-
-    target_fluid_state = create_fluid_state(cv=target_cv,
-                                            temperature_seed=temperature_seed,
-                                            smoothness_mu=target_av_smu,
-                                            smoothness_beta=target_av_sbeta,
-                                            smoothness_kappa=target_av_skappa)
+        target_fluid_state = restart_fluid_state
 
     if rank == 0:
         logger.info("More gradient processing")
@@ -2082,6 +2232,9 @@ def main(actx_class,
                 wall_bnd.domain_tag:  # pylint: disable=no-member
                 IsothermalWallBoundary()
             }
+            if not use_wall:
+                target_boundaries.update({
+                    interface_bnd.domain_tag: IsothermalWallBoundary()})
         else:
             target_boundaries = {
                 inflow_bnd.domain_tag:   # pylint: disable=no-member
@@ -2093,6 +2246,9 @@ def main(actx_class,
                 wall_bnd.domain_tag:     # pylint: disable=no-member
                 IsothermalWallBoundary()
             }
+            if not use_wall:
+                target_boundaries.update({
+                    interface_bnd.domain_tag: IsothermalWallBoundary()})
 
             target_grad_cv = grad_cv_operator_target_compiled(
                 target_fluid_state, time=0.)
@@ -2277,6 +2433,10 @@ def main(actx_class,
             wall_bnd.domain_tag: fluid_wall       # pylint: disable=no-member
         }
 
+    if not use_wall:
+        uncoupled_fluid_boundaries.update({
+            interface_bnd.domain_tag: fluid_wall})
+
     if use_wall:
         uncoupled_wall_boundaries = {
             wall_ffld_bnd.domain_tag: wall_farfield  # pylint: disable=no-member
@@ -2404,7 +2564,7 @@ def main(actx_class,
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
 
-    sponge_sigma = actx.zeros_like(restart_cv.mass)
+    sponge_sigma = actx.np.zeros_like(restart_cv.mass)
     sponge_sigma = get_sponge_sigma(sponge_sigma, fluid_nodes)
 
     def _sponge_source(cv):
@@ -2460,12 +2620,18 @@ def main(actx_class,
 
             logmgr.add_watches([
                 ("memory_usage_hwm.max",
-                 "| \t memory hwm: {value:7g} Mb\n"),
-                ("memory_usage_mempool_managed.max",
-                 "| \t mempool total: {value:7g} Mb\n"),
-                ("memory_usage_mempool_active.max",
-                 "| \t mempool active: {value:7g} Mb")
-            ])
+                 "| \t memory hwm: {value:7g} Mb\n")])
+
+            from mirgecom.array_context import actx_class_is_numpy
+
+            if not actx_class_is_numpy(actx_class):
+                # numpy has no CL mempool
+                logmgr.add_watches([
+                    ("memory_usage_mempool_managed.max",
+                    "| \t mempool total: {value:7g} Mb\n"),
+                    ("memory_usage_mempool_active.max",
+                    "| \t mempool active: {value:7g} Mb")
+                ])
 
         if use_profiling:
             logmgr.add_watches(["pyopencl_array_time.max"])
@@ -2473,9 +2639,11 @@ def main(actx_class,
     if rank == 0:
         logger.info("Viz & utilities processsing")
 
-    fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
+    fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid,
+                                       vis_order=viz_order)
     if use_wall:
-        wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
+        wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall,
+                                          vis_order=viz_order)
 
     #    initname = initializer.__class__.__name__
     eosname = eos.__class__.__name__
@@ -2634,8 +2802,8 @@ def main(actx_class,
 
         cv = cv + 0.*fluid_rhs
 
-        wall_mass_rhs = actx.zeros_like(wv.mass)
-        wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+        wall_mass_rhs = actx.np.zeros_like(wv.mass)
+        wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
         wall_rhs = wall_time_scale * WallVars(
             mass=wall_mass_rhs,
             energy=wall_energy_rhs,
@@ -3530,6 +3698,9 @@ def main(actx_class,
                      for dd_bdry in filter_part_boundaries(
                          dcoll, volume_dd=dd_vol_fluid,
                          neighbor_volume_dd=dd_vol_wall)})
+            else:
+                fluid_av_boundaries.update({
+                    interface_bnd.domain_tag: smooth_neumann})
 
             # av mu
             av_smu_rhs = (
@@ -3564,17 +3735,17 @@ def main(actx_class,
 
         if use_wall:
             # wall mass loss
-            wall_mass_rhs = actx.zeros_like(wv.mass)
+            wall_mass_rhs = actx.np.zeros_like(wv.mass)
             if use_wall_mass:
                 wall_mass_rhs = -wall_model.mass_loss_rate(
                     mass=wv.mass, ox_mass=wv.ox_mass,
                     temperature=wdv.temperature)
 
             # wall oxygen diffusion
-            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
+            wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
             if use_wall_ox:
                 if nspecies == 0:
-                    fluid_ox_mass = actx.zeros_like(cv.mass)
+                    fluid_ox_mass = actx.np.zeros_like(cv.mass)
                 elif nspecies > 3:
                     fluid_ox_mass = cv.species_mass[i_ox]
                 else:
@@ -3685,8 +3856,9 @@ def main(actx_class,
                           force_eval=force_eval,
                           state=stepper_state.get_obj_array(),
                           compile_rhs=False)
-
-    current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
+        current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
+    else:
+        current_stepper_state = stepper_state
 
     current_cv = current_stepper_state.cv
     tseed = current_stepper_state.tseed
@@ -3735,23 +3907,25 @@ def main(actx_class,
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
 
-    # pack things up
-    if use_wall:
-        viz_state = make_obj_array([current_fluid_state, current_wv])
-        viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
-    else:
-        viz_state = current_fluid_state
-        viz_dv = current_fluid_state.dv
+    if nviz > 0:
+        # pack things up
+        if use_wall:
+            viz_state = make_obj_array([current_fluid_state, current_wv])
+            viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
+        else:
+            viz_state = current_fluid_state
+            viz_dv = current_fluid_state.dv
 
-    my_write_viz(
-        step=current_step, t=current_t, t_wall=current_t_wall,
-        viz_state=viz_state, viz_dv=viz_dv,
-        ts_field_fluid=ts_field_fluid,
-        ts_field_wall=ts_field_wall,
-        dump_number=dump_number)
+        my_write_viz(
+            step=current_step, t=current_t, t_wall=current_t_wall,
+            viz_state=viz_state, viz_dv=viz_dv,
+            ts_field_fluid=ts_field_fluid,
+            ts_field_wall=ts_field_wall,
+            dump_number=dump_number)
 
-    my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
-                     state=current_stepper_state)
+    if nrestart > 0:
+        my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
+                         state=current_stepper_state)
 
     if logmgr:
         logmgr.close()
