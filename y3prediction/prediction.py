@@ -811,7 +811,7 @@ def main(actx_class,
             inv_flux_type = "Renac for mixtures.\n"
         else:
             inv_flux_type = "Chandrashekar for single gas or passive species.\n"
-        flux_msg = inv_flux_msg + inv_flux_type
+        flux_msg = flux_msg + inv_flux_type
     else:
         if inv_num_flux == "rusanov":
             inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
