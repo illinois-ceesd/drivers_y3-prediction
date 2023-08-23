@@ -3057,7 +3057,6 @@ def main(actx_class,
             vizname=vizname+"-fluid", step=dump_number, t=t,
             overwrite=True, comm=comm, vis_timer=vis_timer)
 
-
         if rank == 0:
             print("******** Done Writing Fluid Visualization File ********")
 
@@ -3069,7 +3068,6 @@ def main(actx_class,
 
             if rank == 0:
                 print("******** Done Writing Wall Visualization File ********")
-
 
     def my_write_restart(step, t, t_wall, state):
         if rank == 0:
