@@ -799,11 +799,13 @@ def main(actx_class,
             from mirgecom.inviscid import entropy_stable_inviscid_facial_flux_rusanov
         except ImportError:
             from mirgecom.simutil import SimulationConfigurationError
-            raise SimulationConfigurationError("ESDG option specified, but MIRGE-Com "
-                                               "is installed without ESDG support. "
-                                               "Try switching your MIRGE-Com branch to "
-                                               "mirgecom@production.")
-        inviscid_numerical_flux_func = entropy_stable_inviscid_flux_rusanov
+            raise SimulationConfigurationError(
+                "ESDG option specified, but MIRGE-Com "
+                "is installed without ESDG support. "
+                "Try switching your MIRGE-Com branch to "
+                "mirgecom@production."
+            )
+        inviscid_numerical_flux_func = entropy_stable_inviscid_facial_flux_rusanov
         flux_msg = flux_msg + "ESDG/Rusanov with EC/"
         if nspecies == 7:  # FIXME: Add support for 7 passive species?
             inv_flux_type = "Renac for mixtures.\n"
