@@ -12,7 +12,7 @@ nstatus: 1
 #constant_cfl: 1
 constant_cfl: 0
 current_cfl: 0.05
-current_dt: 2.0e-10
+current_dt: 1.0e-10
 t_final: 4.e-9
 nspecies:  7
 order:  2
@@ -20,5 +20,5 @@ alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
 integrator: euler
-health_pres_min: 2828
-health_pres_max: 274259
+#health_pres_min: 2828
+#health_pres_max: 274259
