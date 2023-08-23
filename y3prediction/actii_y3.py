@@ -543,7 +543,7 @@ class InitACTII:
             zpos = x_vec[2]
         actx = xpos.array_context
 
-        zeros = actx.zeros_like(xpos)
+        zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
 
         # get the current mesh conditions
@@ -734,7 +734,7 @@ class InitACTII:
             zpos = x_vec[2]
         actx = xpos.array_context
 
-        zeros = actx.zeros_like(xpos)
+        zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
 
         # get the current mesh conditions
