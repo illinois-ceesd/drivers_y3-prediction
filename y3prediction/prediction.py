@@ -133,7 +133,7 @@ from meshmode.dof_array import DOFArray  # noqa
 @dataclass_array_container
 @dataclass(frozen=True)
 class StepperState:
-    r"""Store quantities to advance in time."
+    r"""Store quantities to advance in time.
 
     Store the quanitites that should be evolved in time by an advancer
     """
@@ -161,7 +161,7 @@ class StepperState:
 @dataclass_array_container
 @dataclass(frozen=True)
 class WallStepperState(StepperState):
-    r"""Store quantities to advance in time."
+    r"""Store quantities to advance in time.
 
     Store the quanitites that should be evolved in time by an advancer
     Adding WallVars
@@ -1526,6 +1526,7 @@ def main(actx_class,
     """
 
     smoothed_char_length_fluid = char_length_fluid
+
     if use_smoothed_char_length:
         for i in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
@@ -1635,6 +1636,7 @@ def main(actx_class,
         logger.info(f" - filter alpha  = {soln_filter_alpha}")
         logger.info(f" - filter cutoff = {soln_filter_cutoff}")
         logger.info(f" - filter order  = {soln_filter_order}")
+
     if use_rhs_filter and rank == 0:
         logger.info("RHS filtering settings:")
         logger.info(f" - filter alpha  = {rhs_filter_alpha}")
@@ -1649,8 +1651,8 @@ def main(actx_class,
     # Helper functions for building states #
     ########################################
 
-    def _create_fluid_state(cv, temperature_seed, smoothness_mu=None,
-                            smoothness_beta=None, smoothness_kappa=None):
+    def _create_fluid_state(cv, temperature_seed, smoothness_mu,
+                            smoothness_beta, smoothness_kappa):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
                                 smoothness_mu=smoothness_mu,
@@ -1706,6 +1708,9 @@ def main(actx_class,
             pyro_mech.get_temperature_update_energy(e, temperature, y))
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
+
+    if rank == 0:
+        logger.info("Smoothness functions processing")
 
     # smoothness used with av = 1
     def compute_smoothness(cv, dv, grad_cv):
@@ -1791,7 +1796,6 @@ def main(actx_class,
         return make_obj_array([smoothness_mu, smoothness_beta, smoothness_kappa])
 
     def update_smoothness(state, time):
-
         cv = state.cv
         tseed = state.tseed
         av_smu = state.av_smu
@@ -1912,6 +1916,9 @@ def main(actx_class,
         return eos.get_production_rates(cv, temperature)
 
     compute_production_rates = actx.compile(get_production_rates)
+
+    if rank == 0:
+        logger.info("Initial flow conditions processing")
 
     ##################################
     # Set up flow initial conditions #
@@ -2198,6 +2205,9 @@ def main(actx_class,
         #target_av_skappa = restart_av_skappa
 
         target_fluid_state = restart_fluid_state
+
+    if rank == 0:
+        logger.info("More gradient processing")
 
     def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
@@ -2511,6 +2521,8 @@ def main(actx_class,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
+    if rank == 0:
+        logger.info("Sponges processsing")
     ##################
     # Sponge Sources #
     ##################
@@ -2631,6 +2643,9 @@ def main(actx_class,
 
         if use_profiling:
             logmgr.add_watches(["pyopencl_array_time.max"])
+
+    if rank == 0:
+        logger.info("Viz & utilities processsing")
 
     fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid,
                                        vis_order=viz_order)
@@ -2957,13 +2972,16 @@ def main(actx_class,
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
             alpha_heat = fluid_state.thermal_conductivity/cp/fluid_state.viscosity
             cell_Pe_heat = char_length_fluid*cv.speed/alpha_heat
+
             from mirgecom.viscous import get_local_max_species_diffusivity
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
                     fluid_state.species_diffusivity
                 )
+
             cell_Pe_mass = char_length_fluid*cv.speed/d_alpha_max
+
             # these are useful if our transport properties
             # are not constant on the mesh
             # prandtl
@@ -3067,6 +3085,7 @@ def main(actx_class,
                   f"sim time {t:1.6e} s ********")
 
         restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
+
         if restart_fname != restart_filename:
             restart_data = {
                 "volume_to_local_mesh_data": volume_to_local_mesh_data,
@@ -3566,6 +3585,7 @@ def main(actx_class,
                                        smoothness_kappa=av_skappa,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
+
         cv = fluid_state.cv  # reset cv to the limited version
 
         # update wall model
@@ -3667,6 +3687,7 @@ def main(actx_class,
         av_sbeta_rhs = actx.np.zeros_like(cv.mass)
         av_skappa_rhs = actx.np.zeros_like(cv.mass)
         # work good for shock 1d
+
         tau = current_dt/smoothness_tau
         epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
 
@@ -3811,6 +3832,7 @@ def main(actx_class,
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
         rhs_state = unfiltered_rhs_compiled(t, state)
+
         # Use a spectral filter on the RHS
         if use_rhs_filter:
             rhs_state_filtered = make_stepper_state_obj(rhs_state)
