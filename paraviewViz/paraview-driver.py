@@ -1,7 +1,7 @@
 # Import Paraview functions
 import sys
 #from contour import *
-from slice import SimpleSlice, SliceData
+from slice import SimpleSlice, SimpleSlice3D, SliceData
 
 
 def main(user_input_file, viz_path, dump_index):
@@ -22,11 +22,16 @@ def main(user_input_file, viz_path, dump_index):
 
     try:
         import viz_config as input_data
+        # these are really surface plots for 2D
         for plt in input_data.slice_data:
             print(plt)
             SimpleSlice(viz_path, dump_index, plt)
-            #print(input_data.slice_data)
-            #SimpleSlice(viz_path, dump_index, input_data.slice_data)
+
+        # process 3D slices
+        for plt in input_data.slice_data_3d:
+            print(plt)
+            SimpleSlice3D(viz_path, dump_index, plt)
+
     except ModuleNotFoundError:
         print("WARNING! Missing visualization configuration file, viz_config.py")
         print("WARNING! Using default configuration")
