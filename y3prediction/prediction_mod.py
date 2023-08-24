@@ -313,12 +313,21 @@ class _FluidOperatorCommTag:
     pass
 
 
+class _SampleOperatorCommTag:
+    pass
+
+
+class _HolderOperatorCommTag:
+    pass
+
+
 class _UpdateCoupledBoundariesCommTag:
     pass
 
 
 class _FluidOpStatesCommTag:
     pass
+
 
 class _WallOpStatesCommTag:
     pass
@@ -2031,19 +2040,22 @@ def main(actx_class,
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
-        sample_state = make_fluid_state(cv=state.sample_cv,
-                                        gas_model=gas_model_sample,
-                                        temperature_seed=state.sample_tseed,
-                                        material_densities=state.sample_mass,
-                                        limiter_func=limiter_sample_state,
-                                        limiter_dd=dd_vol_sample)
-
-        holder_state = SolidWallState(cv=state.holder_cv,
-            dv=holder_wall_model.dependent_vars(state.holder_cv))
-
-        states = make_obj_array([fluid_state, sample_state, holder_state])
-
         if use_wall:
+
+            sample_state = make_fluid_state(cv=state.sample_cv,
+                                            gas_model=gas_model_sample,
+                                            temperature_seed=state.sample_tseed,
+                                            material_densities=state.sample_mass,
+                                            limiter_func=limiter_sample_state,
+                                            limiter_dd=dd_vol_sample)
+
+            holder_state = SolidWallState(cv=state.holder_cv,
+                dv=holder_wall_model.dependent_vars(state.holder_cv))
+
+            sample_cv = sample_state.cv
+            holder_cv = holder_state.cv
+
+            states = make_obj_array([fluid_state, sample_state, holder_state])
 
             dd = make_obj_array([dd_vol_fluid, dd_vol_sample, dd_vol_holder])
             boundaries = make_obj_array([uncoupled_fluid_boundaries,
@@ -2052,8 +2064,8 @@ def main(actx_class,
 
             (updated_fluid_boundaries, updated_sample_boundaries, updated_holder_boundaries,
              fluid_operator_states_quad, grad_fluid_cv, grad_fluid_t,
-             sample_operator_states_quad, sample_grad_cv, sample_grad_temperature,
-             holder_grad_temperature) = update_coupled_boundaries(
+             sample_operator_states_quad, grad_sample_cv, grad_sample_t,
+             grad_holder_t) = update_coupled_boundaries(
                 dcoll,
                 gas_model_fluid, gas_model_sample,
                 dd, boundaries, states,
@@ -2066,43 +2078,56 @@ def main(actx_class,
                 limiter_func_wall=limit_sample_state,
                 comm_tag=_InitCommTag)
 
-#            # try making sure the stuff that comes back is used
-#            # even if it's a zero contribution
-#            fluid_rhs = ns_operator(
-#                dcoll=dcoll,
-#                gas_model=gas_model_fluid,
-#                dd=dd_vol_fluid,
-#                operator_states_quad=fluid_operator_states_quad,
-#                grad_cv=grad_fluid_cv,
-#                grad_t=grad_fluid_t,
-#                boundaries=updated_fluid_boundaries,
-#                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-#                viscous_numerical_flux_func=viscous_numerical_flux_func,
-#                state=fluid_state,
-#                time=time,
-#                quadrature_tag=quadrature_tag,
-#                comm_tag=(_InitCommTag, _FluidOperatorCommTag))
+            # try making sure the stuff that comes back is used
+            # even if it's a zero contribution
+            fluid_rhs = ns_operator(
+                dcoll=dcoll,
+                gas_model=gas_model_fluid,
+                dd=dd_vol_fluid,
+                operator_states_quad=fluid_operator_states_quad,
+                grad_cv=grad_fluid_cv,
+                grad_t=grad_fluid_t,
+                boundaries=updated_fluid_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                viscous_numerical_flux_func=viscous_numerical_flux_func,
+                state=fluid_state,
+                time=time,
+                quadrature_tag=quadrature_tag,
+                comm_tag=(_InitCommTag, _FluidOperatorCommTag))
 
-#            wall_energy_rhs = diffusion_operator(
-#                dcoll=dcoll,
-#                kappa=wdv.thermal_conductivity,
-#                boundaries=updated_wall_boundaries,
-#                u=wdv.temperature,
-#                quadrature_tag=quadrature_tag,
-#                dd=dd_vol_wall,
-#                grad_u=grad_wall_t,
-#                comm_tag=(_InitCommTag, _WallOperatorCommTag))
+            sample_rhs = ns_operator(
+                dcoll=dcoll,
+                gas_model=gas_model_sample,
+                dd=dd_vol_sample,
+                operator_states_quad=sample_operator_states_quad,
+                grad_cv=grad_sample_cv,
+                grad_t=grad_sample_t,
+                boundaries=updated_sample_boundaries,
+                inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+                viscous_numerical_flux_func=viscous_numerical_flux_func,
+                state=sample_state,
+                time=time,
+                quadrature_tag=quadrature_tag,
+                comm_tag=(_InitCommTag, _SampleOperatorCommTag))
 
-#            cv = cv + 0.*fluid_rhs
+            holder_energy_rhs = diffusion_operator(
+                dcoll=dcoll,
+                kappa=holder_state.dv.thermal_conductivity,
+                boundaries=updated_holder_boundaries,
+                u=holder_state.dv.temperature,
+                quadrature_tag=quadrature_tag,
+                dd=dd_vol_holder,
+                grad_u=grad_holder_t,
+                comm_tag=(_InitCommTag, _HolderOperatorCommTag))
 
-#            wall_mass_rhs = actx.zeros_like(wv.mass)
-#            wall_ox_mass_rhs = actx.zeros_like(wv.mass)
-#            wall_rhs = wall_time_scale * WallVars(
-#                mass=wall_mass_rhs,
-#                energy=wall_energy_rhs,
-#                ox_mass=wall_ox_mass_rhs)
+            holder_mass_rhs = actx.zeros_like(holder_state.cv.mass)
+            holder_rhs = wall_time_scale * SolidWallConservedVars(
+                mass=holder_mass_rhs,
+                energy=holder_energy_rhs)
 
-#            wv = wv + 0.*wall_rhs
+            cv = cv + 0.*fluid_rhs
+            sample_cv = sample_cv + 0.*sample_rhs
+            holder_cv = holder_cv + 0.*holder_rhs
 
         else:
             grad_fluid_cv = grad_cv_operator(
@@ -2781,6 +2806,10 @@ def main(actx_class,
         sample_state = states[1]
         holder_state = states[2]
 
+        fluid_cv = fluid_state.cv
+        sample_cv = sample_state.cv
+        holder_cv = holder_state.cv
+
         (updated_fluid_boundaries, updated_sample_boundaries, updated_holder_boundaries,
          fluid_operator_states_quad, grad_fluid_cv, grad_fluid_t,
          sample_operator_states_quad, grad_sample_cv, grad_sample_t,
@@ -2797,47 +2826,56 @@ def main(actx_class,
             limiter_func_wall=limit_sample_state,
             comm_tag=_InitCommTag)
 
-#        # try making sure the stuff that comes back is used
-#        # even if it's a zero contribution
-#        fluid_rhs = ns_operator(
-#            dcoll=dcoll,
-#            gas_model=gas_model,
-#            dd=dd_vol_fluid,
-#            operator_states_quad=fluid_operator_states_quad,
-#            grad_cv=grad_fluid_cv,
-#            grad_t=grad_fluid_t,
-#            boundaries=updated_fluid_boundaries,
-#            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-#            viscous_numerical_flux_func=viscous_numerical_flux_func,
-#            state=fluid_state,
-#            time=time,
-#            quadrature_tag=quadrature_tag,
-#            comm_tag=(_InitCommTag, _FluidOperatorCommTag))
+        # try making sure the stuff that comes back is used
+        # even if it's a zero contribution
+        fluid_rhs = ns_operator(
+            dcoll=dcoll,
+            gas_model=gas_model_fluid,
+            dd=dd_vol_fluid,
+            operator_states_quad=fluid_operator_states_quad,
+            grad_cv=grad_fluid_cv,
+            grad_t=grad_fluid_t,
+            boundaries=updated_fluid_boundaries,
+            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+            viscous_numerical_flux_func=viscous_numerical_flux_func,
+            state=fluid_state,
+            time=time,
+            quadrature_tag=quadrature_tag,
+            comm_tag=(_InitCommTag, _FluidOperatorCommTag))
 
-#        holder_energy_rhs = diffusion_operator(
-#            dcoll=dcoll,
-#            kappa=holder_state.dv.thermal_conductivity,
-#            boundaries=updated_wall_boundaries,
-#            u=holder_state.dv.temperature,
-#            quadrature_tag=quadrature_tag,
-#            dd=dd_vol_holder,
-#            grad_u=grad_holder_t,
-#            comm_tag=(_InitCommTag, _HolderOperatorCommTag))
+        sample_rhs = ns_operator(
+            dcoll=dcoll,
+            gas_model=gas_model_sample,
+            dd=dd_vol_sample,
+            operator_states_quad=sample_operator_states_quad,
+            grad_cv=grad_sample_cv,
+            grad_t=grad_sample_t,
+            boundaries=updated_sample_boundaries,
+            inviscid_numerical_flux_func=inviscid_numerical_flux_func,
+            viscous_numerical_flux_func=viscous_numerical_flux_func,
+            state=sample_state,
+            time=time,
+            quadrature_tag=quadrature_tag,
+            comm_tag=(_InitCommTag, _SampleOperatorCommTag))
 
-#        cv = cv + 0.*fluid_rhs
+        holder_energy_rhs = diffusion_operator(
+            dcoll=dcoll,
+            kappa=holder_state.dv.thermal_conductivity,
+            boundaries=updated_holder_boundaries,
+            u=holder_state.dv.temperature,
+            quadrature_tag=quadrature_tag,
+            dd=dd_vol_holder,
+            grad_u=grad_holder_t,
+            comm_tag=(_InitCommTag, _HolderOperatorCommTag))
 
-#        wall_mass_rhs = actx.zeros_like(wv.mass)
-#        wall_ox_mass_rhs = actx.zeros_like(wv.mass)
-#        wall_rhs = wall_time_scale * WallVars(
-#            mass=wall_mass_rhs,
-#            energy=wall_energy_rhs,
-#            ox_mass=wall_ox_mass_rhs)
+        holder_mass_rhs = actx.zeros_like(holder_state.cv.mass)
+        holder_rhs = wall_time_scale * SolidWallConservedVars(
+            mass=holder_mass_rhs,
+            energy=holder_energy_rhs)
 
-#        wv = wv + 0.*wall_rhs
-
-        fluid_cv = fluid_state.cv
-        sample_cv = sample_state.cv
-        holder_wv = holder_state.cv
+        fluid_cv = fluid_cv + 0.*fluid_rhs
+        sample_cv = sample_cv + 0.*sample_rhs
+        holder_cv = holder_cv + 0.*holder_rhs
 
         # now compute the smoothness part
         if use_av == 1:
@@ -2861,7 +2899,7 @@ def main(actx_class,
         return make_obj_array([av_smu, av_sbeta, av_skappa,
                                grad_v, grad_y, grad_fluid_t,
                                grad_sample_cv, grad_sample_t,
-                               grad_holder_t, fluid_cv, sample_cv, holder_wv])
+                               grad_holder_t, fluid_cv, sample_cv, holder_cv])
 
     compute_viz_fields_coupled_compiled = actx.compile(compute_viz_fields_coupled)
 
@@ -3124,367 +3162,364 @@ def main(actx_class,
                 print("******** Done Writing Wall Visualization File ********")
 
 
-    
-
-    viz_state = make_obj_array([current_fluid_state, current_sample_state, current_holder_state])
-    viz_dv = None
-    ts_field_fluid = None
-    ts_field_wall = None
-    my_write_viz(current_step, t_start, t_wall_start, viz_state, viz_dv,
-                 ts_field_fluid, ts_field_wall, 0)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#    def my_write_restart(step, t, t_wall, state):
-#        if rank == 0:
-#            print(f"******** Writing Restart File at step {step}, "
-#                  f"sim time {t:1.6e} s ********")
-
-#        restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
-#        if restart_fname != restart_filename:
-#            restart_data = {
-#                "volume_to_local_mesh_data": volume_to_local_mesh_data,
-#                "cv": state.cv,
-#                "av_smu": state.av_smu,
-#                "av_sbeta": state.av_sbeta,
-#                "av_skappa": state.av_skappa,
-#                "temperature_seed": state.tseed,
-#                "nspecies": nspecies,
-#                "t": t,
-#                "step": step,
-#                "order": order,
-#                "last_viz_interval": last_viz_interval,
-#                "global_nelements": global_nelements,
-#                "num_parts": nparts
-#            }
-
-#            if use_wall:
-#                restart_data["wv"] = state.wv
-#                restart_data["t_wall"] = t_wall
-
-#            write_restart_file(actx, restart_data, restart_fname, comm)
-
-#        if rank == 0:
-#            print("******** Done Writing Restart File ********")
-
-#    def report_violators(ary, data_min, data_max):
-
-#        data = np.ravel(actx.to_numpy(ary)[0])
-#        nodes_x = np.ravel(actx.to_numpy(fluid_nodes)[0])
-#        nodes_y = np.ravel(actx.to_numpy(fluid_nodes)[1])
-#        if dim == 3:
-#            nodes_z = np.ravel(actx.to_numpy(fluid_nodes)[2])
-
-#        mask = (data < data_min) | (data > data_max)
-
-#        if np.any(mask):
-#            guilty_node_x = nodes_x[mask]
-#            guilty_node_y = nodes_y[mask]
-#            if dim == 3:
-#                guilty_node_z = nodes_z[mask]
-#            guilty_data = data[mask]
-#            for i in range(len(guilty_data)):
-#                if dim == 2:
-#                    logger.info("Violation at nodal location "
-#                                f"({guilty_node_x[i]}, {guilty_node_y[i]}): "
-#                                f"data value {guilty_data[i]}")
-#                else:
-#                    logger.info("Violation at nodal location "
-#                                f"({guilty_node_x[i]}, {guilty_node_y[i]}, "
-#                                f"{guilty_node_z[i]}): "
-#                                f"data value {guilty_data[i]}")
-#                if i > 50:
-#                    logger.info("Violators truncated at 50")
-#                    break
-
-#    def my_health_check(fluid_state, wall_temperature):
-#        health_error = False
-#        cv = fluid_state.cv
-#        dv = fluid_state.dv
-
-#        if check_naninf_local(dcoll, dd_vol_fluid, dv.pressure):
-#            health_error = True
-#            logger.info(f"{rank=}: NANs/Infs in pressure data.")
-#            print(f"{rank=}: NANs/Infs in pressure data.")
-
-#        if use_wall:
-#            if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
-#                health_error = True
-#                logger.info(f"{rank=}: NANs/Infs in wall temperature data.")
-
-#        if global_range_check(dd_vol_fluid, dv.pressure,
-#                              health_pres_min, health_pres_max):
-#            health_error = True
-#            p_min = vol_min(dd_vol_fluid, dv.pressure)
-#            p_max = vol_max(dd_vol_fluid, dv.pressure)
-#            p_min_loc = vol_min_loc(dd_vol_fluid, dv.pressure)
-#            p_max_loc = vol_max_loc(dd_vol_fluid, dv.pressure)
-
-#            if rank == 0:
-#                logger.info("Pressure range violation:\n"
-#                             "\tSpecified Limits "
-#                            f"({health_pres_min=}, {health_pres_max=})\n"
-#                            f"\tGlobal Range     ({p_min:1.9e}, {p_max:1.9e})")
-#            logger.info(f"{rank=}: "
-#                        f"Local Range      ({p_min_loc:1.9e}, {p_max_loc:1.9e})")
-#            report_violators(dv.pressure, health_pres_min, health_pres_max)
-
-#        if global_range_check(dd_vol_fluid, dv.temperature,
-#                              health_temp_min, health_temp_max):
-#            health_error = True
-#            t_min = vol_min(dd_vol_fluid, dv.temperature)
-#            t_max = vol_max(dd_vol_fluid, dv.temperature)
-#            t_min_loc = vol_min_loc(dd_vol_fluid, dv.temperature)
-#            t_max_loc = vol_max_loc(dd_vol_fluid, dv.temperature)
-#            if rank == 0:
-#                logger.info("Temperature range violation:\n"
-#                             "\tSpecified Limits "
-#                            f"({health_temp_min=}, {health_temp_max=})\n"
-#                            f"\tGlobal Range     ({t_min:7g}, {t_max:7g})")
-#            logger.info(f"{rank=}: "
-#                        f"Local Range      ({t_min_loc:7g}, {t_max_loc:7g})")
-#            report_violators(dv.temperature, health_temp_min, health_temp_max)
-
-#        if use_wall:
-#            if global_range_check(dd_vol_wall, wall_temperature,
-#                                  health_temp_min, health_temp_max):
-#                health_error = True
-#                t_min = vol_min(dd_vol_wall, wall_temperature)
-#                t_max = vol_max(dd_vol_wall, wall_temperature)
-#                logger.info(
-#                    f"{rank=}:"
-#                    "Wall temperature range violation: "
-#                    f"Simulation Range ({t_min=}, {t_max=}) "
-#                    f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
-
-#        for i in range(nspecies):
-#            if global_range_check(dd_vol_fluid, cv.species_mass_fractions[i],
-#                                  health_mass_frac_min, health_mass_frac_max):
-#                health_error = True
-#                y_min = vol_min(dd_vol_fluid, cv.species_mass_fractions[i])
-#                y_max = vol_max(dd_vol_fluid, cv.species_mass_fractions[i])
-#                y_min_loc = vol_min_loc(dd_vol_fluid, cv.species_mass_fractions[i])
-#                y_max_loc = vol_max_loc(dd_vol_fluid, cv.species_mass_fractions[i])
-#                if rank == 0:
-#                    logger.info("Species mass fraction range violation:\n"
-#                                 "\tSpecified Limits "
-#                                f"({health_mass_frac_min=}, "
-#                                f"{health_mass_frac_max=})\n"
-#                                f"\tGlobal Range     {species_names[i]}:"
-#                                f"({y_min:1.3e}, {y_max:1.3e})")
-#                logger.info(f"{rank=}: "
-#                            f"Local Range      {species_names[i]}: "
-#                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
-#                report_violators(cv.species_mass_fractions[i],
-#                                 health_mass_frac_min, health_mass_frac_max)
-
-#        if eos_type == 1:
-#            # check the temperature convergence
-#            # a single call to get_temperature_update is like taking an additional
-#            # Newton iteration and gives us a residual
-#            temp_resid = get_temperature_update_compiled(
-#                cv, dv.temperature)/dv.temperature
-#            temp_err = vol_max(dd_vol_fluid, temp_resid)
-#            if temp_err > pyro_temp_tol:
-#                health_error = True
-#                logger.info(f"{rank=}:"
-#                             "Temperature is not converged "
-#                            f"{temp_err=} > {pyro_temp_tol}.")
-
-#        return health_error
-
-#    def my_get_viscous_timestep(dcoll, fluid_state):
-
-#        nu = 0
-#        d_alpha_max = 0
-
-#        if fluid_state.is_viscous:
-#            from mirgecom.viscous import get_local_max_species_diffusivity
-#            nu = fluid_state.viscosity/fluid_state.mass_density
-#            d_alpha_max = \
-#                get_local_max_species_diffusivity(
-#                    fluid_state.array_context,
-#                    fluid_state.species_diffusivity
-#                )
-
-#        return (
-#            char_length_fluid / (fluid_state.wavespeed
-#            + ((nu + d_alpha_max) / char_length_fluid))
-#        )
-
-#    if use_wall:
-#        def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
-
-#            return (
-#                char_length_wall*char_length_wall
-#                / (
-#                    wall_time_scale
-#                    * actx.np.maximum(
-#                        wall_model.thermal_diffusivity(
-#                            wv.mass, wall_temperature, wall_kappa),
-#                        wall_model.oxygen_diffusivity)))
-
-#        def _my_get_timestep_wall(
-#                dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
-#                constant_cfl=False, wall_dd=DD_VOLUME_ALL):
-
-#            actx = wall_kappa.array_context
-#            mydt = dt
-#            if constant_cfl:
-#                from grudge.op import nodal_min
-#                ts_field = cfl*my_get_wall_timestep(
-#                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
-#                    wall_temperature=wall_temperature)
-#                mydt = actx.to_numpy(
-#                    nodal_min(
-#                        dcoll, wall_dd, ts_field, initial=np.inf))[()]
-#            else:
-#                from grudge.op import nodal_max
-#                ts_field = mydt/my_get_wall_timestep(
-#                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
-#                    wall_temperature=wall_temperature)
-#                cfl = actx.to_numpy(
-#                    nodal_max(
-#                        dcoll, wall_dd, ts_field, initial=0.))[()]
-
-#            return ts_field, cfl, mydt
-
-#    #my_get_timestep = actx.compile(_my_get_timestep)
-#    if use_wall:
-#        my_get_timestep_wall = _my_get_timestep_wall
-
-#    def _my_get_timestep(
-#            dcoll, fluid_state, t, dt, cfl, t_final, constant_cfl=False,
-#            fluid_dd=DD_VOLUME_ALL):
-
-#        mydt = dt
-#        if constant_cfl:
-#            from grudge.op import nodal_min
-#            ts_field = cfl*my_get_viscous_timestep(
-#                dcoll=dcoll, fluid_state=fluid_state)
-#            mydt = fluid_state.array_context.to_numpy(nodal_min(
-#                    dcoll, fluid_dd, ts_field, initial=np.inf))[()]
-#        else:
-#            from grudge.op import nodal_max
-#            ts_field = mydt/my_get_viscous_timestep(
-#                dcoll=dcoll, fluid_state=fluid_state)
-#            cfl = fluid_state.array_context.to_numpy(nodal_max(
-#                    dcoll, fluid_dd, ts_field, initial=0.))[()]
-
-#        return ts_field, cfl, mydt
-
-#    #my_get_timestep = actx.compile(_my_get_timestep)
-#    my_get_timestep = _my_get_timestep
-
-#    def _check_time(time, dt, interval, interval_type):
-#        toler = 1.e-6
-#        status = False
-
-#        dumps_so_far = math.floor((time-t_start)/interval)
-
-#        # dump if we just passed a dump interval
-#        if interval_type == 2:
-#            time_till_next = (dumps_so_far + 1)*interval - time
-#            steps_till_next = math.floor(time_till_next/dt)
-
-#            # reduce the timestep going into a dump to avoid a big variation in dt
-#            if steps_till_next < 5:
-#                dt_new = dt
-#                extra_time = time_till_next - steps_till_next*dt
-#                #if actx.np.abs(extra_time/dt) > toler:
-#                if abs(extra_time/dt) > toler:
-#                    dt_new = time_till_next/(steps_till_next + 1)
-
-#                if steps_till_next < 1:
-#                    dt_new = time_till_next
-
-#                dt = dt_new
-
-#            time_from_last = time - t_start - (dumps_so_far)*interval
-#            if abs(time_from_last/dt) < toler:
-#                status = True
-#        else:
-#            time_from_last = time - t_start - (dumps_so_far)*interval
-#            if time_from_last < dt:
-#                status = True
-
-#        return status, dt, dumps_so_far + last_viz_interval
-
-#    #check_time = _check_time
-
-#    def my_pre_step(step, t, dt, state):
-
-#        # I don't think this should be needed, but shouldn't hurt anything
-#        #state = force_evaluation(actx, state)
-
-#        stepper_state = make_stepper_state_obj(state)
-
-#        if check_step(step=step, interval=ngarbage):
-#            with gc_timer:
-#                from warnings import warn
-#                warn("Running gc.collect() to work around memory growth issue "
-#                     "https://github.com/illinois-ceesd/mirgecom/issues/839")
-#                import gc
-#                gc.collect()
-
-#        # Filter *first* because this will be most straightfwd to
-#        # understand and move. For this to work, this routine
-#        # must pass back the filtered CV in the state.
-#        if check_step(step=step, interval=soln_nfilter):
-#            #cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
-#            cv = filter_cv_compiled(stepper_state.cv)
-#            stepper_state = stepper_state.replace(cv=cv)
-
-#        fluid_state = create_fluid_state(cv=stepper_state.cv,
-#                                         temperature_seed=stepper_state.tseed,
-#                                         smoothness_mu=stepper_state.av_smu,
-#                                         smoothness_beta=stepper_state.av_sbeta,
-#                                         smoothness_kappa=stepper_state.av_skappa)
-
-#        if use_wall:
-#            wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
-#        cv = fluid_state.cv  # reset cv to limited version
-
-#        try:
-#            if logmgr:
-#                logmgr.tick_before()
-
-#            # disable non-constant dt timestepping for now
-#            # re-enable when we're ready
-
-#            do_viz = check_step(step=step, interval=nviz)
-#            do_restart = check_step(step=step, interval=nrestart)
-#            do_health = check_step(step=step, interval=nhealth)
-#            do_status = check_step(step=step, interval=nstatus)
-#            next_dump_number = step
-
-#            # This re-creation of the state resets *tseed* to current temp
-#            # and forces the limited cv into state
-
-#            stepper_state = stepper_state.replace(cv=cv,
-#                                                  tseed=fluid_state.temperature)
+    def my_write_restart(step, t, t_wall, state):
+        if rank == 0:
+            print(f"******** Writing Restart File at step {step}, "
+                  f"sim time {t:1.6e} s ********")
+
+        restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
+        if restart_fname != restart_filename:
+            restart_data = {
+                "volume_to_local_mesh_data": volume_to_local_mesh_data,
+                "cv": state.cv,
+                "av_smu": state.av_smu,
+                "av_sbeta": state.av_sbeta,
+                "av_skappa": state.av_skappa,
+                "temperature_seed": state.tseed,
+                "nspecies": nspecies,
+                "t": t,
+                "step": step,
+                "order": order,
+                "last_viz_interval": last_viz_interval,
+                "global_nelements": global_nelements,
+                "num_parts": nparts
+            }
+
+            if use_wall:
+                restart_data["sample_cv"] = state.sample_cv
+                restart_data["sample_mass"] = state.sample_mass
+                restart_data["sample_tseed"] = state.sample_tseed
+                restart_data["holder_cv"] = state.holder_cv
+
+            write_restart_file(actx, restart_data, restart_fname, comm)
+
+        if rank == 0:
+            print("******** Done Writing Restart File ********")
+
+    def report_violators(ary, data_min, data_max):
+
+        data = np.ravel(actx.to_numpy(ary)[0])
+        nodes_x = np.ravel(actx.to_numpy(fluid_nodes)[0])
+        nodes_y = np.ravel(actx.to_numpy(fluid_nodes)[1])
+        if dim == 3:
+            nodes_z = np.ravel(actx.to_numpy(fluid_nodes)[2])
+
+        mask = (data < data_min) | (data > data_max)
+
+        if np.any(mask):
+            guilty_node_x = nodes_x[mask]
+            guilty_node_y = nodes_y[mask]
+            if dim == 3:
+                guilty_node_z = nodes_z[mask]
+            guilty_data = data[mask]
+            for i in range(len(guilty_data)):
+                if dim == 2:
+                    logger.info("Violation at nodal location "
+                                f"({guilty_node_x[i]}, {guilty_node_y[i]}): "
+                                f"data value {guilty_data[i]}")
+                else:
+                    logger.info("Violation at nodal location "
+                                f"({guilty_node_x[i]}, {guilty_node_y[i]}, "
+                                f"{guilty_node_z[i]}): "
+                                f"data value {guilty_data[i]}")
+                if i > 50:
+                    logger.info("Violators truncated at 50")
+                    break
+
+    def my_health_check(fluid_state, sample_state=None, holder_state=None):
+        health_error = False
+        cv = fluid_state.cv
+        dv = fluid_state.dv
+
+        if check_naninf_local(dcoll, dd_vol_fluid, dv.pressure):
+            health_error = True
+            logger.info(f"{rank=}: NANs/Infs in pressure data.")
+            print(f"{rank=}: NANs/Infs in pressure data.")
+
+        if use_wall:
+            if check_naninf_local(dcoll, dd_vol_sample, sample_state.temperature):
+                health_error = True
+                logger.info(f"{rank=}: NANs/Infs in sample temperature data.")
+
+            if check_naninf_local(dcoll, dd_vol_holder, holder_state.dv.temperature):
+                health_error = True
+                logger.info(f"{rank=}: NANs/Infs in holder temperature data.")
+
+        if global_range_check(dd_vol_fluid, dv.pressure,
+                              health_pres_min, health_pres_max):
+            health_error = True
+            p_min = vol_min(dd_vol_fluid, dv.pressure)
+            p_max = vol_max(dd_vol_fluid, dv.pressure)
+            p_min_loc = vol_min_loc(dd_vol_fluid, dv.pressure)
+            p_max_loc = vol_max_loc(dd_vol_fluid, dv.pressure)
+
+            if rank == 0:
+                logger.info("Pressure range violation:\n"
+                             "\tSpecified Limits "
+                            f"({health_pres_min=}, {health_pres_max=})\n"
+                            f"\tGlobal Range     ({p_min:1.9e}, {p_max:1.9e})")
+            logger.info(f"{rank=}: "
+                        f"Local Range      ({p_min_loc:1.9e}, {p_max_loc:1.9e})")
+            report_violators(dv.pressure, health_pres_min, health_pres_max)
+
+        if global_range_check(dd_vol_fluid, dv.temperature,
+                              health_temp_min, health_temp_max):
+            health_error = True
+            t_min = vol_min(dd_vol_fluid, dv.temperature)
+            t_max = vol_max(dd_vol_fluid, dv.temperature)
+            t_min_loc = vol_min_loc(dd_vol_fluid, dv.temperature)
+            t_max_loc = vol_max_loc(dd_vol_fluid, dv.temperature)
+            if rank == 0:
+                logger.info("Temperature range violation:\n"
+                             "\tSpecified Limits "
+                            f"({health_temp_min=}, {health_temp_max=})\n"
+                            f"\tGlobal Range     ({t_min:7g}, {t_max:7g})")
+            logger.info(f"{rank=}: "
+                        f"Local Range      ({t_min_loc:7g}, {t_max_loc:7g})")
+            report_violators(dv.temperature, health_temp_min, health_temp_max)
+
+        if use_wall:
+            if global_range_check(dd_vol_sample, sample_state.temperature,
+                                  health_temp_min, health_temp_max):
+                health_error = True
+                t_min = vol_min(dd_vol_sample, sample_state.temperature)
+                t_max = vol_max(dd_vol_sample, sample_state.temperature)
+                logger.info(
+                    f"{rank=}:"
+                    "Sample temperature range violation: "
+                    f"Simulation Range ({t_min=}, {t_max=}) "
+                    f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
+
+            if global_range_check(dd_vol_holder, holder_state.dv.temperature,
+                                  health_temp_min, health_temp_max):
+                health_error = True
+                t_min = vol_min(dd_vol_holder, holder_state.dv.temperature)
+                t_max = vol_max(dd_vol_holder, holder_state.dv.temperature)
+                logger.info(
+                    f"{rank=}:"
+                    "Holder temperature range violation: "
+                    f"Simulation Range ({t_min=}, {t_max=}) "
+                    f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
+
+        for i in range(nspecies):
+            if global_range_check(dd_vol_fluid, cv.species_mass_fractions[i],
+                                  health_mass_frac_min, health_mass_frac_max):
+                health_error = True
+                y_min = vol_min(dd_vol_fluid, cv.species_mass_fractions[i])
+                y_max = vol_max(dd_vol_fluid, cv.species_mass_fractions[i])
+                y_min_loc = vol_min_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                y_max_loc = vol_max_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                if rank == 0:
+                    logger.info("Species mass fraction range violation:\n"
+                                 "\tSpecified Limits "
+                                f"({health_mass_frac_min=}, "
+                                f"{health_mass_frac_max=})\n"
+                                f"\tGlobal Range     {species_names[i]}:"
+                                f"({y_min:1.3e}, {y_max:1.3e})")
+                logger.info(f"{rank=}: "
+                            f"Local Range      {species_names[i]}: "
+                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                report_violators(cv.species_mass_fractions[i],
+                                 health_mass_frac_min, health_mass_frac_max)
+
+        if eos_type == 1:
+            # check the temperature convergence
+            # a single call to get_temperature_update is like taking an additional
+            # Newton iteration and gives us a residual
+            temp_resid = get_temperature_update_compiled(
+                cv, dv.temperature)/dv.temperature
+            temp_err = vol_max(dd_vol_fluid, temp_resid)
+            if temp_err > pyro_temp_tol:
+                health_error = True
+                logger.info(f"{rank=}:"
+                             "Temperature is not converged "
+                            f"{temp_err=} > {pyro_temp_tol}.")
+
+        return health_error
+
+    def my_get_viscous_timestep(dcoll, fluid_state):
+
+        nu = 0
+        d_alpha_max = 0
+
+        if fluid_state.is_viscous:
+            from mirgecom.viscous import get_local_max_species_diffusivity
+            nu = fluid_state.viscosity/fluid_state.mass_density
+            d_alpha_max = \
+                get_local_max_species_diffusivity(
+                    fluid_state.array_context,
+                    fluid_state.species_diffusivity
+                )
+
+        return (
+            char_length_fluid / (fluid_state.wavespeed
+            + ((nu + d_alpha_max) / char_length_fluid))
+        )
+
+    if use_wall:
+        def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
+
+            return (
+                char_length_wall*char_length_wall
+                / (
+                    wall_time_scale
+                    * actx.np.maximum(
+                        wall_model.thermal_diffusivity(
+                            wv.mass, wall_temperature, wall_kappa),
+                        wall_model.oxygen_diffusivity)))
+
+        def _my_get_timestep_wall(
+                dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
+                constant_cfl=False, wall_dd=DD_VOLUME_ALL):
+
+            actx = wall_kappa.array_context
+            mydt = dt
+            if constant_cfl:
+                from grudge.op import nodal_min
+                ts_field = cfl*my_get_wall_timestep(
+                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wall_temperature=wall_temperature)
+                mydt = actx.to_numpy(
+                    nodal_min(
+                        dcoll, wall_dd, ts_field, initial=np.inf))[()]
+            else:
+                from grudge.op import nodal_max
+                ts_field = mydt/my_get_wall_timestep(
+                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wall_temperature=wall_temperature)
+                cfl = actx.to_numpy(
+                    nodal_max(
+                        dcoll, wall_dd, ts_field, initial=0.))[()]
+
+            return ts_field, cfl, mydt
+
+    #my_get_timestep = actx.compile(_my_get_timestep)
+    if use_wall:
+        my_get_timestep_wall = _my_get_timestep_wall
+
+    def _my_get_timestep(
+            dcoll, fluid_state, t, dt, cfl, t_final, constant_cfl=False,
+            fluid_dd=DD_VOLUME_ALL):
+
+        mydt = dt
+        if constant_cfl:
+            from grudge.op import nodal_min
+            ts_field = cfl*my_get_viscous_timestep(
+                dcoll=dcoll, fluid_state=fluid_state)
+            mydt = fluid_state.array_context.to_numpy(nodal_min(
+                    dcoll, fluid_dd, ts_field, initial=np.inf))[()]
+        else:
+            from grudge.op import nodal_max
+            ts_field = mydt/my_get_viscous_timestep(
+                dcoll=dcoll, fluid_state=fluid_state)
+            cfl = fluid_state.array_context.to_numpy(nodal_max(
+                    dcoll, fluid_dd, ts_field, initial=0.))[()]
+
+        return ts_field, cfl, mydt
+
+    #my_get_timestep = actx.compile(_my_get_timestep)
+    my_get_timestep = _my_get_timestep
+
+    def _check_time(time, dt, interval, interval_type):
+        toler = 1.e-6
+        status = False
+
+        dumps_so_far = math.floor((time-t_start)/interval)
+
+        # dump if we just passed a dump interval
+        if interval_type == 2:
+            time_till_next = (dumps_so_far + 1)*interval - time
+            steps_till_next = math.floor(time_till_next/dt)
+
+            # reduce the timestep going into a dump to avoid a big variation in dt
+            if steps_till_next < 5:
+                dt_new = dt
+                extra_time = time_till_next - steps_till_next*dt
+                #if actx.np.abs(extra_time/dt) > toler:
+                if abs(extra_time/dt) > toler:
+                    dt_new = time_till_next/(steps_till_next + 1)
+
+                if steps_till_next < 1:
+                    dt_new = time_till_next
+
+                dt = dt_new
+
+            time_from_last = time - t_start - (dumps_so_far)*interval
+            if abs(time_from_last/dt) < toler:
+                status = True
+        else:
+            time_from_last = time - t_start - (dumps_so_far)*interval
+            if time_from_last < dt:
+                status = True
+
+        return status, dt, dumps_so_far + last_viz_interval
+
+    #check_time = _check_time
+
+    def my_pre_step(step, t, dt, state):
+
+        # I don't think this should be needed, but shouldn't hurt anything
+        #state = force_evaluation(actx, state)
+
+        stepper_state = make_stepper_state_obj(state)
+
+        if check_step(step=step, interval=ngarbage):
+            with gc_timer:
+                from warnings import warn
+                warn("Running gc.collect() to work around memory growth issue "
+                     "https://github.com/illinois-ceesd/mirgecom/issues/839")
+                import gc
+                gc.collect()
+
+        # Filter *first* because this will be most straightfwd to
+        # understand and move. For this to work, this routine
+        # must pass back the filtered CV in the state.
+        if check_step(step=step, interval=soln_nfilter):
+            #cv, tseed, av_smu, av_sbeta, av_skappa, wv = state
+            cv = filter_cv_compiled(stepper_state.cv)
+            stepper_state = stepper_state.replace(cv=cv)
+
+        fluid_state = create_fluid_state(cv=stepper_state.cv,
+                                         temperature_seed=stepper_state.tseed,
+                                         smoothness_mu=stepper_state.av_smu,
+                                         smoothness_beta=stepper_state.av_sbeta,
+                                         smoothness_kappa=stepper_state.av_skappa)
+
+        cv = fluid_state.cv  # reset cv to limited version
+
+        if use_wall:
+            sample_state = create_sample_state(stepper_state.sample_cv,
+                stepper_state.sample_mass, stepper_state.sample_tseed)
+            holder_state = create_holder_state(stepper_state.holder_cv)
+
+            sample_cv = sample_state.cv  # reset cv to limited version
+
+        try:
+            if logmgr:
+                logmgr.tick_before()
+
+            # disable non-constant dt timestepping for now
+            # re-enable when we're ready
+
+            do_viz = check_step(step=step, interval=nviz)
+            do_restart = check_step(step=step, interval=nrestart)
+            do_health = check_step(step=step, interval=nhealth)
+            do_status = check_step(step=step, interval=nstatus)
+            next_dump_number = step
+
+            # This re-creation of the state resets *tseed* to current temp
+            # and forces the limited cv into state
+
+            stepper_state = stepper_state.replace(cv=cv,
+                                                  tseed=fluid_state.temperature)
+
+# XXX XXX        # TODO use new wall stuff
+            cfl_fluid = -123456.0
+            cfl_wall = -123456.0
 
 #            if any([do_viz, do_restart, do_health, do_status]):
 
-#                # pass through, removes a bunch of tagging to avoid recomplie
+#                # pass through, removes a bunch of tagging to avoid recompile
 #                if use_wall:
 #                    wv = get_wv(stepper_state.wv)
 
@@ -3510,121 +3545,126 @@ def main(actx_class,
 #                        wall_dd=dd_vol_wall)
 #                else:
 #                    cfl_wall = cfl_fluid
+# XXX XXX
 
-#            """
-#            # adjust time for constant cfl, use the smallest timescale
-#            dt_const_cfl = 100.
-#            if constant_cfl:
-#                dt_const_cfl = np.minimum(dt_fluid, dt_wall)
+            """
+            # adjust time for constant cfl, use the smallest timescale
+            dt_const_cfl = 100.
+            if constant_cfl:
+                dt_const_cfl = np.minimum(dt_fluid, dt_wall)
 
-#            # adjust time to hit the final requested time
-#            t_remaining = max(0, t_final - t)
+            # adjust time to hit the final requested time
+            t_remaining = max(0, t_final - t)
 
-#            if viz_interval_type == 0:
-#                dt = np.minimum(t_remaining, current_dt)
-#            else:
-#                dt = np.minimum(t_remaining, dt_const_cfl)
+            if viz_interval_type == 0:
+                dt = np.minimum(t_remaining, current_dt)
+            else:
+                dt = np.minimum(t_remaining, dt_const_cfl)
 
-#            # update our I/O quantities
-#            cfl_fluid = dt*cfl_fluid/dt_fluid
-#            cfl_wall = dt*cfl_wall/dt_wall
-#            ts_field_fluid = dt*ts_field_fluid/dt_fluid
-#            ts_field_wall = dt*ts_field_wall/dt_wall
+            # update our I/O quantities
+            cfl_fluid = dt*cfl_fluid/dt_fluid
+            cfl_wall = dt*cfl_wall/dt_wall
+            ts_field_fluid = dt*ts_field_fluid/dt_fluid
+            ts_field_wall = dt*ts_field_wall/dt_wall
 
-#            if viz_interval_type == 1:
-#                do_viz, dt, next_dump_number = check_time(
-#                    time=t, dt=dt, interval=t_viz_interval,
-#                    interval_type=viz_interval_type)
-#            elif viz_interval_type == 2:
-#                dt_sav = dt
-#                do_viz, dt, next_dump_number = check_time(
-#                    time=t, dt=dt, interval=t_viz_interval,
-#                    interval_type=viz_interval_type)
+            if viz_interval_type == 1:
+                do_viz, dt, next_dump_number = check_time(
+                    time=t, dt=dt, interval=t_viz_interval,
+                    interval_type=viz_interval_type)
+            elif viz_interval_type == 2:
+                dt_sav = dt
+                do_viz, dt, next_dump_number = check_time(
+                    time=t, dt=dt, interval=t_viz_interval,
+                    interval_type=viz_interval_type)
 
-#                # adjust cfl by dt
-#                cfl_fluid = dt*cfl_fluid/dt_sav
-#                cfl_wall = dt*cfl_wall/dt_sav
-#            else:
-#                do_viz = check_step(step=step, interval=nviz)
-#                next_dump_number = step
-#            """
+                # adjust cfl by dt
+                cfl_fluid = dt*cfl_fluid/dt_sav
+                cfl_wall = dt*cfl_wall/dt_sav
+            else:
+                do_viz = check_step(step=step, interval=nviz)
+                next_dump_number = step
+            """
 
-#            t_wall = t_wall_start + (step - first_step)*dt*wall_time_scale
-#            my_write_status_lite(step=step, t=t, t_wall=t_wall)
+            t_wall = t_wall_start + (step - first_step)*dt*wall_time_scale
+            my_write_status_lite(step=step, t=t, t_wall=t_wall)
 
-#            # these status updates require global reductions on state data
-#            if do_status:
-#                my_write_status_fluid(cv=cv, dv=dv, dt=dt, cfl_fluid=cfl_fluid)
-#                if use_wall:
-#                    my_write_status_wall(wall_temperature=wdv.temperature,
-#                                         dt=dt*wall_time_scale, cfl_wall=cfl_wall)
+            # these status updates require global reductions on state data
+            if do_status:
+                my_write_status_fluid(cv=cv, dv=fluid_state.dv,
+                                      dt=dt, cfl_fluid=cfl_fluid)
+                if use_wall:
+                    my_write_status_wall(wall_temperature=sample_state.temperature,
+                                         dt=dt*wall_time_scale, cfl_wall=cfl_wall)
 
-#            if do_health:
-#                if use_wall:
-#                    health_errors = global_reduce(
-#                        my_health_check(fluid_state,
-#                                        wall_temperature=wdv.temperature),
-#                        op="lor")
-#                else:
-#                    health_errors = global_reduce(
-#                        my_health_check(fluid_state, wall_temperature=None),
-#                        op="lor")
-#                if health_errors:
-#                    if rank == 0:
-#                        #logger.warning("Solution failed health check.")
-#                        logger.info("Solution failed health check.")
-#                    raise MyRuntimeError("Failed simulation health check.")
+            if do_health:
+                if use_wall:
+                    health_errors = global_reduce(
+                        my_health_check(fluid_state, sample_state, holder_state),
+                        op="lor")
+                else:
+                    health_errors = global_reduce(
+                        my_health_check(fluid_state),
+                        op="lor")
+                if health_errors:
+                    if rank == 0:
+                        #logger.warning("Solution failed health check.")
+                        logger.info("Solution failed health check.")
+                    raise MyRuntimeError("Failed simulation health check.")
 
-#            if do_restart:
-#                my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
+            if do_restart:
+                my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
 
-#            if do_viz:
-#                # pack things up
-#                if use_wall:
-#                    viz_state = make_obj_array([fluid_state, wv])
-#                    viz_dv = make_obj_array([dv, wdv])
-#                else:
-#                    viz_state = fluid_state
-#                    viz_dv = dv
+            if do_viz:
+                ts_field_fluid = None
+                ts_field_wall = None
+                # pack things up
+                if use_wall:
+                    viz_state = \
+                        make_obj_array([fluid_state, sample_state, holder_state])
+                    viz_dv = None
+                else:
+                    viz_state = fluid_state
+                    viz_dv = None
 
-#                my_write_viz(
-#                    step=step, t=t, t_wall=t_wall,
-#                    viz_state=viz_state, viz_dv=viz_dv,
-#                    ts_field_fluid=ts_field_fluid,
-#                    ts_field_wall=ts_field_wall,
-#                    dump_number=next_dump_number)
+                my_write_viz(
+                    step=step, t=t, t_wall=t_wall,
+                    viz_state=viz_state, viz_dv=viz_dv,
+                    ts_field_fluid=ts_field_fluid,
+                    ts_field_wall=ts_field_wall,
+                    dump_number=next_dump_number)
 
-#        except MyRuntimeError:
-#            if rank == 0:
-#                logger.error("Errors detected; attempting graceful exit.")
+        except MyRuntimeError:
+            if rank == 0:
+                logger.error("Errors detected; attempting graceful exit.")
 
-#            if viz_interval_type == 0:
-#                dump_number = step
-#            else:
-#                dump_number = (math.floor((t-t_start)/t_viz_interval) +
-#                    last_viz_interval)
+            if viz_interval_type == 0:
+                dump_number = step
+            else:
+                dump_number = (math.floor((t-t_start)/t_viz_interval) +
+                    last_viz_interval)
 
-#            # pack things up
-#            if use_wall:
-#                viz_state = make_obj_array([fluid_state, wv])
-#                viz_dv = make_obj_array([dv, wdv])
-#            else:
-#                viz_state = fluid_state
-#                viz_dv = dv
+            # pack things up
+            if use_wall:
+                viz_state = make_obj_array([fluid_state, wv])
+                viz_dv = make_obj_array([dv, wdv])
+            else:
+                viz_state = fluid_state
+                viz_dv = None
 
-#            my_write_viz(
-#                step=step, t=t, t_wall=t_wall,
-#                viz_state=viz_state, viz_dv=viz_dv,
-#                ts_field_fluid=ts_field_fluid,
-#                ts_field_wall=ts_field_wall,
-#                dump_number=dump_number)
+            my_write_viz(
+                step=step, t=t, t_wall=t_wall,
+                viz_state=viz_state, viz_dv=viz_dv,
+                ts_field_fluid=ts_field_fluid,
+                ts_field_wall=ts_field_wall,
+                dump_number=dump_number)
 
-#            my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
-#            raise
+            my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
+            raise
 
-#        return stepper_state.get_obj_array(), dt
+        return stepper_state.get_obj_array(), dt
 
-#    def my_post_step(step, t, dt, state):
+    def my_post_step(step, t, dt, state):
+        return
 
 #        if step == first_step+2:
 #            with gc_timer:
@@ -3891,8 +3931,8 @@ def main(actx_class,
 
 #    unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
-#    def my_rhs(t, state):
-
+    def my_rhs(t, state):
+        return
 #        # precludes a pre-compiled timestepper
 #        # don't know if we should do this
 #        #state = force_evaluation(actx, state)
@@ -3915,22 +3955,25 @@ def main(actx_class,
 
 #        return rhs_state
 
-#    """
-#    current_dt = get_sim_timestep(dcoll, current_state, current_t, current_dt,
-#                                  current_cfl, t_final, constant_cfl)
-#    """
+    """
+    current_dt = get_sim_timestep(dcoll, current_state, current_t, current_dt,
+                                  current_cfl, t_final, constant_cfl)
+    """
 
-#    if advance_time:
-#        current_step, current_t, current_stepper_state_obj = \
-#            advance_state(rhs=my_rhs, timestepper=timestepper,
-#                          pre_step_callback=my_pre_step,
-#                          #pre_step_callback=None,
-#                          post_step_callback=my_post_step,
-#                          istep=current_step, dt=current_dt,
-#                          t=current_t, t_final=t_final,
-#                          force_eval=force_eval,
-#                          state=stepper_state.get_obj_array(),
-#                          compile_rhs=False)
+    if advance_time:
+        current_step, current_t, current_stepper_state_obj = \
+            advance_state(rhs=my_rhs, timestepper=timestepper,
+                          pre_step_callback=my_pre_step,
+                          #pre_step_callback=None,
+                          post_step_callback=my_post_step,
+                          istep=current_step, dt=current_dt,
+                          t=current_t, t_final=t_final,
+                          force_eval=force_eval,
+                          state=stepper_state.get_obj_array(),
+                          compile_rhs=False)
+
+    #TRR FIXME
+    sys.exit()
 
 #    current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
 
