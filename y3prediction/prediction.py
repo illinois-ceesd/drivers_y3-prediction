@@ -133,7 +133,7 @@ from meshmode.dof_array import DOFArray  # noqa
 @dataclass_array_container
 @dataclass(frozen=True)
 class StepperState:
-    r"""Store quantities to advance in time."
+    r"""Store quantities to advance in time.
 
     Store the quanitites that should be evolved in time by an advancer
     """
@@ -161,7 +161,7 @@ class StepperState:
 @dataclass_array_container
 @dataclass(frozen=True)
 class WallStepperState(StepperState):
-    r"""Store quantities to advance in time."
+    r"""Store quantities to advance in time.
 
     Store the quanitites that should be evolved in time by an advancer
     Adding WallVars
@@ -1454,9 +1454,6 @@ def main(actx_class,
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
 
-    # fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
-    # wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
-
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
     char_length_fluid = char_length_fluid + actx.np.zeros_like(xpos_fluid)
@@ -2054,15 +2051,6 @@ def main(actx_class,
         restart_av_smu = actx.np.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
-        temperature_seed = force_evaluation(actx, temperature_seed)
-        restart_av_smu = force_evaluation(actx, restart_av_smu)
-        restart_av_sbeta = force_evaluation(actx, restart_av_sbeta)
-        restart_av_skappa = force_evaluation(actx, restart_av_skappa)
-
-        restart_fluid_state = create_fluid_state(
-            cv=restart_cv, temperature_seed=temperature_seed,
-            smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-            smoothness_kappa=restart_av_skappa)
 
         # get the initial temperature field to use as a seed
         restart_fluid_state = create_fluid_state(cv=restart_cv,
@@ -2989,7 +2977,8 @@ def main(actx_class,
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
-                    fluid_state.species_diffusivity)
+                    fluid_state.species_diffusivity
+                )
 
             cell_Pe_mass = char_length_fluid*cv.speed/d_alpha_max
 
@@ -3063,10 +3052,10 @@ def main(actx_class,
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
-                viz_ext.append(("grad_v_z", grad_v[2]))
+                viz_ext.extend([("grad_v_z", grad_v[2])])
 
-            viz_ext = [("grad_Y_"+species_names[i], grad_y[i])
-                       for i in range(nspecies)]
+            viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
+                           for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
@@ -3838,7 +3827,7 @@ def main(actx_class,
 
         # precludes a pre-compiled timestepper
         # don't know if we should do this
-        state = force_evaluation(actx, state)
+        #state = force_evaluation(actx, state)
 
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
