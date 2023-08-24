@@ -84,6 +84,12 @@ jobs:
             cd smoke_test
             ./run_lazy.sh
 
+        - name: ESDG smoke test
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test
+            ./run_esdg.sh
+
         - name: Compare smoke_test accuracy
           run: |
             source emirge/config/activate_env.sh

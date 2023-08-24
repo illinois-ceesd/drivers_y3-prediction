@@ -793,23 +793,43 @@ def main(actx_class,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    if inv_num_flux == "rusanov":
-        inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
-        if rank == 0:
-            print("\nRusanov inviscid flux")
-    elif inv_num_flux == "hll":
-        inviscid_numerical_flux_func = inviscid_facial_flux_hll
-        if rank == 0:
-            print("\nHLL inviscid flux")
+    flux_msg = "\nSetting inviscid numerical flux to: "
+    if use_esdg:
+        try:
+            from mirgecom.inviscid import entropy_stable_inviscid_facial_flux_rusanov
+        except ImportError:
+            from mirgecom.simutil import SimulationConfigurationError
+            raise SimulationConfigurationError(
+                "ESDG option specified, but MIRGE-Com "
+                "is installed without ESDG support. "
+                "Try switching your MIRGE-Com branch to "
+                "mirgecom@production."
+            )
+        inviscid_numerical_flux_func = entropy_stable_inviscid_facial_flux_rusanov
+        flux_msg = flux_msg + "ESDG/Rusanov with EC/"
+        if nspecies == 7:  # FIXME: Add support for 7 passive species?
+            inv_flux_type = "Renac for mixtures.\n"
+        else:
+            inv_flux_type = "Chandrashekar for single gas or passive species.\n"
+        flux_msg = flux_msg + inv_flux_type
+    else:
+        if inv_num_flux == "rusanov":
+            inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
+            flux_msg = flux_msg + "Rusanov\n"
+        elif inv_num_flux == "hll":
+            inviscid_numerical_flux_func = inviscid_facial_flux_hll
+            flux_msg = flux_msg + "HLL\n"
 
+    flux_msg = flux_msg + "Setting viscous numerical flux to: "
     if use_wall:
         viscous_numerical_flux_func = viscous_facial_flux_harmonic
-        if rank == 0:
-            print("\nHarmonic viscous flux")
+        flux_msg = flux_msg + "Harmonic\n"
     else:
         viscous_numerical_flux_func = viscous_facial_flux_central
-        if rank == 0:
-            print("\nCentral viscous flux")
+        flux_msg = flux_msg + "Central\n"
+
+    if rank == 0:
+        print(flux_msg)
 
     # }}}
 
@@ -2779,6 +2799,7 @@ def main(actx_class,
             dcoll=dcoll,
             gas_model=gas_model,
             dd=dd_vol_fluid,
+            use_esdg=use_esdg,
             operator_states_quad=fluid_operator_states_quad,
             grad_cv=grad_fluid_cv,
             grad_t=grad_fluid_t,
