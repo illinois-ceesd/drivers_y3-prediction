@@ -118,8 +118,12 @@ class InitCompressionRamp:
         if x_vec.shape != (self._dim,):
             raise ValueError(f"Position vector has unexpected dimensionality,"
                              f" expected {self._dim}.")
-
+        
+        #initialize each position coordinate.
         xpos = x_vec[0]
+        ypos = x_vec[1]
+        if self._dim == 3:
+            zpos = x_vec[2]
 
         actx = xpos.array_context
         #if isinstance(self._disc_location, Number):
@@ -147,25 +151,31 @@ class InitCompressionRamp:
         temperature = self._tl + (self._tr - self._tl)*weight
         velocity = self._ul + (self._ur - self._ul)*weight + self._ut
 
-        # # modify the temperature in the near wall region to match the
-        # # isothermal boundaries
-        # y_top = 0.01
-        # y_bottom = -0.01
-        # if self._temp_sigma > 0:
-        #     sigma = self._temp_sigma
-        #     wall_temperature = self._temp_wall
-        #     smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
-        #     smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
-        #     temperature = (wall_temperature +
-        #                    (temperature -
-        #                     wall_temperature)*smoothing_top*smoothing_bottom)
-
-        # # modify the velocity in the near wall region to match the
-        # # noslip boundaries
-        # sigma = self._vel_sigma
-        # smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
-        # smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
-        # velocity[0] = velocity[0]*smoothing_top*smoothing_bottom
+        ##Smooth step helper function to adjust the velocity of near-wall region.
+        def smooth_step(actx, x, epsilon=1e-12):
+            return (
+                actx.np.greater(x, 0) * actx.np.less(x, 1) * (1 - actx.np.cos(np.pi*x))/2
+                + actx.np.greater(x, 1))
+        
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+        y_top = .512
+        y_bottom = 0.
+        if self._temp_sigma > 0:
+            sigma = self._temp_sigma
+            wall_temperature = self._temp_wall
+            smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
+            smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
+            temperature = (wall_temperature +
+                           (temperature -
+                            wall_temperature)*smoothing_top*smoothing_bottom)
+    
+        # modify the velocity in the near wall region to match the
+        # noslip boundaries
+        sigma = self._vel_sigma
+        smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
+        smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
+        velocity[0] = velocity[0]*smoothing_top*smoothing_bottom
 
         if self._nspecies:
             mass = eos.get_density(pressure, temperature,

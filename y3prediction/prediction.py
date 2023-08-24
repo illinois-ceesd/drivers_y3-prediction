@@ -511,7 +511,7 @@ def main(actx_class,
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
-    mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
+    mesh_filename = configurate("mesh_filename", input_data, "data/compressionRamp.msh")
     noslip = configurate("noslip", input_data, True)
     adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
@@ -2429,12 +2429,13 @@ def main(actx_class,
     sponge_amp = sponge_sigma/current_dt/1000
 
     from y3prediction.utils import InitSponge
-    inlet_sponge_x0 = 0.225
-    inlet_sponge_thickness = 0.015
-    outlet_sponge_x0 = 0.89
-    outlet_sponge_thickness = 0.04
+    # inlet_sponge_x0 = -1.28
+    inlet_sponge_x0 = -1.2
+    inlet_sponge_thickness = 0.1
+    outlet_sponge_x0 = 0.55
+    outlet_sponge_thickness = 0.1
     inj_sponge_x0 = 0.645
-    inj_sponge_thickness = 0.005
+    inj_sponge_thickness = 0.0
     upstream_inj_sponge_y0 = -0.02253 + inj_sponge_thickness
     sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                    thickness=inlet_sponge_thickness,
