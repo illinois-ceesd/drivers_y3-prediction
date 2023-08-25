@@ -2337,10 +2337,10 @@ def main(actx_class,
 
     else:
         # Set the current state from time 0
-        #target_cv = restart_cv
-        #target_av_smu = restart_av_smu
-        #target_av_sbeta = restart_av_sbeta
-        #target_av_skappa = restart_av_skappa
+        target_cv = restart_cv
+        target_av_smu = restart_av_smu
+        target_av_sbeta = restart_av_sbeta
+        target_av_skappa = restart_av_skappa
 
         target_fluid_state = restart_fluid_state
 
