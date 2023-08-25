@@ -1502,7 +1502,9 @@ def main(actx_class,
                        "boundary type will be unused")
             return False
 
-        return True
+       if rank == 0:
+           print(f"Found boundary {name} in fluid domain")
+       return True
 
     if use_outflow_boundary:
         use_outflow_boundary = check_boundary(outflow_bnd, "outflow")
