@@ -15,8 +15,8 @@ constant_cfl: 0
 current_cfl: 0.05
 current_dt: 2.5e-7
 t_final: 4e-3
-vel_sigma: 20
-temp_sigma: 20
+vel_sigma: 30
+temp_sigma: 30
 sponge_sigma: 2
 nspecies:  0
 order:  4
