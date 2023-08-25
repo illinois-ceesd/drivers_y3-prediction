@@ -724,18 +724,18 @@ def main(actx_class,
         print(f"\tdimension = {dim}")
         print(f"\tTime integration {integrator}")
         print("   Boundary Conditions:")
-        bndry_config = { "outflow": use_outflow_boundary,
-                                     "inflow": use_inflow_boundary,
-                                     "flow": use_flow_boundary,
-                                     "injection": use_injection_boundary,
-                                     "wall": use_wall_boundary,
-                                     "interface": use_interface_boundary}
+        bndry_config = {"outflow": use_outflow_boundary,
+                        "inflow": use_inflow_boundary,
+                        "flow": use_flow_boundary,
+                        "injection": use_injection_boundary,
+                        "wall": use_wall_boundary,
+                        "interface": use_interface_boundary}
         bnd_msg = ""
         for bname, bsetting in bndry_config.items():
-              msg_action = "Checking for" if bsetting else "Ignoring"
-              bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh."
-         if rank == 0:
-              print(bnd_msg)
+            msg_action = "Checking for" if bsetting else "Ignoring"
+            bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh."
+        if rank == 0:
+            print(bnd_msg)
 
         if noslip:
             print("\tFluid wall boundary conditions are noslip for veloctiy")
@@ -1485,9 +1485,9 @@ def main(actx_class,
                        "boundary type will be unused")
             return False
 
-       if rank == 0:
-           print(f"Found boundary {name} in fluid domain")
-       return True
+        if rank == 0:
+            print(f"Found boundary {name} in fluid domain")
+        return True
 
     if use_outflow_boundary:
         use_outflow_boundary = check_boundary(outflow_bnd, "outflow")
