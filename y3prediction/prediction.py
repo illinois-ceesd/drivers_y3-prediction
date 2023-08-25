@@ -724,35 +724,18 @@ def main(actx_class,
         print(f"\tdimension = {dim}")
         print(f"\tTime integration {integrator}")
         print("   Boundary Conditions:")
-        if use_outflow_boundary:
-            print("\tChecking for outflow boundary in mesh")
-        else:
-            print("\tIgnoring outflow boundary in mesh")
-
-        if use_inflow_boundary:
-            print("\tChecking for inflow boundary in mesh")
-        else:
-            print("\tIgnoring inflow boundary in mesh")
-
-        if use_flow_boundary:
-            print("\tChecking for flow boundary in mesh")
-        else:
-            print("\tIgnoring flow boundary in mesh")
-
-        if use_injection_boundary:
-            print("\tChecking for injection boundary in mesh")
-        else:
-            print("\tIgnoring injection boundary in mesh")
-
-        if use_wall_boundary:
-            print("\tChecking for wall boundary in mesh")
-        else:
-            print("\tIgnoring wall boundary in mesh")
-
-        if use_interface_boundary:
-            print("\tChecking for interface boundary in mesh")
-        else:
-            print("\tIgnoring interface boundary in mesh")
+        bndry_config = { "outflow": use_outflow_boundary,
+                                     "inflow": use_inflow_boundary,
+                                     "flow": use_flow_boundary,
+                                     "injection": use_injection_boundary,
+                                     "wall": use_wall_boundary,
+                                     "interface": use_interface_boundary}
+        bnd_msg = ""
+        for bname, bsetting in bndry_config.items():
+              msg_action = "Checking for" if bsetting else "Ignoring"
+              bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh."
+         if rank == 0:
+              print(bnd_msg)
 
         if noslip:
             print("\tFluid wall boundary conditions are noslip for veloctiy")
