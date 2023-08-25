@@ -30,3 +30,5 @@ integrator: euler
 #integrator: lsrk54
 #health_pres_min: 2828
 #health_pres_max: 274259
+use_inflow_boundary: False
+use_outflow_boundary: False
