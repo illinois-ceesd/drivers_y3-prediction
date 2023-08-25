@@ -1613,7 +1613,6 @@ def main(actx_class,
 
         smooth_neumann = NeumannDiffusionBoundary(0)
 
-        # I can't call this function here?
         fluid_smoothness_boundaries = assign_fluid_boundaries(
             outflow=smooth_neumann,
             inflow=smooth_neumann,
@@ -3814,10 +3813,13 @@ def main(actx_class,
         if use_av > 0:
             # regular boundaries for smoothness mu
             smooth_neumann = NeumannDiffusionBoundary(0)
-            fluid_av_boundaries = {
-                flow_bnd.domain_tag: smooth_neumann,
-                wall_bnd.domain_tag: smooth_neumann,
-            }
+            fluid_av_boundaries = assign_fluid_boundaries(
+                outflow=smooth_neumann,
+                inflow=smooth_neumann,
+                injection=smooth_neumann,
+                flow=smooth_neumann,
+                wall=smooth_neumann,
+                interface=smooth_neumann)
 
             if use_wall:
                 from grudge.discretization import filter_part_boundaries
@@ -3826,9 +3828,6 @@ def main(actx_class,
                      for dd_bdry in filter_part_boundaries(
                          dcoll, volume_dd=dd_vol_fluid,
                          neighbor_volume_dd=dd_vol_wall)})
-            else:
-                fluid_av_boundaries.update({
-                    interface_bnd.domain_tag: smooth_neumann})
 
             # av mu
             av_smu_rhs = (
