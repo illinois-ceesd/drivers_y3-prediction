@@ -1496,8 +1496,6 @@ def main(actx_class,
     def check_boundary(boundary, name):
         try:
             force_evaluation(actx, actx.thaw(dcoll.nodes(boundary)))
-            if rank == 0:
-                print(f"Found boundary {name} in fluid domain")
         except ValueError:
             if rank == 0:
                 print(f"Could not find boundary named {name} in fluid domain,",
