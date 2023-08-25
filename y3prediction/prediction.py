@@ -1523,7 +1523,8 @@ def main(actx_class,
             use_inflow_boundary and use_flow_boundary):
         error_message = \
             "Invalid boundary configuration, inflow/outflow with flow:"
-        raise RuntimeError(error_message)
+        from mirgecom.simutil import SimulationConfigurationError
+        raise SimulationConfigurationError(error_message)
 
     # setup basic boundary conditions
     if noslip:
