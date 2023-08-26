@@ -1,6 +1,7 @@
 ##############
 # run control
 ##############
+advance_time: False
 nviz: 5
 nrestart: 10
 nhealth: 1

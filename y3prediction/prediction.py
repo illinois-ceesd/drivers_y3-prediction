@@ -1063,7 +1063,8 @@ def main(actx_class,
 
     throat_height = 3.61909e-3
     inlet_height = 54.129e-3
-    outlet_height = 28.54986e-3
+    #outlet_height = 28.54986e-3
+    outlet_height = 34.5e-3
     inlet_area_ratio = inlet_height/throat_height
     outlet_area_ratio = outlet_height/throat_height
 
@@ -1205,7 +1206,7 @@ def main(actx_class,
 
             outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
                                               gamma=gamma_guess,
-                                              mach_guess=0.01)
+                                              mach_guess=1.1)
             pres_outflow = getIsentropicPressure(mach=outlet_mach,
                                                 P0=total_pres_inflow,
                                                 gamma=gamma_guess)
