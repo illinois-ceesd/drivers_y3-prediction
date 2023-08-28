@@ -133,7 +133,7 @@ from meshmode.dof_array import DOFArray  # noqa
 @dataclass_array_container
 @dataclass(frozen=True)
 class StepperState:
-    r"""Store quantities to advance in time."
+    r"""Store quantities to advance in time.
 
     Store the quanitites that should be evolved in time by an advancer
     """
@@ -161,7 +161,7 @@ class StepperState:
 @dataclass_array_container
 @dataclass(frozen=True)
 class WallStepperState(StepperState):
-    r"""Store quantities to advance in time."
+    r"""Store quantities to advance in time.
 
     Store the quanitites that should be evolved in time by an advancer
     Adding WallVars
@@ -514,6 +514,16 @@ def main(actx_class,
     adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
 
+    # setting these in the input file toggles the check off
+    # support for legacy runs only where you could specify boundary tags
+    # that were unused in certain cases
+    use_outflow_boundary = configurate("use_outflow_boundary", input_data, False)
+    use_inflow_boundary = configurate("use_inflow_boundary", input_data, False)
+    use_flow_boundary = configurate("use_flow_boundary", input_data, True)
+    use_injection_boundary = configurate("use_injection_boundary", input_data, True)
+    use_wall_boundary = configurate("use_wall_boundary", input_data, True)
+    use_interface_boundary = configurate("use_interface_boundary", input_data, True)
+
     # material properties and models options
     gas_mat_prop = configurate("gas_mat_prop", input_data, 0)
     spec_diff = configurate("spec_diff", input_data, 1.e-4)
@@ -713,14 +723,30 @@ def main(actx_class,
         print(f"\torder = {order}")
         print(f"\tdimension = {dim}")
         print(f"\tTime integration {integrator}")
+        print("   Boundary Conditions:")
+        bndry_config = {"outflow": use_outflow_boundary,
+                        "inflow": use_inflow_boundary,
+                        "flow": use_flow_boundary,
+                        "injection": use_injection_boundary,
+                        "wall": use_wall_boundary,
+                        "interface": use_interface_boundary}
+        bnd_msg = ""
+        for bname, bsetting in bndry_config.items():
+            msg_action = "Checking for" if bsetting else "Ignoring"
+            bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh."
+        if rank == 0:
+            print(bnd_msg)
+
         if noslip:
-            print("Fluid wall boundary conditions are noslip for veloctiy")
+            print("\tFluid wall boundary conditions are noslip for veloctiy")
         else:
-            print("Fluid wall boundary conditions are slip for veloctiy")
+            print("\tFluid wall boundary conditions are slip for veloctiy")
+
         if adiabatic:
-            print("Fluid wall boundary conditions are adiabatic for temperature")
+            print("\tFluid wall boundary conditions are adiabatic for temperature")
         else:
-            print("Fluid wall boundary conditions are isothermal for temperature")
+            print("\tFluid wall boundary conditions are isothermal for temperature")
+
         print("#### Simluation control data: ####\n")
 
     if rank == 0:
@@ -793,23 +819,43 @@ def main(actx_class,
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
 
-    if inv_num_flux == "rusanov":
-        inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
-        if rank == 0:
-            print("\nRusanov inviscid flux")
-    elif inv_num_flux == "hll":
-        inviscid_numerical_flux_func = inviscid_facial_flux_hll
-        if rank == 0:
-            print("\nHLL inviscid flux")
+    flux_msg = "\nSetting inviscid numerical flux to: "
+    if use_esdg:
+        try:
+            from mirgecom.inviscid import entropy_stable_inviscid_facial_flux_rusanov
+        except ImportError:
+            from mirgecom.simutil import SimulationConfigurationError
+            raise SimulationConfigurationError(
+                "ESDG option specified, but MIRGE-Com "
+                "is installed without ESDG support. "
+                "Try switching your MIRGE-Com branch to "
+                "mirgecom@production."
+            )
+        inviscid_numerical_flux_func = entropy_stable_inviscid_facial_flux_rusanov
+        flux_msg = flux_msg + "ESDG/Rusanov with EC/"
+        if nspecies == 7:  # FIXME: Add support for 7 passive species?
+            inv_flux_type = "Renac for mixtures.\n"
+        else:
+            inv_flux_type = "Chandrashekar for single gas or passive species.\n"
+        flux_msg = flux_msg + inv_flux_type
+    else:
+        if inv_num_flux == "rusanov":
+            inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
+            flux_msg = flux_msg + "Rusanov\n"
+        elif inv_num_flux == "hll":
+            inviscid_numerical_flux_func = inviscid_facial_flux_hll
+            flux_msg = flux_msg + "HLL\n"
 
+    flux_msg = flux_msg + "Setting viscous numerical flux to: "
     if use_wall:
         viscous_numerical_flux_func = viscous_facial_flux_harmonic
-        if rank == 0:
-            print("\nHarmonic viscous flux")
+        flux_msg = flux_msg + "Harmonic\n"
     else:
         viscous_numerical_flux_func = viscous_facial_flux_central
-        if rank == 0:
-            print("\nCentral viscous flux")
+        flux_msg = flux_msg + "Central\n"
+
+    if rank == 0:
+        print(flux_msg)
 
     # }}}
 
@@ -1408,14 +1454,108 @@ def main(actx_class,
     dd_vol_fluid = DOFDesc(VolumeDomainTag("fluid"), DISCR_TAG_BASE)
     fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
 
+    # setup boundary types
+    # only named boundaries list here are allowable in the mesh generation
+    #
+    # fluid inflow
     inflow_bnd = dd_vol_fluid.trace("inflow")
+
+    # fluid outflow
     outflow_bnd = dd_vol_fluid.trace("outflow")
+
+    # fluid injection inflow
+    # behaves as a wall when injection is disabled
     inj_bnd = dd_vol_fluid.trace("injection")
+
+    # lumped prescribed boundaries (inflow, outflow, injection)
     flow_bnd = dd_vol_fluid.trace("flow")
+
+    # fluid walls
     wall_bnd = dd_vol_fluid.trace("isothermal_wall")
 
-    if not use_wall:
-        interface_bnd = dd_vol_fluid.trace("wall_interface")
+    # fluid boundary that acts as a wall when the wall model is disabled
+    interface_bnd = dd_vol_fluid.trace("wall_interface")
+
+    def check_boundary(boundary, name):
+        try:
+            force_evaluation(actx, actx.thaw(dcoll.nodes(boundary)))
+        except ValueError:
+            if rank == 0:
+                print(f"Could not find boundary named {name} in fluid domain,",
+                       "boundary type will be unused")
+            return False
+
+        if rank == 0:
+            print(f"Found boundary {name} in fluid domain")
+        return True
+
+    if use_outflow_boundary:
+        use_outflow_boundary = check_boundary(outflow_bnd, "outflow")
+    if use_inflow_boundary:
+        use_inflow_boundary = check_boundary(inflow_bnd, "inflow")
+    if use_flow_boundary:
+        use_flow_boundary = check_boundary(flow_bnd, "flow")
+    if use_injection_boundary:
+        use_injection_boundary = check_boundary(inj_bnd, "injection")
+    if use_wall_boundary:
+        use_wall_boundary = check_boundary(wall_bnd, "wall")
+    if use_interface_boundary:
+        use_interface_boundary = check_boundary(interface_bnd, "interface")
+
+    if (use_outflow_boundary and use_flow_boundary or
+            use_inflow_boundary and use_flow_boundary):
+        error_message = \
+            "Invalid boundary configuration, inflow/outflow with flow:"
+        from mirgecom.simutil import SimulationConfigurationError
+        raise SimulationConfigurationError(error_message)
+
+    # setup basic boundary conditions
+    if noslip:
+        if adiabatic:
+            fluid_wall = AdiabaticNoslipWallBoundary()
+        else:
+            fluid_wall = IsothermalWallBoundary(temp_wall)
+    else:
+        fluid_wall = AdiabaticSlipBoundary()
+
+    # everything is a wall by default
+    outflow_boundary = fluid_wall
+    inflow_boundary = fluid_wall
+    flow_boundary = fluid_wall
+    injection_boundary = fluid_wall
+
+    wall_farfield = DirichletDiffusionBoundary(temp_wall)
+
+    # helper function to build a dictionary for fluid boundary types
+    def assign_fluid_boundaries(inflow, outflow, injection,
+                                flow, wall, interface):
+        boundaries = {}
+        if use_outflow_boundary:
+            boundaries[outflow_bnd.domain_tag] = outflow
+
+        if use_inflow_boundary:
+            boundaries[inflow_bnd.domain_tag] = inflow
+
+        if use_injection_boundary:
+            # legacy behavior, flow boundary should include the injection
+            # to minimize the number of unique boundary tags
+            # only use the injection boundary if we're not using the flow_boundary
+            #if not use_flow_boundary or (use_flow_boundary and not use_injection):
+            if not use_injection or not use_flow_boundary:
+                boundaries[inj_bnd.domain_tag] = injection
+
+        if use_flow_boundary:
+            boundaries[flow_bnd.domain_tag] = flow
+
+        if use_wall_boundary:
+            boundaries[wall_bnd.domain_tag] = wall
+
+        if use_interface_boundary:
+            # only allow an interface boundary if the wall model is disabled
+            if not use_wall:
+                boundaries[interface_bnd.domain_tag] = interface
+
+        return boundaries
 
     if use_wall:
         dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
@@ -1454,20 +1594,22 @@ def main(actx_class,
 
     def compute_smoothed_char_length(href_fluid, comm_ind):
         # regular boundaries
+
         smooth_neumann = NeumannDiffusionBoundary(0)
-        fluid_smoothness_boundaries = {
-            flow_bnd.domain_tag: smooth_neumann,
-            wall_bnd.domain_tag: smooth_neumann,
-        }
+
+        fluid_smoothness_boundaries = assign_fluid_boundaries(
+            outflow=smooth_neumann,
+            inflow=smooth_neumann,
+            injection=smooth_neumann,
+            flow=smooth_neumann,
+            wall=smooth_neumann,
+            interface=smooth_neumann)
 
         if use_wall:
             fluid_smoothness_boundaries.update({
                  dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
                  for dd_bdry in filter_part_boundaries(
                      dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
-        else:
-            fluid_smoothness_boundaries.update({
-                interface_bnd.domain_tag: smooth_neumann})
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
@@ -1506,6 +1648,7 @@ def main(actx_class,
     """
 
     smoothed_char_length_fluid = char_length_fluid
+
     if use_smoothed_char_length:
         for i in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
@@ -1615,6 +1758,7 @@ def main(actx_class,
         logger.info(f" - filter alpha  = {soln_filter_alpha}")
         logger.info(f" - filter cutoff = {soln_filter_cutoff}")
         logger.info(f" - filter order  = {soln_filter_order}")
+
     if use_rhs_filter and rank == 0:
         logger.info("RHS filtering settings:")
         logger.info(f" - filter alpha  = {rhs_filter_alpha}")
@@ -1629,8 +1773,8 @@ def main(actx_class,
     # Helper functions for building states #
     ########################################
 
-    def _create_fluid_state(cv, temperature_seed, smoothness_mu=None,
-                            smoothness_beta=None, smoothness_kappa=None):
+    def _create_fluid_state(cv, temperature_seed, smoothness_mu,
+                            smoothness_beta, smoothness_kappa):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
                                 smoothness_mu=smoothness_mu,
@@ -1686,6 +1830,9 @@ def main(actx_class,
             pyro_mech.get_temperature_update_energy(e, temperature, y))
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
+
+    if rank == 0:
+        logger.info("Smoothness functions processing")
 
     # smoothness used with av = 1
     def compute_smoothness(cv, dv, grad_cv):
@@ -1771,7 +1918,6 @@ def main(actx_class,
         return make_obj_array([smoothness_mu, smoothness_beta, smoothness_kappa])
 
     def update_smoothness(state, time):
-
         cv = state.cv
         tseed = state.tseed
         av_smu = state.av_smu
@@ -1892,6 +2038,9 @@ def main(actx_class,
         return eos.get_production_rates(cv, temperature)
 
     compute_production_rates = actx.compile(get_production_rates)
+
+    if rank == 0:
+        logger.info("Initial flow conditions processing")
 
     ##################################
     # Set up flow initial conditions #
@@ -2172,12 +2321,15 @@ def main(actx_class,
 
     else:
         # Set the current state from time 0
-        #target_cv = restart_cv
-        #target_av_smu = restart_av_smu
-        #target_av_sbeta = restart_av_sbeta
-        #target_av_skappa = restart_av_skappa
+        target_cv = restart_cv
+        target_av_smu = restart_av_smu
+        target_av_sbeta = restart_av_sbeta
+        target_av_skappa = restart_av_skappa
 
         target_fluid_state = restart_fluid_state
+
+    if rank == 0:
+        logger.info("More gradient processing")
 
     def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
@@ -2204,54 +2356,42 @@ def main(actx_class,
     # use dummy boundaries to update the smoothness state for the target
     if use_av > 0:
         if use_injection:
-            target_boundaries = {
-                flow_bnd.domain_tag:  # pylint: disable=no-member
-                DummyBoundary(),
-                wall_bnd.domain_tag:  # pylint: disable=no-member
-                IsothermalWallBoundary()
-            }
-            if not use_wall:
-                target_boundaries.update({
-                    interface_bnd.domain_tag: IsothermalWallBoundary()})
+            target_injection_boundary = DummyBoundary()
         else:
-            target_boundaries = {
-                inflow_bnd.domain_tag:   # pylint: disable=no-member
-                DummyBoundary(),
-                outflow_bnd.domain_tag:  # pylint: disable=no-member
-                DummyBoundary(),
-                inj_bnd.domain_tag:      # pylint: disable=no-member
-                IsothermalWallBoundary(),
-                wall_bnd.domain_tag:     # pylint: disable=no-member
-                IsothermalWallBoundary()
-            }
-            if not use_wall:
-                target_boundaries.update({
-                    interface_bnd.domain_tag: IsothermalWallBoundary()})
+            target_injection_boundary = fluid_wall
 
-            target_grad_cv = grad_cv_operator_target_compiled(
+        target_boundaries = assign_fluid_boundaries(
+            outflow=DummyBoundary(),
+            inflow=DummyBoundary(),
+            injection=target_injection_boundary,
+            flow=DummyBoundary(),
+            wall=fluid_wall,
+            interface=fluid_wall)
+
+        target_grad_cv = grad_cv_operator_target_compiled(
+            target_fluid_state, time=0.)
+        # the target is not used along the wall, so we won't jump
+        # through all the hoops to get the proper gradient
+        if use_av == 1:
+            target_av_smu = compute_smoothness(
+                cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
+        elif use_av == 2:
+            target_grad_t = grad_t_operator_target_compiled(
                 target_fluid_state, time=0.)
-            # the target is not used along the wall, so we won't jump
-            # through all the hoops to get the proper gradient
-            if use_av == 1:
-                target_av_smu = compute_smoothness(
-                    cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
-            elif use_av == 2:
-                target_grad_t = grad_t_operator_target_compiled(
-                    target_fluid_state, time=0.)
 
-                target_av_sbeta, target_av_skappa, target_av_smu = \
-                    compute_smoothness_mbk(
-                        cv=target_cv, dv=target_fluid_state.dv,
-                        grad_cv=target_grad_cv, grad_t=target_grad_t)
+            target_av_sbeta, target_av_skappa, target_av_smu = \
+                compute_smoothness_mbk(
+                    cv=target_cv, dv=target_fluid_state.dv,
+                    grad_cv=target_grad_cv, grad_t=target_grad_t)
 
-            target_av_smu = force_evaluation(actx, target_av_smu)
-            target_av_sbeta = force_evaluation(actx, target_av_sbeta)
-            target_av_skappa = force_evaluation(actx, target_av_skappa)
+        target_av_smu = force_evaluation(actx, target_av_smu)
+        target_av_sbeta = force_evaluation(actx, target_av_sbeta)
+        target_av_skappa = force_evaluation(actx, target_av_skappa)
 
-            target_fluid_state = create_fluid_state(
-                cv=target_cv, temperature_seed=temperature_seed,
-                smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
-                smoothness_kappa=target_av_skappa)
+        target_fluid_state = create_fluid_state(
+            cv=target_cv, temperature_seed=temperature_seed,
+            smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
+            smoothness_kappa=target_av_skappa)
 
     #
     # Setup the wall model
@@ -2353,67 +2493,54 @@ def main(actx_class,
             entropy_stable=use_esdg
         )
 
-    flow_ref_state = \
-        get_target_state_on_boundary("flow")
+    if use_flow_boundary:
+        flow_ref_state = \
+            get_target_state_on_boundary("flow")
 
-    flow_ref_state = force_evaluation(actx, flow_ref_state)
+        flow_ref_state = force_evaluation(actx, flow_ref_state)
 
-    def _target_flow_state_func(**kwargs):
-        return flow_ref_state
+        def _target_flow_state_func(**kwargs):
+            return flow_ref_state
 
-    flow_boundary = PrescribedFluidBoundary(
-        boundary_state_func=_target_flow_state_func)
+        flow_boundary = PrescribedFluidBoundary(
+            boundary_state_func=_target_flow_state_func)
 
-    inflow_ref_state = \
-        get_target_state_on_boundary("inflow")
+    if use_inflow_boundary:
+        inflow_ref_state = \
+            get_target_state_on_boundary("inflow")
 
-    inflow_ref_state = force_evaluation(actx, inflow_ref_state)
+        inflow_ref_state = force_evaluation(actx, inflow_ref_state)
 
-    def _target_inflow_state_func(**kwargs):
-        return inflow_ref_state
+        def _target_inflow_state_func(**kwargs):
+            return inflow_ref_state
 
-    inflow_boundary = PrescribedFluidBoundary(
-        boundary_state_func=_target_inflow_state_func)
+        inflow_boundary = PrescribedFluidBoundary(
+            boundary_state_func=_target_inflow_state_func)
 
-    outflow_ref_state = \
-        get_target_state_on_boundary("outflow")
+    if use_outflow_boundary:
+        outflow_ref_state = \
+            get_target_state_on_boundary("outflow")
 
-    outflow_ref_state = force_evaluation(actx, outflow_ref_state)
+        outflow_ref_state = force_evaluation(actx, outflow_ref_state)
 
-    def _target_outflow_state_func(**kwargs):
-        return outflow_ref_state
+        def _target_outflow_state_func(**kwargs):
+            return outflow_ref_state
 
-    outflow_boundary = PrescribedFluidBoundary(
-        boundary_state_func=_target_outflow_state_func)
-    #outflow_pressure = 2000
-    #outflow_boundary = PressureOutflowBoundary(outflow_pressure)
-
-    if noslip:
-        if adiabatic:
-            fluid_wall = AdiabaticNoslipWallBoundary()
-        else:
-            fluid_wall = IsothermalWallBoundary(temp_wall)
-    else:
-        fluid_wall = AdiabaticSlipBoundary()
-
-    wall_farfield = DirichletDiffusionBoundary(temp_wall)
+        outflow_boundary = PrescribedFluidBoundary(
+            boundary_state_func=_target_outflow_state_func)
+        #outflow_pressure = 2000
+        #outflow_boundary = PressureOutflowBoundary(outflow_pressure)
 
     if use_injection:
-        uncoupled_fluid_boundaries = {
-            flow_bnd.domain_tag: flow_boundary,   # pylint: disable=no-member
-            wall_bnd.domain_tag: fluid_wall  # pylint: disable=no-member
-        }
-    else:
-        uncoupled_fluid_boundaries = {
-            inflow_bnd.domain_tag: inflow_boundary,    # pylint: disable=no-member
-            outflow_bnd.domain_tag: outflow_boundary,  # pylint: disable=no-member
-            inj_bnd.domain_tag: fluid_wall,       # pylint: disable=no-member
-            wall_bnd.domain_tag: fluid_wall       # pylint: disable=no-member
-        }
+        injection_boundary = flow_boundary
 
-    if not use_wall:
-        uncoupled_fluid_boundaries.update({
-            interface_bnd.domain_tag: fluid_wall})
+    uncoupled_fluid_boundaries = assign_fluid_boundaries(
+        outflow=outflow_boundary,
+        inflow=inflow_boundary,
+        injection=injection_boundary,
+        flow=flow_boundary,
+        wall=fluid_wall,
+        interface=fluid_wall)
 
     if use_wall:
         uncoupled_wall_boundaries = {
@@ -2491,6 +2618,8 @@ def main(actx_class,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
+    if rank == 0:
+        logger.info("Sponges processsing")
     ##################
     # Sponge Sources #
     ##################
@@ -2612,11 +2741,20 @@ def main(actx_class,
         if use_profiling:
             logmgr.add_watches(["pyopencl_array_time.max"])
 
-    fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid,
-                                       vis_order=viz_order)
-    if use_wall:
-        wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall,
-                                          vis_order=viz_order)
+    if rank == 0:
+        logger.info("Viz & utilities processsing")
+
+    # avoid making a second discretization if viz_order == order
+    if viz_order == order:
+        fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
+        if use_wall:
+            wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall)
+    else:
+        fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid,
+                                           vis_order=viz_order)
+        if use_wall:
+            wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall,
+                                              vis_order=viz_order)
 
     #    initname = initializer.__class__.__name__
     eosname = eos.__class__.__name__
@@ -2752,6 +2890,7 @@ def main(actx_class,
             dcoll=dcoll,
             gas_model=gas_model,
             dd=dd_vol_fluid,
+            use_esdg=use_esdg,
             operator_states_quad=fluid_operator_states_quad,
             grad_cv=grad_fluid_cv,
             grad_t=grad_fluid_t,
@@ -2936,13 +3075,16 @@ def main(actx_class,
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
             alpha_heat = fluid_state.thermal_conductivity/cp/fluid_state.viscosity
             cell_Pe_heat = char_length_fluid*cv.speed/alpha_heat
+
             from mirgecom.viscous import get_local_max_species_diffusivity
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
                     fluid_state.species_diffusivity
                 )
+
             cell_Pe_mass = char_length_fluid*cv.speed/d_alpha_max
+
             # these are useful if our transport properties
             # are not constant on the mesh
             # prandtl
@@ -3046,6 +3188,7 @@ def main(actx_class,
                   f"sim time {t:1.6e} s ********")
 
         restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
+
         if restart_fname != restart_filename:
             restart_data = {
                 "volume_to_local_mesh_data": volume_to_local_mesh_data,
@@ -3545,6 +3688,7 @@ def main(actx_class,
                                        smoothness_kappa=av_skappa,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
+
         cv = fluid_state.cv  # reset cv to the limited version
 
         # update wall model
@@ -3646,16 +3790,20 @@ def main(actx_class,
         av_sbeta_rhs = actx.np.zeros_like(cv.mass)
         av_skappa_rhs = actx.np.zeros_like(cv.mass)
         # work good for shock 1d
+
         tau = current_dt/smoothness_tau
         epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
 
         if use_av > 0:
             # regular boundaries for smoothness mu
             smooth_neumann = NeumannDiffusionBoundary(0)
-            fluid_av_boundaries = {
-                flow_bnd.domain_tag: smooth_neumann,
-                wall_bnd.domain_tag: smooth_neumann,
-            }
+            fluid_av_boundaries = assign_fluid_boundaries(
+                outflow=smooth_neumann,
+                inflow=smooth_neumann,
+                injection=smooth_neumann,
+                flow=smooth_neumann,
+                wall=smooth_neumann,
+                interface=smooth_neumann)
 
             if use_wall:
                 from grudge.discretization import filter_part_boundaries
@@ -3664,9 +3812,6 @@ def main(actx_class,
                      for dd_bdry in filter_part_boundaries(
                          dcoll, volume_dd=dd_vol_fluid,
                          neighbor_volume_dd=dd_vol_wall)})
-            else:
-                fluid_av_boundaries.update({
-                    interface_bnd.domain_tag: smooth_neumann})
 
             # av mu
             av_smu_rhs = (
@@ -3790,6 +3935,7 @@ def main(actx_class,
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
         rhs_state = unfiltered_rhs_compiled(t, state)
+
         # Use a spectral filter on the RHS
         if use_rhs_filter:
             rhs_state_filtered = make_stepper_state_obj(rhs_state)
