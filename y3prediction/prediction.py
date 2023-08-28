@@ -2909,11 +2909,6 @@ def main(actx_class,
         grad_v = velocity_gradient(cv, grad_fluid_cv)
         grad_y = species_mass_fraction_gradient(cv, grad_fluid_cv)
 
-        local_fluid_viz_fields = {}
-        local_fluid_viz_fields["smoothness_mu"] = [av_smu]
-        local_fluid_viz_fields["smoothness_beta"] = [av_sbeta]
-        local_fluid_viz_fields["smoothness_kappa"] = [av_skappa]
-
         return make_obj_array([av_smu, av_sbeta, av_skappa,
                                grad_v, grad_y, grad_fluid_t,
                                grad_wall_t, cv, wv])
@@ -2948,11 +2943,6 @@ def main(actx_class,
         )
         grad_v = velocity_gradient(cv, grad_fluid_cv)
         grad_y = species_mass_fraction_gradient(cv, grad_fluid_cv)
-
-        local_fluid_viz_fields = {}
-        local_fluid_viz_fields["smoothness_mu"] = [av_smu]
-        local_fluid_viz_fields["smoothness_beta"] = [av_sbeta]
-        local_fluid_viz_fields["smoothness_kappa"] = [av_skappa]
 
         return make_obj_array([av_smu, av_sbeta, av_skappa,
                                grad_v, grad_y, grad_fluid_t, cv])
