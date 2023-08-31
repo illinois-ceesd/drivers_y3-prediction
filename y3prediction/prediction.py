@@ -117,6 +117,7 @@ from y3prediction.wall import (
 )
 from y3prediction.uiuc_sharp import Thermochemistry
 from y3prediction.actii_y3 import InitACTII
+from y3prediction.shock1d import PlanarDiscontinuityMulti
 
 from dataclasses import dataclass
 from arraycontext import (
@@ -514,15 +515,54 @@ def main(actx_class,
     adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
 
-    # setting these in the input file toggles the check off
-    # support for legacy runs only where you could specify boundary tags
-    # that were unused in certain cases
-    use_outflow_boundary = configurate("use_outflow_boundary", input_data, False)
-    use_inflow_boundary = configurate("use_inflow_boundary", input_data, False)
-    use_flow_boundary = configurate("use_flow_boundary", input_data, True)
-    use_injection_boundary = configurate("use_injection_boundary", input_data, True)
-    use_wall_boundary = configurate("use_wall_boundary", input_data, True)
-    use_interface_boundary = configurate("use_interface_boundary", input_data, True)
+    # setting these to none in the input file toggles the check for that
+    # boundary off provides support for legacy runs only where you could
+    # specify boundary tags that were unused in certain cases
+    use_outflow_boundary = configurate(
+        "use_outflow_boundary", input_data, "none")
+    use_inflow_boundary = configurate(
+        "use_inflow_boundary", input_data, "none")
+    use_flow_boundary = configurate(
+        "use_flow_boundary", input_data, "prescribed")
+    use_injection_boundary = configurate(
+        "use_injection_boundary", input_data, "prescribed")
+    use_wall_boundary = configurate(
+        "use_wall_boundary", input_data, "isothermal_noslip")
+    use_interface_boundary = configurate(
+        "use_interface_boundary", input_data, "isothermal_noslip")
+
+    # for each tagged boundary surface, what are they assigned to be
+    # isothermal wall -> wall when current running simulation support is not needed
+    #
+    # wall_interface is automatically generated from a shared fluid/solid volume
+    # interface and only when the solid volume is turned off by use_wall
+    bndry_config = {"outflow": use_outflow_boundary,
+                    "inflow": use_inflow_boundary,
+                    "flow": use_flow_boundary,
+                    "injection": use_injection_boundary,
+                    "isothermal_wall": use_wall_boundary,
+                    "wall_interface": use_interface_boundary}
+
+    # list of strings that are allowed to defined boundary conditions
+    allowed_boundary_types = [
+        "none",
+        "isothermal_noslip",
+        "isothermal_slip",
+        "adiabatic_noslip",
+        "adiabatic_slip",
+        "prescribed"
+    ]
+
+    # boundary sanity check
+    def boundary_type_sanity(boundary, boundary_type):
+        if boundary_type not in allowed_boundary_types:
+            error_message = ("Invalid boundary specification "
+                             f"{boundary_type} for {boundary}")
+            if rank == 0:
+                raise RuntimeError(error_message)
+
+    for bnd in bndry_config:
+        boundary_type_sanity(bnd, bndry_config[bnd])
 
     # material properties and models options
     gas_mat_prop = configurate("gas_mat_prop", input_data, 0)
@@ -603,6 +643,23 @@ def main(actx_class,
     rhs_filter_order = configurate("rhs_filter_order", input_data, 8)
     rhs_filter_alpha = configurate("rhs_filter_alpha", input_data,
                                    soln_filter_alpha_default)
+
+    # initialization configuration
+    init_case = configurate("init_case", input_data, "y3prediction")
+
+    # Shock 1D flow properties
+    pres_bkrnd = configurate("pres_bkrnd", input_data, 100.)
+    temp_bkrnd = configurate("temp_bkrnd", input_data, 300.)
+    mach = configurate("mach", input_data, 2.0)
+    shock_loc_x = configurate("shock_loc_x", input_data, 0.05)
+    fuel_loc_x = configurate("fuel_loc_x", input_data, 0.07)
+
+    # Shock 1D mesh properties
+    mesh_size = configurate("mesh_size", input_data, 0.001)
+    bl_ratio = configurate("bl_ratio", input_data, 3)
+    interface_ratio = configurate("interface_ratio", input_data, 2)
+    transfinite = configurate("transfinit", input_data, False)
+    mesh_angle = configurate("mesh_angle", input_data, 0.)
 
     # ACTII flow properties
     total_pres_inflow = configurate("total_pres_inflow", input_data, 2.745e5)
@@ -724,16 +781,10 @@ def main(actx_class,
         print(f"\tdimension = {dim}")
         print(f"\tTime integration {integrator}")
         print("   Boundary Conditions:")
-        bndry_config = {"outflow": use_outflow_boundary,
-                        "inflow": use_inflow_boundary,
-                        "flow": use_flow_boundary,
-                        "injection": use_injection_boundary,
-                        "wall": use_wall_boundary,
-                        "interface": use_interface_boundary}
         bnd_msg = ""
         for bname, bsetting in bndry_config.items():
             msg_action = "Checking for" if bsetting else "Ignoring"
-            bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh."
+            bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh.\n"
         if rank == 0:
             print(bnd_msg)
 
@@ -779,9 +830,30 @@ def main(actx_class,
     """
 
     if rank == 0:
+        print("\n#### Simluation initialization data: ####")
+        if init_case == "y3prediction":
+            print("\tInitializing flow to y3prediction")
+            print(f"\tInflow stagnation pressure {total_pres_inflow}")
+            print(f"\tInflow stagnation temperature {total_temp_inflow}")
+            print(f"\tInjection stagnation pressure {total_pres_inj}")
+            print(f"\tInjection stagnation temperature {total_temp_inj}")
+        elif init_case == "shock1d":
+            print("\tInitializing flow to shock1d")
+            print(f"Shock Mach number {mach}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
+        else:
+            from mirgecom.simutil import SimulationConfigurationError
+            raise SimulationConfigurationError(
+                "Invalid initialization configuration specified"
+                "Currently supported options are: "
+                "\t y3prediction"
+                "\t shock1d"
+            )
+        print("#### Simluation initialization data: ####")
+
+    if rank == 0:
         print("\n#### Simluation setup data: ####")
-        print(f"\ttotal_pres_injection = {total_pres_inj}")
-        print(f"\ttotal_temp_injection = {total_temp_inj}")
         print(f"\tvel_sigma = {vel_sigma}")
         print(f"\ttemp_sigma = {temp_sigma}")
         print(f"\tvel_sigma_injection = {vel_sigma_inj}")
@@ -1050,24 +1122,6 @@ def main(actx_class,
             av_mu=av2_mu0, av_beta=av2_beta0, av_kappa=av2_kappa0,
             av_prandtl=av2_prandtl0)
 
-    #
-    # stagnation tempertuare 2076.43 K
-    # stagnation pressure 2.745e5 Pa
-    #
-    # isentropic expansion based on the area ratios between the inlet (r=54e-3m) and
-    # the throat (r=3.167e-3)
-    #
-    vel_inflow = np.zeros(shape=(dim,))
-    vel_outflow = np.zeros(shape=(dim,))
-    vel_injection = np.zeros(shape=(dim,))
-
-    throat_height = 3.61909e-3
-    inlet_height = 54.129e-3
-    #outlet_height = 28.54986e-3
-    outlet_height = 34.5e-3
-    inlet_area_ratio = inlet_height/throat_height
-    outlet_area_ratio = outlet_height/throat_height
-
     chem_source_tol = 1.e-10
     # make the eos
     if eos_type == 0:
@@ -1116,222 +1170,307 @@ def main(actx_class,
         y_fuel[i_c2h4] = mf_c2h4
         y_fuel[i_h2] = mf_h2
 
-    inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
-                                      gamma=gamma,
-                                      mach_guess=0.01)
-    pres_inflow = getIsentropicPressure(mach=inlet_mach,
-                                        P0=total_pres_inflow,
-                                        gamma=gamma)
-    temp_inflow = getIsentropicTemperature(mach=inlet_mach,
-                                           T0=total_temp_inflow,
-                                           gamma=gamma)
+    # select the initialization case
+    if init_case == "shock1d":
 
-    if eos_type == 0:
-        rho_inflow = pres_inflow/temp_inflow/r
-        sos = math.sqrt(gamma*pres_inflow/rho_inflow)
-        inlet_gamma = gamma
-    else:
-        rho_inflow = pyro_mech.get_density(p=pres_inflow,
-                                          temperature=temp_inflow,
-                                          mass_fractions=y)
-        inlet_gamma = (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
-                       pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+        # init params
+        disc_location = np.zeros(shape=(dim,))
 
-        gamma_error = (gamma - inlet_gamma)
-        gamma_guess = inlet_gamma
-        toler = 1.e-6
-        # iterate over the gamma/mach since gamma = gamma(T)
-        while gamma_error > toler:
+        fuel_location = np.zeros(shape=(dim,))
 
-            inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
-                                              gamma=gamma_guess,
-                                              mach_guess=0.01)
-            pres_inflow = getIsentropicPressure(mach=inlet_mach,
-                                                P0=total_pres_inflow,
-                                                gamma=gamma_guess)
-            temp_inflow = getIsentropicTemperature(mach=inlet_mach,
-                                                   T0=total_temp_inflow,
-                                                   gamma=gamma_guess)
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = fuel_loc_x
 
+        # parameters to adjust the shape of the initialization
+        vel_sigma = 1000
+        temp_sigma = 1250
+        temp_wall = 300
+
+        # normal shock properties
+        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
+        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
+        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
+        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+        rho1 = rho_bkrnd
+        pressure1 = pres_bkrnd
+        temperature1 = pressure1/rho1/r
+        rho2 = rho1*density_ratio
+        pressure2 = pressure1*pressure_ratio
+        temperature2 = pressure2/rho2/r
+        velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
+        temp_wall = temperature1
+
+        vel_left = np.zeros(shape=(dim,))
+        vel_right = np.zeros(shape=(dim,))
+        vel_cross = np.zeros(shape=(dim,))
+        vel_cross[1] = 0
+
+        plane_normal = np.zeros(shape=(dim,))
+        theta = mesh_angle/180.*np.pi/2.
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        vel_left = velocity2*plane_normal
+
+        bulk_init = PlanarDiscontinuityMulti(
+            dim=dim,
+            nspecies=nspecies,
+            disc_location=disc_location,
+            disc_location_species=fuel_location,
+            normal_dir=plane_normal,
+            sigma=0.001,
+            pressure_left=pressure2,
+            pressure_right=pressure1,
+            temperature_left=temperature2,
+            temperature_right=temperature1,
+            velocity_left=vel_left,
+            velocity_right=vel_right,
+            velocity_cross=vel_cross,
+            species_mass_left=y,
+            species_mass_right=y_fuel,
+            temp_wall=temp_bkrnd,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+    elif init_case == "y3prediction":
+        #
+        # stagnation tempertuare 2076.43 K
+        # stagnation pressure 2.745e5 Pa
+        #
+        # isentropic expansion based on the area ratios between the
+        # inlet (r=54e-3m) and the throat (r=3.167e-3)
+        #
+        vel_inflow = np.zeros(shape=(dim,))
+        vel_outflow = np.zeros(shape=(dim,))
+        vel_injection = np.zeros(shape=(dim,))
+
+        throat_height = 3.61909e-3
+        inlet_height = 54.129e-3
+        #outlet_height = 28.54986e-3
+        outlet_height = 34.5e-3
+        inlet_area_ratio = inlet_height/throat_height
+        outlet_area_ratio = outlet_height/throat_height
+
+        inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                          gamma=gamma,
+                                          mach_guess=0.01)
+        pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                            P0=total_pres_inflow,
+                                            gamma=gamma)
+        temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                               T0=total_temp_inflow,
+                                               gamma=gamma)
+
+        if eos_type == 0:
+            rho_inflow = pres_inflow/temp_inflow/r
+            sos = math.sqrt(gamma*pres_inflow/rho_inflow)
+            inlet_gamma = gamma
+        else:
             rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
-            inlet_gamma = \
-                (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
-                 pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
-            gamma_error = (gamma_guess - inlet_gamma)
+            inlet_gamma = (
+                pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+
+            gamma_error = (gamma - inlet_gamma)
             gamma_guess = inlet_gamma
+            toler = 1.e-6
+            # iterate over the gamma/mach since gamma = gamma(T)
+            while gamma_error > toler:
 
-        sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
+                inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                                  gamma=gamma_guess,
+                                                  mach_guess=0.01)
+                pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                                    P0=total_pres_inflow,
+                                                    gamma=gamma_guess)
+                temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                                       T0=total_temp_inflow,
+                                                       gamma=gamma_guess)
 
-    vel_inflow[0] = inlet_mach*sos
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                                  temperature=temp_inflow,
+                                                  mass_fractions=y)
+                inlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+                gamma_error = (gamma_guess - inlet_gamma)
+                gamma_guess = inlet_gamma
 
-    if rank == 0:
-        print("#### Simluation initialization data: ####")
-        print(f"\tinlet Mach number {inlet_mach}")
-        print(f"\tinlet gamma {inlet_gamma}")
-        print(f"\tinlet temperature {temp_inflow}")
-        print(f"\tinlet pressure {pres_inflow}")
-        print(f"\tinlet rho {rho_inflow}")
-        print(f"\tinlet velocity {vel_inflow[0]}")
-        #print(f"final inlet pressure {pres_inflow_final}")
+            sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
-    outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
-                                       gamma=gamma,
-                                       mach_guess=1.1)
-    pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                         P0=total_pres_inflow,
-                                         gamma=gamma)
-    temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                            T0=total_temp_inflow,
-                                            gamma=gamma)
+        vel_inflow[0] = inlet_mach*sos
 
-    if eos_type == 0:
-        rho_outflow = pres_outflow/temp_outflow/r
-        sos = math.sqrt(gamma*pres_outflow/rho_outflow)
-        outlet_gamma = gamma
-    else:
-        rho_outflow = pyro_mech.get_density(p=pres_outflow,
-                                            temperature=temp_outflow,
-                                            mass_fractions=y)
-        outlet_gamma = \
-            (pyro_mech.get_mixture_specific_heat_cp_mass(temp_outflow, y) /
-             pyro_mech.get_mixture_specific_heat_cv_mass(temp_outflow, y))
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {inlet_mach}")
+            print(f"\tinlet gamma {inlet_gamma}")
+            print(f"\tinlet temperature {temp_inflow}")
+            print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet rho {rho_inflow}")
+            print(f"\tinlet velocity {vel_inflow[0]}")
+            #print(f"final inlet pressure {pres_inflow_final}")
 
-        gamma_error = (gamma - outlet_gamma)
-        gamma_guess = outlet_gamma
-        toler = 1.e-6
-        # iterate over the gamma/mach since gamma = gamma(T)
-        while gamma_error > toler:
+        outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
+                                           gamma=gamma,
+                                           mach_guess=1.1)
+        pres_outflow = getIsentropicPressure(mach=outlet_mach,
+                                             P0=total_pres_inflow,
+                                             gamma=gamma)
+        temp_outflow = getIsentropicTemperature(mach=outlet_mach,
+                                                T0=total_temp_inflow,
+                                                gamma=gamma)
 
-            outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
-                                              gamma=gamma_guess,
-                                              mach_guess=1.1)
-            pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                                P0=total_pres_inflow,
-                                                gamma=gamma_guess)
-            temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                                   T0=total_temp_inflow,
-                                                   gamma=gamma_guess)
+        if eos_type == 0:
+            rho_outflow = pres_outflow/temp_outflow/r
+            sos = math.sqrt(gamma*pres_outflow/rho_outflow)
+            outlet_gamma = gamma
+        else:
             rho_outflow = pyro_mech.get_density(p=pres_outflow,
                                                 temperature=temp_outflow,
                                                 mass_fractions=y)
             outlet_gamma = \
                 (pyro_mech.get_mixture_specific_heat_cp_mass(temp_outflow, y) /
                  pyro_mech.get_mixture_specific_heat_cv_mass(temp_outflow, y))
-            gamma_error = (gamma_guess - outlet_gamma)
+
+            gamma_error = (gamma - outlet_gamma)
             gamma_guess = outlet_gamma
-
-    vel_outflow[0] = outlet_mach*math.sqrt(gamma*pres_outflow/rho_outflow)
-
-    if rank == 0:
-        print("\t********")
-        print(f"\toutlet Mach number {outlet_mach}")
-        print(f"\toutlet gamma {outlet_gamma}")
-        print(f"\toutlet temperature {temp_outflow}")
-        print(f"\toutlet pressure {pres_outflow}")
-        print(f"\toutlet rho {rho_outflow}")
-        print(f"\toutlet velocity {vel_outflow[0]}")
-
-    gamma_injection = gamma
-    if nspecies > 0:
-        # injection mach number
-        if eos_type == 0:
-            gamma_injection = gamma
-        else:
-            #MJA: Todo, get the gamma from cantera to get the correct
-            # inflow properties
-            # needs to be iterative with the call below
-            gamma_injection = 0.5*(1.24 + 1.4)
-
-        pres_injection = getIsentropicPressure(mach=mach_inj,
-                                               P0=total_pres_inj,
-                                               gamma=gamma_injection)
-        temp_injection = getIsentropicTemperature(mach=mach_inj,
-                                                  T0=total_temp_inj,
-                                                  gamma=gamma_injection)
-
-        if eos_type == 0:
-            rho_injection = pres_injection/temp_injection/r
-            sos = math.sqrt(gamma*pres_injection/rho_injection)
-        else:
-            rho_injection = pyro_mech.get_density(p=pres_injection,
-                                                  temperature=temp_injection,
-                                                  mass_fractions=y)
-            gamma_injection = \
-                (pyro_mech.get_mixture_specific_heat_cp_mass(temp_injection, y) /
-                 pyro_mech.get_mixture_specific_heat_cv_mass(temp_injection, y))
-
-            gamma_error = (gamma - gamma_injection)
-            gamma_guess = gamma_injection
             toler = 1.e-6
             # iterate over the gamma/mach since gamma = gamma(T)
             while gamma_error > toler:
 
                 outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
                                                   gamma=gamma_guess,
-                                                  mach_guess=0.01)
+                                                  mach_guess=1.1)
                 pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                                    P0=total_pres_inj,
+                                                    P0=total_pres_inflow,
                                                     gamma=gamma_guess)
                 temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                                       T0=total_temp_inj,
+                                                       T0=total_temp_inflow,
                                                        gamma=gamma_guess)
+                rho_outflow = pyro_mech.get_density(p=pres_outflow,
+                                                    temperature=temp_outflow,
+                                                    mass_fractions=y)
+                outlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_outflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_outflow, y))
+                gamma_error = (gamma_guess - outlet_gamma)
+                gamma_guess = outlet_gamma
+
+        vel_outflow[0] = outlet_mach*math.sqrt(gamma*pres_outflow/rho_outflow)
+
+        if rank == 0:
+            print("\t********")
+            print(f"\toutlet Mach number {outlet_mach}")
+            print(f"\toutlet gamma {outlet_gamma}")
+            print(f"\toutlet temperature {temp_outflow}")
+            print(f"\toutlet pressure {pres_outflow}")
+            print(f"\toutlet rho {rho_outflow}")
+            print(f"\toutlet velocity {vel_outflow[0]}")
+
+        gamma_injection = gamma
+        if nspecies > 0:
+            # injection mach number
+            if eos_type == 0:
+                gamma_injection = gamma
+            else:
+                #MJA: Todo, get the gamma from cantera to get the correct
+                # inflow properties
+                # needs to be iterative with the call below
+                gamma_injection = 0.5*(1.24 + 1.4)
+
+            pres_injection = getIsentropicPressure(mach=mach_inj,
+                                                   P0=total_pres_inj,
+                                                   gamma=gamma_injection)
+            temp_injection = getIsentropicTemperature(mach=mach_inj,
+                                                      T0=total_temp_inj,
+                                                      gamma=gamma_injection)
+
+            if eos_type == 0:
+                rho_injection = pres_injection/temp_injection/r
+                sos = math.sqrt(gamma*pres_injection/rho_injection)
+            else:
                 rho_injection = pyro_mech.get_density(p=pres_injection,
                                                       temperature=temp_injection,
                                                       mass_fractions=y)
                 gamma_injection = \
                     (pyro_mech.get_mixture_specific_heat_cp_mass(temp_injection, y) /
                      pyro_mech.get_mixture_specific_heat_cv_mass(temp_injection, y))
-                gamma_error = (gamma_guess - gamma_injection)
+
+                gamma_error = (gamma - gamma_injection)
                 gamma_guess = gamma_injection
+                toler = 1.e-6
+                # iterate over the gamma/mach since gamma = gamma(T)
+                while gamma_error > toler:
 
-            sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
+                    outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
+                                                      gamma=gamma_guess,
+                                                      mach_guess=0.01)
+                    pres_outflow = getIsentropicPressure(mach=outlet_mach,
+                                                        P0=total_pres_inj,
+                                                        gamma=gamma_guess)
+                    temp_outflow = getIsentropicTemperature(mach=outlet_mach,
+                                                           T0=total_temp_inj,
+                                                           gamma=gamma_guess)
+                    rho_injection = pyro_mech.get_density(p=pres_injection,
+                                                          temperature=temp_injection,
+                                                          mass_fractions=y)
+                    gamma_injection = \
+                        (pyro_mech.get_mixture_specific_heat_cp_mass(
+                            temp_injection, y) /
+                         pyro_mech.get_mixture_specific_heat_cv_mass(
+                             temp_injection, y))
+                    gamma_error = (gamma_guess - gamma_injection)
+                    gamma_guess = gamma_injection
 
-        vel_injection[0] = -mach_inj*sos
+                sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
 
+            vel_injection[0] = -mach_inj*sos
+
+            if rank == 0:
+                print("\t********")
+                print(f"\tinjector Mach number {mach_inj}")
+                print(f"\tinjector gamma {gamma_injection}")
+                print(f"\tinjector temperature {temp_injection}")
+                print(f"\tinjector pressure {pres_injection}")
+                print(f"\tinjector rho {rho_injection}")
+                print(f"\tinjector velocity {vel_injection[0]}")
+                print("#### Simluation initialization data: ####\n")
+        else:
+            if rank == 0:
+                print("\t********")
+                print("\tnspecies=0, injection disabled")
+
+        # read geometry files
+        geometry_bottom = None
+        geometry_top = None
         if rank == 0:
-            print("\t********")
-            print(f"\tinjector Mach number {mach_inj}")
-            print(f"\tinjector gamma {gamma_injection}")
-            print(f"\tinjector temperature {temp_injection}")
-            print(f"\tinjector pressure {pres_injection}")
-            print(f"\tinjector rho {rho_injection}")
-            print(f"\tinjector velocity {vel_injection[0]}")
-            print("#### Simluation initialization data: ####\n")
-    else:
-        if rank == 0:
-            print("\t********")
-            print("\tnspecies=0, injection disabled")
+            from numpy import loadtxt
+            geometry_bottom = loadtxt("data/nozzleBottom.dat",
+                                      comments="#", unpack=False)
+            geometry_top = loadtxt("data/nozzleTop.dat",
+                                   comments="#", unpack=False)
+        geometry_bottom = comm.bcast(geometry_bottom, root=0)
+        geometry_top = comm.bcast(geometry_top, root=0)
 
-    # read geometry files
-    geometry_bottom = None
-    geometry_top = None
-    if rank == 0:
-        from numpy import loadtxt
-        geometry_bottom = loadtxt("data/nozzleBottom.dat",
-                                  comments="#", unpack=False)
-        geometry_top = loadtxt("data/nozzleTop.dat",
-                               comments="#", unpack=False)
-    geometry_bottom = comm.bcast(geometry_bottom, root=0)
-    geometry_top = comm.bcast(geometry_top, root=0)
+        inj_ymin = -0.0243245
+        inj_ymax = -0.0227345
 
-    inj_ymin = -0.0243245
-    inj_ymax = -0.0227345
-    bulk_init = InitACTII(dim=dim,
-                          geom_top=geometry_top, geom_bottom=geometry_bottom,
-                          P0=total_pres_inflow, T0=total_temp_inflow,
-                          temp_wall=temp_wall, temp_sigma=temp_sigma,
-                          vel_sigma=vel_sigma, nspecies=nspecies,
-                          mass_frac=y, gamma_guess=inlet_gamma,
-                          inj_gamma_guess=gamma_injection,
-                          inj_pres=total_pres_inj,
-                          inj_temp=total_temp_inj,
-                          inj_vel=vel_injection, inj_mass_frac=y_fuel,
-                          inj_temp_sigma=temp_sigma_inj,
-                          inj_vel_sigma=vel_sigma_inj,
-                          inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
-                          inj_mach=mach_inj, injection=use_injection)
+        bulk_init = InitACTII(dim=dim,
+                              geom_top=geometry_top, geom_bottom=geometry_bottom,
+                              P0=total_pres_inflow, T0=total_temp_inflow,
+                              temp_wall=temp_wall, temp_sigma=temp_sigma,
+                              vel_sigma=vel_sigma, nspecies=nspecies,
+                              mass_frac=y, gamma_guess=inlet_gamma,
+                              inj_gamma_guess=gamma_injection,
+                              inj_pres=total_pres_inj,
+                              inj_temp=total_temp_inj,
+                              inj_vel=vel_injection, inj_mass_frac=y_fuel,
+                              inj_temp_sigma=temp_sigma_inj,
+                              inj_vel_sigma=vel_sigma_inj,
+                              inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
+                              inj_mach=mach_inj, injection=use_injection)
 
     viz_path = "viz_data/"
     vizname = viz_path + casename
@@ -1366,24 +1505,76 @@ def main(actx_class,
             raise RuntimeError(error_message)
 
     else:  # generate the grid from scratch
-        if rank == 0:
-            print(f"Reading mesh from {mesh_filename}")
 
-        def get_mesh_data():
-            from meshmode.mesh.io import read_gmsh
-            mesh, tag_to_elements = read_gmsh(
-                mesh_filename, force_ambient_dim=dim,
-                return_tag_to_elements_map=True)
-            volume_to_tags = {
-                "fluid": ["fluid"]}
-            if use_wall:
-                volume_to_tags["wall"] = ["wall_insert", "wall_surround"]
-            else:
-                from mirgecom.simutil import extract_volumes
-                mesh, tag_to_elements = extract_volumes(
-                    mesh, tag_to_elements, volume_to_tags["fluid"],
-                    "wall_interface")
-            return mesh, tag_to_elements, volume_to_tags
+        # eventually encapsulate these inside a class for the respective inits
+        if init_case == "shock1d":
+            if rank == 0:
+                print("Generating mesh from scratch")
+
+            def get_mesh_data():
+                from y3prediction.shock1d import get_mesh
+                mesh, tag_to_elements = get_mesh(
+                    dim=dim, angle=mesh_angle, size=mesh_size,
+                    bl_ratio=bl_ratio, interface_ratio=interface_ratio,
+                    transfinite=transfinite, use_wall=use_wall)()
+
+                volume_to_tags = {"fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
+
+                """
+                # apply periodicity
+                if periodic:
+
+                    from meshmode.mesh.processing import (
+                        glue_mesh_boundaries, BoundaryPairMapping)
+
+                    from meshmode import AffineMap
+                    bdry_pair_mappings_and_tols = []
+                    offset = [0., 0.02]
+                    bdry_pair_mappings_and_tols.append((
+                        BoundaryPairMapping(
+                            "fluid_wall_bottom",
+                            "fluid_wall_top",
+                            AffineMap(offset=offset)),
+                        1e-12))
+
+                    if use_wall:
+                        bdry_pair_mappings_and_tols.append((
+                            BoundaryPairMapping(
+                                "solid_wall_bottom",
+                                "solid_wall_top",
+                                AffineMap(offset=offset)),
+                            1e-12))
+
+                    mesh = glue_mesh_boundaries(mesh, bdry_pair_mappings_and_tols)
+                    """
+
+                return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "y3prediction":
+            if rank == 0:
+                print(f"Reading mesh from {mesh_filename}")
+
+            def get_mesh_data():
+                from meshmode.mesh.io import read_gmsh
+                mesh, tag_to_elements = read_gmsh(
+                    mesh_filename, force_ambient_dim=dim,
+                    return_tag_to_elements_map=True)
+                volume_to_tags = {
+                    "fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert", "wall_surround"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
+                return mesh, tag_to_elements, volume_to_tags
 
         def my_partitioner(mesh, tag_to_elements, num_ranks):
             from mirgecom.simutil import geometric_mesh_partitioner
@@ -1455,8 +1646,52 @@ def main(actx_class,
     dd_vol_fluid = DOFDesc(VolumeDomainTag("fluid"), DISCR_TAG_BASE)
     fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_fluid)))
 
-    # setup boundary types
-    # only named boundaries list here are allowable in the mesh generation
+    def check_boundary(boundary, name):
+
+        #print(f"check_boundary {boundary=} {name=}")
+        try:
+            force_evaluation(actx, actx.thaw(dcoll.nodes(boundary)))
+        except ValueError:
+            if rank == 0:
+                print(f"Could not find boundary named {name} in fluid domain,",
+                       "boundary type will be unused")
+            return False
+
+        if rank == 0:
+            print(f"Found boundary named {name} in fluid domain")
+        return True
+
+    # setup element boundary assignments
+    #print(f"before check {bndry_config=}")
+    bndry_elements = {}
+    for bnd_name in bndry_config:
+        bndry_elements[bnd_name] = dd_vol_fluid.trace(bnd_name)
+
+        # check to see if any elements are assigned to this named boundary,
+        # if not, disabled it
+        #print(f"checking {bnd_name=}")
+        bnd_exists = check_boundary(bndry_elements[bnd_name], bnd_name)
+        if not bnd_exists:
+            bndry_config[bnd_name] = "none"
+
+    #print(f"{bndry_elements=}")
+    #print(f"afer check {bndry_config=}")
+
+    if rank == 0:
+        print("### Boundary Condition Summary ###")
+        print("The following boundary conditions are enabled:")
+        for bnd_name in bndry_config:
+            if bndry_config[bnd_name] != "none":
+                print(f"\t{bnd_name} = {bndry_config[bnd_name]}")
+
+        print("The following boundary conditions are unused:")
+        for bnd_name in bndry_config:
+            if bndry_config[bnd_name] == "none":
+                print(f"\t{bnd_name}")
+
+        print("### Boundary Condition Summary ###")
+
+    """
     #
     # fluid inflow
     inflow_bnd = dd_vol_fluid.trace("inflow")
@@ -1476,20 +1711,16 @@ def main(actx_class,
 
     # fluid boundary that acts as a wall when the wall model is disabled
     interface_bnd = dd_vol_fluid.trace("wall_interface")
+    """
 
-    def check_boundary(boundary, name):
-        try:
-            force_evaluation(actx, actx.thaw(dcoll.nodes(boundary)))
-        except ValueError:
-            if rank == 0:
-                print(f"Could not find boundary named {name} in fluid domain,",
-                       "boundary type will be unused")
-            return False
+    """
+    for bnd in bndry_config:
+        bnd_exists = check_boundary(bndry_config[bnd], bnd)
+        if not bnd_exists:
+            bndry_config[bnd] = "none"
+    """
 
-        if rank == 0:
-            print(f"Found boundary {name} in fluid domain")
-        return True
-
+    """
     if use_outflow_boundary:
         use_outflow_boundary = check_boundary(outflow_bnd, "outflow")
     if use_inflow_boundary:
@@ -1502,14 +1733,18 @@ def main(actx_class,
         use_wall_boundary = check_boundary(wall_bnd, "wall")
     if use_interface_boundary:
         use_interface_boundary = check_boundary(interface_bnd, "interface")
+    """
 
+    """
     if (use_outflow_boundary and use_flow_boundary or
             use_inflow_boundary and use_flow_boundary):
         error_message = \
             "Invalid boundary configuration, inflow/outflow with flow:"
         from mirgecom.simutil import SimulationConfigurationError
         raise SimulationConfigurationError(error_message)
+        """
 
+    """
     # setup basic boundary conditions
     if noslip:
         if adiabatic:
@@ -1518,19 +1753,45 @@ def main(actx_class,
             fluid_wall = IsothermalWallBoundary(temp_wall)
     else:
         fluid_wall = AdiabaticSlipBoundary()
+    """
 
+    """
     # everything is a wall by default
     outflow_boundary = fluid_wall
     inflow_boundary = fluid_wall
     flow_boundary = fluid_wall
     injection_boundary = fluid_wall
+    """
+
+    bndry_mapping = {
+        "isothermal_noslip": IsothermalWallBoundary(temp_wall),
+        "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
+        "adiabatic_slip": AdiabaticSlipBoundary(),
+    }
 
     wall_farfield = DirichletDiffusionBoundary(temp_wall)
 
+    def assign_fluid_boundaries(all_boundaries, bndry_mapping):
+
+        for bnd_name in bndry_config:
+            bndry_type = bndry_config[bnd_name]
+            if bndry_type != "none":
+                all_boundaries[bndry_elements[bnd_name].domain_tag] \
+                    = bndry_mapping[bndry_type]
+        return all_boundaries
+
+    """
     # helper function to build a dictionary for fluid boundary types
     def assign_fluid_boundaries(inflow, outflow, injection,
                                 flow, wall, interface):
+
+
         boundaries = {}
+        for bnd_name in bndry_config:
+            bndry_type = bndry_config[bnd_name]
+            if bndry_type != "none":
+                bndry_elements[bnd_name] = bndry_mapping[bndry_type]
+
         if use_outflow_boundary:
             boundaries[outflow_bnd.domain_tag] = outflow
 
@@ -1557,6 +1818,7 @@ def main(actx_class,
                 boundaries[interface_bnd.domain_tag] = interface
 
         return boundaries
+    """
 
     if use_wall:
         dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
@@ -1564,10 +1826,24 @@ def main(actx_class,
 
         wall_vol_discr = dcoll.discr_from_dd(dd_vol_wall)
         wall_tag_to_elements = volume_to_local_mesh_data["wall"][1]
-        wall_insert_mask = mask_from_elements(
-            wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
-        wall_surround_mask = mask_from_elements(
-            wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
+
+        try:
+            wall_insert_mask = mask_from_elements(
+                wall_vol_discr, actx, wall_tag_to_elements["wall_insert"])
+        except KeyError:
+            wall_insert_mask = 0
+            if rank == 0:
+                print("No elements matching wall_insert")
+                #wall_insert_mask = actx.np.zeros_like(wall_tag_to_elements)
+
+        try:
+            wall_surround_mask = mask_from_elements(
+                wall_vol_discr, actx, wall_tag_to_elements["wall_surround"])
+        except KeyError:
+            wall_surround_mask = 0
+            if rank == 0:
+                print("No elements matching wall_surround")
+                #wall_surround_mask = actx.np.zeros_like(wall_tag_to_elements)
 
         wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
@@ -1597,7 +1873,13 @@ def main(actx_class,
         # regular boundaries
 
         smooth_neumann = NeumannDiffusionBoundary(0)
+        fluid_smoothness_boundaries = {}
+        for bnd_name in bndry_config:
+            if bndry_config[bnd_name] != "none":
+                fluid_smoothness_boundaries[bndry_elements[bnd_name]] =\
+                    smooth_neumann
 
+        """
         fluid_smoothness_boundaries = assign_fluid_boundaries(
             outflow=smooth_neumann,
             inflow=smooth_neumann,
@@ -1605,6 +1887,7 @@ def main(actx_class,
             flow=smooth_neumann,
             wall=smooth_neumann,
             interface=smooth_neumann)
+        """
 
         if use_wall:
             fluid_smoothness_boundaries.update({
@@ -2356,6 +2639,7 @@ def main(actx_class,
 
     # use dummy boundaries to update the smoothness state for the target
     if use_av > 0:
+        """
         if use_injection:
             target_injection_boundary = DummyBoundary()
         else:
@@ -2368,6 +2652,14 @@ def main(actx_class,
             flow=DummyBoundary(),
             wall=fluid_wall,
             interface=fluid_wall)
+        """
+
+        target_bndry_mapping = bndry_mapping
+        target_bndry_mapping["prescribed"] = DummyBoundary()
+
+        target_boundaries = {}
+        target_boundaries = assign_fluid_boundaries(
+            target_boundaries, target_bndry_mapping)
 
         target_grad_cv = grad_cv_operator_target_compiled(
             target_fluid_state, time=0.)
@@ -2494,7 +2786,9 @@ def main(actx_class,
             entropy_stable=use_esdg
         )
 
-    if use_flow_boundary:
+    # is there a way to generalize this?
+    #if use_flow_boundary:
+    if bndry_config["flow"] == "prescribed":
         flow_ref_state = \
             get_target_state_on_boundary("flow")
 
@@ -2503,10 +2797,14 @@ def main(actx_class,
         def _target_flow_state_func(**kwargs):
             return flow_ref_state
 
-        flow_boundary = PrescribedFluidBoundary(
+        prescribed_flow_boundary = PrescribedFluidBoundary(
             boundary_state_func=_target_flow_state_func)
 
-    if use_inflow_boundary:
+        bndry_config["flow"] = "prescribed_flow"
+        bndry_mapping["prescribed_flow"] = prescribed_flow_boundary
+
+    #if use_inflow_boundary:
+    if bndry_config["inflow"] == "prescribed":
         inflow_ref_state = \
             get_target_state_on_boundary("inflow")
 
@@ -2515,10 +2813,14 @@ def main(actx_class,
         def _target_inflow_state_func(**kwargs):
             return inflow_ref_state
 
-        inflow_boundary = PrescribedFluidBoundary(
+        prescribed_inflow_boundary = PrescribedFluidBoundary(
             boundary_state_func=_target_inflow_state_func)
 
-    if use_outflow_boundary:
+        bndry_config["inflow"] = "prescribed_inflow"
+        bndry_mapping["prescribed_inflow"] = prescribed_inflow_boundary
+
+    #if use_outflow_boundary:
+    if bndry_config["outflow"] == "prescribed":
         outflow_ref_state = \
             get_target_state_on_boundary("outflow")
 
@@ -2527,21 +2829,73 @@ def main(actx_class,
         def _target_outflow_state_func(**kwargs):
             return outflow_ref_state
 
-        outflow_boundary = PrescribedFluidBoundary(
+        prescribed_outflow_boundary = PrescribedFluidBoundary(
             boundary_state_func=_target_outflow_state_func)
-        #outflow_pressure = 2000
-        #outflow_boundary = PressureOutflowBoundary(outflow_pressure)
 
-    if use_injection:
-        injection_boundary = flow_boundary
+        bndry_config["outflow"] = "prescribed_outflow"
+        bndry_mapping["prescribed_outflow"] = prescribed_outflow_boundary
 
+    if bndry_config["injection"] == "prescribed":
+        injection_ref_state = \
+            get_target_state_on_boundary("injection")
+
+        injection_ref_state = force_evaluation(actx, injection_ref_state)
+
+        def _target_injection_state_func(**kwargs):
+            return injection_ref_state
+
+        prescribed_injection_boundary = PrescribedFluidBoundary(
+            boundary_state_func=_target_injection_state_func)
+
+        bndry_config["injection"] = "prescribed_injection"
+        bndry_mapping["prescribed_injection"] = prescribed_injection_boundary
+
+    if bndry_config["wall_interface"] == "prescribed":
+        interface_ref_state = \
+            get_target_state_on_boundary("wall_interface")
+
+        interface_ref_state = force_evaluation(actx, interface_ref_state)
+
+        def _target_interface_state_func(**kwargs):
+            return interface_ref_state
+
+        prescribed_interface_boundary = PrescribedFluidBoundary(
+            boundary_state_func=_target_interface_state_func)
+
+        bndry_config["wall_interface"] = "prescribed_interface"
+        bndry_mapping["prescribed_interface"] = prescribed_interface_boundary
+
+    uncoupled_fluid_boundaries = {}
     uncoupled_fluid_boundaries = assign_fluid_boundaries(
+        uncoupled_fluid_boundaries, bndry_mapping)
+    """
         outflow=outflow_boundary,
         inflow=inflow_boundary,
         injection=injection_boundary,
         flow=flow_boundary,
         wall=fluid_wall,
         interface=fluid_wall)
+     """
+
+    # check the boundary condition coverage
+    from meshmode.mesh import check_bc_coverage
+    print(f"{uncoupled_fluid_boundaries=}")
+    try:
+        bound_list = []
+        for bound in list(uncoupled_fluid_boundaries.keys()):
+            bound_list.append(bound.tag)
+        print(f"{uncoupled_fluid_boundaries=}")
+        print(f"{bound_list=}")
+        check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
+                          #boundary_tags=uncoupled_fluid_boundaries,
+                          boundary_tags=bound_list,
+                          incomplete_ok=False)
+    except (ValueError, RuntimeError):
+        print(f"{uncoupled_fluid_boundaries=}")
+        from mirgecom.simutil import SimulationConfigurationError
+        raise SimulationConfigurationError(
+            "Invalid boundary configuration specified"
+        )
 
     if use_wall:
         uncoupled_wall_boundaries = {
@@ -3798,6 +4152,12 @@ def main(actx_class,
         if use_av > 0:
             # regular boundaries for smoothness mu
             smooth_neumann = NeumannDiffusionBoundary(0)
+            fluid_av_boundaries = {}
+            for bnd_name in bndry_config:
+                if bndry_config[bnd_name] != "none":
+                    fluid_av_boundaries[bndry_elements[bnd_name]] = smooth_neumann
+
+            """
             fluid_av_boundaries = assign_fluid_boundaries(
                 outflow=smooth_neumann,
                 inflow=smooth_neumann,
@@ -3805,6 +4165,7 @@ def main(actx_class,
                 flow=smooth_neumann,
                 wall=smooth_neumann,
                 interface=smooth_neumann)
+            """
 
             if use_wall:
                 from grudge.discretization import filter_part_boundaries
