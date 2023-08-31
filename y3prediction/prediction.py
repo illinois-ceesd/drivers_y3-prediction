@@ -525,11 +525,11 @@ def main(actx_class,
     use_flow_boundary = configurate(
         "use_flow_boundary", input_data, "prescribed")
     use_injection_boundary = configurate(
-        "use_injection_boundary", input_data, "prescribed")
+        "use_injection_boundary", input_data, "none")
     use_wall_boundary = configurate(
         "use_wall_boundary", input_data, "isothermal_noslip")
     use_interface_boundary = configurate(
-        "use_interface_boundary", input_data, "isothermal_noslip")
+        "use_interface_boundary", input_data, "none")
 
     # for each tagged boundary surface, what are they assigned to be
     # isothermal wall -> wall when current running simulation support is not needed
@@ -1665,14 +1665,14 @@ def main(actx_class,
     #print(f"before check {bndry_config=}")
     bndry_elements = {}
     for bnd_name in bndry_config:
-        bndry_elements[bnd_name] = dd_vol_fluid.trace(bnd_name)
-
-        # check to see if any elements are assigned to this named boundary,
-        # if not, disabled it
-        #print(f"checking {bnd_name=}")
-        bnd_exists = check_boundary(bndry_elements[bnd_name], bnd_name)
-        if not bnd_exists:
-            bndry_config[bnd_name] = "none"
+        # skip disabled boundaries
+        if bndry_config[bnd_name] != "none":
+            # check to see if any elements are assigned to this named boundary,
+            # if not, disabled it
+            bndry_elements[bnd_name] = dd_vol_fluid.trace(bnd_name)
+            bnd_exists = check_boundary(bndry_elements[bnd_name], bnd_name)
+            if not bnd_exists:
+                bndry_config[bnd_name] = "none"
 
     #print(f"{bndry_elements=}")
     #print(f"afer check {bndry_config=}")
@@ -3028,7 +3028,7 @@ def main(actx_class,
 
     def _sponge_source(cv):
         """Create sponge source."""
-        return sponge_sigma*(current_fluid_state.cv - cv)
+        return sponge_sigma*(target_fluid_state.cv - cv)
 
     vis_timer = None
     monitor_memory = True
