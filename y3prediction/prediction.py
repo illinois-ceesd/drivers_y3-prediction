@@ -512,7 +512,6 @@ def main(actx_class,
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
     noslip = configurate("noslip", input_data, True)
-    adiabatic = configurate("adiabatic", input_data, False)
     use_1d_part = configurate("use_1d_part", input_data, True)
 
     # setting these to none in the input file toggles the check for that
@@ -789,14 +788,9 @@ def main(actx_class,
             print(bnd_msg)
 
         if noslip:
-            print("\tFluid wall boundary conditions are noslip for veloctiy")
+            print("\tInterface wall boundary conditions are noslip for velocity")
         else:
-            print("\tFluid wall boundary conditions are slip for veloctiy")
-
-        if adiabatic:
-            print("\tFluid wall boundary conditions are adiabatic for temperature")
-        else:
-            print("\tFluid wall boundary conditions are isothermal for temperature")
+            print("\tInterface wall boundary conditions are slip for velocity")
 
         print("#### Simluation control data: ####\n")
 
@@ -821,13 +815,6 @@ def main(actx_class,
         if viz_interval_type == 2:
             print(f"\tWriting viz data exactly every {t_viz_interval} seconds.")
         print("#### Visualization setup: ####")
-
-    """
-    if not noslip:
-        vel_sigma = 0.
-    if adiabatic:
-        temp_sigma = 0.
-    """
 
     if rank == 0:
         print("\n#### Simluation initialization data: ####")
@@ -1662,7 +1649,6 @@ def main(actx_class,
         return True
 
     # setup element boundary assignments
-    #print(f"before check {bndry_config=}")
     bndry_elements = {}
     for bnd_name in bndry_config:
         # skip disabled boundaries
@@ -1673,9 +1659,6 @@ def main(actx_class,
             bnd_exists = check_boundary(bndry_elements[bnd_name], bnd_name)
             if not bnd_exists:
                 bndry_config[bnd_name] = "none"
-
-    #print(f"{bndry_elements=}")
-    #print(f"afer check {bndry_config=}")
 
     if rank == 0:
         print("### Boundary Condition Summary ###")
@@ -1690,78 +1673,6 @@ def main(actx_class,
                 print(f"\t{bnd_name}")
 
         print("### Boundary Condition Summary ###")
-
-    """
-    #
-    # fluid inflow
-    inflow_bnd = dd_vol_fluid.trace("inflow")
-
-    # fluid outflow
-    outflow_bnd = dd_vol_fluid.trace("outflow")
-
-    # fluid injection inflow
-    # behaves as a wall when injection is disabled
-    inj_bnd = dd_vol_fluid.trace("injection")
-
-    # lumped prescribed boundaries (inflow, outflow, injection)
-    flow_bnd = dd_vol_fluid.trace("flow")
-
-    # fluid walls
-    wall_bnd = dd_vol_fluid.trace("isothermal_wall")
-
-    # fluid boundary that acts as a wall when the wall model is disabled
-    interface_bnd = dd_vol_fluid.trace("wall_interface")
-    """
-
-    """
-    for bnd in bndry_config:
-        bnd_exists = check_boundary(bndry_config[bnd], bnd)
-        if not bnd_exists:
-            bndry_config[bnd] = "none"
-    """
-
-    """
-    if use_outflow_boundary:
-        use_outflow_boundary = check_boundary(outflow_bnd, "outflow")
-    if use_inflow_boundary:
-        use_inflow_boundary = check_boundary(inflow_bnd, "inflow")
-    if use_flow_boundary:
-        use_flow_boundary = check_boundary(flow_bnd, "flow")
-    if use_injection_boundary:
-        use_injection_boundary = check_boundary(inj_bnd, "injection")
-    if use_wall_boundary:
-        use_wall_boundary = check_boundary(wall_bnd, "wall")
-    if use_interface_boundary:
-        use_interface_boundary = check_boundary(interface_bnd, "interface")
-    """
-
-    """
-    if (use_outflow_boundary and use_flow_boundary or
-            use_inflow_boundary and use_flow_boundary):
-        error_message = \
-            "Invalid boundary configuration, inflow/outflow with flow:"
-        from mirgecom.simutil import SimulationConfigurationError
-        raise SimulationConfigurationError(error_message)
-        """
-
-    """
-    # setup basic boundary conditions
-    if noslip:
-        if adiabatic:
-            fluid_wall = AdiabaticNoslipWallBoundary()
-        else:
-            fluid_wall = IsothermalWallBoundary(temp_wall)
-    else:
-        fluid_wall = AdiabaticSlipBoundary()
-    """
-
-    """
-    # everything is a wall by default
-    outflow_boundary = fluid_wall
-    inflow_boundary = fluid_wall
-    flow_boundary = fluid_wall
-    injection_boundary = fluid_wall
-    """
 
     bndry_mapping = {
         "isothermal_noslip": IsothermalWallBoundary(temp_wall),
@@ -1779,46 +1690,6 @@ def main(actx_class,
                 all_boundaries[bndry_elements[bnd_name].domain_tag] \
                     = bndry_mapping[bndry_type]
         return all_boundaries
-
-    """
-    # helper function to build a dictionary for fluid boundary types
-    def assign_fluid_boundaries(inflow, outflow, injection,
-                                flow, wall, interface):
-
-
-        boundaries = {}
-        for bnd_name in bndry_config:
-            bndry_type = bndry_config[bnd_name]
-            if bndry_type != "none":
-                bndry_elements[bnd_name] = bndry_mapping[bndry_type]
-
-        if use_outflow_boundary:
-            boundaries[outflow_bnd.domain_tag] = outflow
-
-        if use_inflow_boundary:
-            boundaries[inflow_bnd.domain_tag] = inflow
-
-        if use_injection_boundary:
-            # legacy behavior, flow boundary should include the injection
-            # to minimize the number of unique boundary tags
-            # only use the injection boundary if we're not using the flow_boundary
-            #if not use_flow_boundary or (use_flow_boundary and not use_injection):
-            if not use_injection or not use_flow_boundary:
-                boundaries[inj_bnd.domain_tag] = injection
-
-        if use_flow_boundary:
-            boundaries[flow_bnd.domain_tag] = flow
-
-        if use_wall_boundary:
-            boundaries[wall_bnd.domain_tag] = wall
-
-        if use_interface_boundary:
-            # only allow an interface boundary if the wall model is disabled
-            if not use_wall:
-                boundaries[interface_bnd.domain_tag] = interface
-
-        return boundaries
-    """
 
     if use_wall:
         dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
@@ -2639,21 +2510,6 @@ def main(actx_class,
 
     # use dummy boundaries to update the smoothness state for the target
     if use_av > 0:
-        """
-        if use_injection:
-            target_injection_boundary = DummyBoundary()
-        else:
-            target_injection_boundary = fluid_wall
-
-        target_boundaries = assign_fluid_boundaries(
-            outflow=DummyBoundary(),
-            inflow=DummyBoundary(),
-            injection=target_injection_boundary,
-            flow=DummyBoundary(),
-            wall=fluid_wall,
-            interface=fluid_wall)
-        """
-
         target_bndry_mapping = bndry_mapping
         target_bndry_mapping["prescribed"] = DummyBoundary()
 
@@ -2868,14 +2724,6 @@ def main(actx_class,
     uncoupled_fluid_boundaries = {}
     uncoupled_fluid_boundaries = assign_fluid_boundaries(
         uncoupled_fluid_boundaries, bndry_mapping)
-    """
-        outflow=outflow_boundary,
-        inflow=inflow_boundary,
-        injection=injection_boundary,
-        flow=flow_boundary,
-        wall=fluid_wall,
-        interface=fluid_wall)
-     """
 
     # check the boundary condition coverage
     from meshmode.mesh import check_bc_coverage
@@ -4155,16 +4003,6 @@ def main(actx_class,
             for bnd_name in bndry_config:
                 if bndry_config[bnd_name] != "none":
                     fluid_av_boundaries[bndry_elements[bnd_name]] = smooth_neumann
-
-            """
-            fluid_av_boundaries = assign_fluid_boundaries(
-                outflow=smooth_neumann,
-                inflow=smooth_neumann,
-                injection=smooth_neumann,
-                flow=smooth_neumann,
-                wall=smooth_neumann,
-                interface=smooth_neumann)
-            """
 
             if use_wall:
                 from grudge.discretization import filter_part_boundaries
