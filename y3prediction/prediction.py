@@ -50,6 +50,7 @@ from mirgecom.logging_quantities import (
 )
 
 from mirgecom.simutil import (
+    SimulationConfigurationError,
     check_step,
     distribute_mesh,
     write_visfile,
@@ -76,6 +77,7 @@ from mirgecom.boundary import (
     IsothermalWallBoundary,
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
+    PressureOutflowBoundary,
     DummyBoundary
 )
 from mirgecom.diffusion import (
@@ -530,6 +532,8 @@ def main(actx_class,
     use_interface_boundary = configurate(
         "use_interface_boundary", input_data, "none")
 
+    outflow_pressure = configurate("outflow_pressure", input_data, 100.0)
+
     # for each tagged boundary surface, what are they assigned to be
     # isothermal wall -> wall when current running simulation support is not needed
     #
@@ -549,6 +553,8 @@ def main(actx_class,
         "isothermal_slip",
         "adiabatic_noslip",
         "adiabatic_slip",
+        "pressure_outflow",
+        "riemann_outflow",
         "prescribed"
     ]
 
@@ -713,7 +719,8 @@ def main(actx_class,
         raise RuntimeError(error_message)
 
     if integrator == "compiled_lsrk54":
-        print("Setting force_eval = False for pre-compiled time integration")
+        if rank == 0:
+            print("Setting force_eval = False for pre-compiled time integration")
         force_eval = False
 
     if viz_interval_type > 2:
@@ -830,7 +837,6 @@ def main(actx_class,
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
         else:
-            from mirgecom.simutil import SimulationConfigurationError
             raise SimulationConfigurationError(
                 "Invalid initialization configuration specified"
                 "Currently supported options are: "
@@ -839,7 +845,6 @@ def main(actx_class,
             )
         print("#### Simluation initialization data: ####")
 
-    if rank == 0:
         print("\n#### Simluation setup data: ####")
         print(f"\tvel_sigma = {vel_sigma}")
         print(f"\ttemp_sigma = {temp_sigma}")
@@ -883,7 +888,6 @@ def main(actx_class,
         try:
             from mirgecom.inviscid import entropy_stable_inviscid_facial_flux_rusanov
         except ImportError:
-            from mirgecom.simutil import SimulationConfigurationError
             raise SimulationConfigurationError(
                 "ESDG option specified, but MIRGE-Com "
                 "is installed without ESDG support. "
@@ -1199,6 +1203,15 @@ def main(actx_class,
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
 
         vel_left = velocity2*plane_normal
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {mach}")
+            print(f"\tinlet gamma {gamma}")
+            print(f"\tinlet temperature {temperature2}")
+            print(f"\tinlet pressure {pressure2}")
+            print(f"\tinlet rho {rho2}")
+            print(f"\tinlet velocity {velocity2}")
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -1678,6 +1691,7 @@ def main(actx_class,
         "isothermal_noslip": IsothermalWallBoundary(temp_wall),
         "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
         "adiabatic_slip": AdiabaticSlipBoundary(),
+        "pressure_outflow": PressureOutflowBoundary(outflow_pressure)
     }
 
     wall_farfield = DirichletDiffusionBoundary(temp_wall)
@@ -2739,7 +2753,6 @@ def main(actx_class,
                           incomplete_ok=False)
     except (ValueError, RuntimeError):
         print(f"{uncoupled_fluid_boundaries=}")
-        from mirgecom.simutil import SimulationConfigurationError
         raise SimulationConfigurationError(
             "Invalid boundary configuration specified"
         )
@@ -2828,55 +2841,76 @@ def main(actx_class,
 
     # initialize the sponge field
     sponge_amp = sponge_sigma/current_dt/1000
-
     from y3prediction.utils import InitSponge
-    inlet_sponge_x0 = 0.225
-    inlet_sponge_thickness = 0.015
-    outlet_sponge_x0 = 0.89
-    outlet_sponge_thickness = 0.04
-    inj_sponge_x0 = 0.645
-    inj_sponge_thickness = 0.005
-    upstream_inj_sponge_y0 = -0.02253 + inj_sponge_thickness
-    sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
-                                   thickness=inlet_sponge_thickness,
-                                   amplitude=sponge_amp,
-                                   direction=-1.0)
-    sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
-                                    thickness=outlet_sponge_thickness,
-                                    amplitude=sponge_amp)
-    if use_injection:
-        sponge_init_injection = InitSponge(x0=inj_sponge_x0,
-                                           thickness=inj_sponge_thickness,
-                                           amplitude=sponge_amp,
-                                           xmax=0.66, ymax=-0.01)
 
-    if use_upstream_injection:
-        sponge_init_upstream_injection = InitSponge(x0=upstream_inj_sponge_y0,
-                                                    thickness=inj_sponge_thickness,
-                                                    amplitude=sponge_amp,
-                                                    xmin=0.53, xmax=0.535,
-                                                    ymin=-0.02253,
-                                                    direction=-2.0)
-
-    def _sponge_sigma(sponge_field, x_vec):
-        sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
-        sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+    if init_case == "y3prediction":
+        inlet_sponge_x0 = 0.225
+        inlet_sponge_thickness = 0.015
+        outlet_sponge_x0 = 0.89
+        outlet_sponge_thickness = 0.04
+        inj_sponge_x0 = 0.645
+        inj_sponge_thickness = 0.005
+        upstream_inj_sponge_y0 = -0.02253 + inj_sponge_thickness
+        sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                       thickness=inlet_sponge_thickness,
+                                       amplitude=sponge_amp,
+                                       direction=-1.0)
+        sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                        thickness=outlet_sponge_thickness,
+                                        amplitude=sponge_amp)
         if use_injection:
-            sponge_field = sponge_init_injection(sponge_field=sponge_field,
-                                                 x_vec=x_vec)
+            sponge_init_injection =\
+                InitSponge(x0=inj_sponge_x0, thickness=inj_sponge_thickness,
+                           amplitude=sponge_amp,
+                           xmax=0.66, ymax=-0.01)
+
         if use_upstream_injection:
-            sponge_field = sponge_init_upstream_injection(sponge_field=sponge_field,
-                                                          x_vec=x_vec)
-        return sponge_field
+            sponge_init_upstream_injection =\
+                InitSponge(x0=upstream_inj_sponge_y0,
+                           thickness=inj_sponge_thickness,
+                           amplitude=sponge_amp,
+                           xmin=0.53, xmax=0.535,
+                           ymin=-0.02253, direction=-2.0)
+
+        def _sponge_sigma(sponge_field, x_vec):
+            sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            if use_injection:
+                sponge_field = sponge_init_injection(
+                    sponge_field=sponge_field, x_vec=x_vec)
+            if use_upstream_injection:
+                sponge_field = sponge_init_upstream_injection(
+                    sponge_field=sponge_field, x_vec=x_vec)
+            return sponge_field
+
+    elif init_case == "shock1d":
+
+        inlet_sponge_x0 = 0.015
+        inlet_sponge_thickness = 0.015
+        outlet_sponge_x0 = 0.085
+        outlet_sponge_thickness = 0.015
+        sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                       thickness=inlet_sponge_thickness,
+                                       amplitude=sponge_amp,
+                                       direction=-1.0)
+        sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                        thickness=outlet_sponge_thickness,
+                                        amplitude=sponge_amp)
+
+        def _sponge_sigma(sponge_field, x_vec):
+            sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            return sponge_field
 
     get_sponge_sigma = actx.compile(_sponge_sigma)
 
     sponge_sigma = actx.np.zeros_like(restart_cv.mass)
-    sponge_sigma = get_sponge_sigma(sponge_sigma, fluid_nodes)
+    sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
+                                                           fluid_nodes))
 
-    def _sponge_source(cv):
+    def _sponge_source(sigma, cv):
         """Create sponge source."""
-        return sponge_sigma*(target_fluid_state.cv - cv)
+        return sigma*(target_fluid_state.cv - cv)
 
     vis_timer = None
     monitor_memory = True
@@ -3298,7 +3332,8 @@ def main(actx_class,
                        ("Pe_heat", cell_Pe_heat)]
             fluid_viz_fields.extend(viz_ext)
             viz_ext = [("char_length_fluid", char_length_fluid),
-                      ("char_length_fluid_smooth", smoothed_char_length_fluid)]
+                       ("char_length_fluid_smooth", smoothed_char_length_fluid),
+                       ("sponge_sigma", sponge_sigma)]
             fluid_viz_fields.extend(viz_ext)
 
             cfl_fluid_inv = char_length_fluid / (fluid_state.wavespeed)
@@ -3352,8 +3387,7 @@ def main(actx_class,
             fluid_viz_fields.extend(viz_ext)
 
             #viz_ext = [("rhs", ns_rhs),
-            viz_ext = [("sponge_sigma", sponge_sigma),
-                       ("grad_temperature", grad_fluid_t),
+            viz_ext = [("grad_temperature", grad_fluid_t),
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
             if dim == 3:
@@ -4038,10 +4072,8 @@ def main(actx_class,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        #sponge_rhs = actx.np.zeros_like(cv)
         if use_sponge:
-            fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
-            #sponge_rhs = _sponge_source(cv=cv)
+            fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma, cv=cv)
 
         if use_wall:
             # wall mass loss
