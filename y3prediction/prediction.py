@@ -413,6 +413,13 @@ def main(actx_class,
     rank = comm.Get_rank()
     nparts = comm.Get_size()
 
+    if rank == 0:
+        print(f"Running prediction driver on {nparts} MPI ranks.")
+        print(f"Casename: {casename}")
+        print(f"Input file: {user_input_file}")
+        print(f"Restart filename: {restart_filename}")
+        print(f"Target filename: {target_filename}")
+
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
@@ -647,7 +654,8 @@ def main(actx_class,
         raise RuntimeError(error_message)
 
     if integrator == "compiled_lsrk54":
-        print("Setting force_eval = False for pre-compiled time integration")
+        if rank == 0:
+            print("Setting force_eval = False for pre-compiled time integration")
         force_eval = False
 
     if viz_interval_type > 2:
@@ -700,7 +708,6 @@ def main(actx_class,
             error_message = "Unknown artifical viscosity model {}".format(use_av)
             raise RuntimeError(error_message)
 
-    if rank == 0:
         print("\n#### Simluation control data: ####")
         print(f"\tnrestart = {nrestart}")
         print(f"\tnhealth = {nhealth}")
@@ -723,7 +730,6 @@ def main(actx_class,
             print("Fluid wall boundary conditions are isothermal for temperature")
         print("#### Simluation control data: ####\n")
 
-    if rank == 0:
         print("\n#### Visualization setup: ####")
         if viz_level >= 0:
             print("\tBasic visualization output enabled.")
@@ -745,14 +751,6 @@ def main(actx_class,
             print(f"\tWriting viz data exactly every {t_viz_interval} seconds.")
         print("#### Visualization setup: ####")
 
-    """
-    if not noslip:
-        vel_sigma = 0.
-    if adiabatic:
-        temp_sigma = 0.
-    """
-
-    if rank == 0:
         print("\n#### Simluation setup data: ####")
         print(f"\ttotal_pres_injection = {total_pres_inj}")
         print(f"\ttotal_temp_injection = {total_temp_inj}")
@@ -765,15 +763,18 @@ def main(actx_class,
     spark_center = np.zeros(shape=(dim,))
     spark_center[0] = spark_init_loc_x
     spark_center[1] = spark_init_loc_y
+
     if dim == 3:
         spark_center[2] = spark_init_loc_z
-    if rank == 0 and use_ignition > 0:
-        print("\n#### Ignition control parameters ####")
-        print(f"spark center ({spark_center[0]},{spark_center[1]})")
-        print(f"spark FWHM {spark_diameter}")
-        print(f"spark strength {spark_strength}")
-        print(f"ignition time {spark_init_time}")
-        print(f"ignition duration {spark_duration}")
+
+    if rank == 0:
+        if use_ignition > 0:
+            print("\n#### Ignition control parameters ####")
+            print(f"spark center ({spark_center[0]},{spark_center[1]})")
+            print(f"spark FWHM {spark_diameter}")
+            print(f"spark strength {spark_strength}")
+            print(f"ignition time {spark_init_time}")
+            print(f"ignition duration {spark_duration}")
         if use_ignition == 1:
             print("spark ignition")
         elif use_ignition == 2:
@@ -1366,7 +1367,8 @@ def main(actx_class,
         part_func = my_partitioner if use_1d_part else None
 
         volume_to_local_mesh_data, global_nelements = distribute_mesh(
-            comm, get_mesh_data, partition_generator_func=part_func)
+            comm, get_mesh_data, partition_generator_func=part_func, 
+            logmgr=logmgr)
 
     local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
     if use_wall:
@@ -3559,8 +3561,9 @@ def main(actx_class,
                 gc.collect()
                 # Freeze the objects that are still alive so they will not
                 # be considered in future gc collections.
-                logger.info("Freezing GC objects to reduce overhead of "
-                            "future GC collections")
+                if rank == 0:
+                    logger.info("Freezing GC objects to reduce overhead of "
+                                "future GC collections")
                 gc.freeze()
 
         if logmgr:
