@@ -80,3 +80,13 @@ vel_sigma: 500
 temp_sigma: 1250
 vel_sigma_inj: 5000
 temp_sigma_inj: 5000
+
+######################
+# boundary conditions
+######################
+use_outflow_boundary: "none"
+use_inflow_boundary: "none"
+use_flow_boundary: "prescribed"
+use_wall_boundary: "isothermal_noslip"
+use_interface_boundary: "none"
+use_injection_boundary: "none"
