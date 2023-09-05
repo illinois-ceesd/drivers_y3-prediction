@@ -458,7 +458,7 @@ def main(actx_class,
     if logmgr:
         logmgr_add_cl_device_info(logmgr, queue)
 
-        soln_init_timer = IntervalTimer("t_soln_init", "Time spent initializing solution.")
+        soln_init_timer = IntervalTimer("t_soln_init", "Time initializing solution.")
         logmgr.add_quantity(soln_init_timer)
 
         vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
@@ -1564,7 +1564,7 @@ def main(actx_class,
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
 
         from mirgecom.restart import read_restart_data
-        
+
         with rst_read_timer.get_sub_timer():
             restart_data = read_restart_data(actx, restart_filename)
 
@@ -1668,7 +1668,7 @@ def main(actx_class,
         part_func = my_partitioner if use_1d_part else None
 
         volume_to_local_mesh_data, global_nelements = distribute_mesh(
-            comm, get_mesh_data, partition_generator_func=part_func, 
+            comm, get_mesh_data, partition_generator_func=part_func,
             logmgr=logmgr)
 
     local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
