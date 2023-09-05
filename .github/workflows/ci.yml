@@ -121,7 +121,12 @@ jobs:
         - name: Kitchen sink 3D smoke test
           run: |
             source emirge/config/activate_env.sh
-            cd smoke_test_ks_3d/data
-            cd ..
+            cd smoke_test_ks_3d
             ./run_lazy.sh
+
+        - name: 1D shock smoke test
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test_shock1d
+            ./run.sh
 
