@@ -2433,11 +2433,10 @@ def main(actx_class,
             restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
 
             # get the initial temperature field to use as a seed
-            restart_fluid_state = create_fluid_state(cv=restart_cv,
-                                                     temperature_seed=temperature_seed,
-                                                     smoothness_mu=restart_av_smu,
-                                                     smoothness_beta=restart_av_sbeta,
-                                                     smoothness_kappa=restart_av_skappa)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa)
             temperature_seed = restart_fluid_state.temperature
 
             # update current state with injection intialization
