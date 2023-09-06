@@ -169,9 +169,9 @@ while [ $nrank -le $NUM_PROCS ]; do
         nelem="12283032"
     elif [[ "${nrank}" == "1024" ]]; then
         msize="3.07"
-        nelem="24423603"
+        nelem="24450601"
     elif [[ "${nrank}" == "2048" ]]; then
-        msize="3.6389"
+        msize="2.8"
         nelem="12283032"
     fi
 
