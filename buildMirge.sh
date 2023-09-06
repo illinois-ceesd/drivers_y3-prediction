@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # default branch for building mirgecom for this driver
-mirge_branch="production"
+mirge_branch="batched-einsum-error-reproducer"
 #mirge_branch="wall_model_exposed_gradients"
 #mirge_branch="production-generalize-coupling-mja"
 # conda environment name

@@ -99,6 +99,7 @@ from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     add_interface_boundaries_no_grad,
     add_interface_boundaries
 )
+from mirgecom.euler import euler_operator
 from mirgecom.navierstokes import (
     grad_cv_operator,
     grad_t_operator as fluid_grad_t_operator,
@@ -1691,25 +1692,28 @@ def main(actx_class,
             for i in range(nspecies)
         ])
 
-        # limit the sum to 1.0
-        aux = actx.np.zeros_like(cv.mass)
-        for i in range(0, nspecies):
-            aux = aux + spec_lim[i]
-        spec_lim = spec_lim/aux
+#         # limit the sum to 1.0
+#         aux = actx.np.zeros_like(cv.mass)
+#         for i in range(0, nspecies):
+#             aux = aux + spec_lim[i]
+#         spec_lim = spec_lim/aux
 
-        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+#         kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
 
-        mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
-                                   #species_mass_fractions=spec_lim)
-                                   species_mass_fractions=cv.species_mass_fractions)
+#         mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
+#                                    #species_mass_fractions=spec_lim)
+#                                    species_mass_fractions=cv.species_mass_fractions)
 
-        energy_lim = mass_lim*(
-            gas_model.eos.get_internal_energy(temperature,
-                                              species_mass_fractions=spec_lim)
-            + kin_energy
-        )
+#         energy_lim = mass_lim*(
+#             gas_model.eos.get_internal_energy(temperature,
+#                                               species_mass_fractions=spec_lim)
+#             + kin_energy
+#         )
 
-        mom_lim = mass_lim*cv.velocity
+#         mom_lim = mass_lim*cv.velocity
+        mass_lim = cv.mass
+        energy_lim = cv.energy
+        mom_lim = cv.momentum
 
         return make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                               momentum=mom_lim,
@@ -2360,13 +2364,7 @@ def main(actx_class,
         else:
             target_injection_boundary = fluid_wall
 
-        target_boundaries = assign_fluid_boundaries(
-            outflow=DummyBoundary(),
-            inflow=DummyBoundary(),
-            injection=target_injection_boundary,
-            flow=DummyBoundary(),
-            wall=fluid_wall,
-            interface=fluid_wall)
+        target_boundaries = {}
 
         target_grad_cv = grad_cv_operator_target_compiled(
             target_fluid_state, time=0.)
@@ -2535,12 +2533,12 @@ def main(actx_class,
         injection_boundary = flow_boundary
 
     uncoupled_fluid_boundaries = assign_fluid_boundaries(
-        outflow=outflow_boundary,
-        inflow=inflow_boundary,
-        injection=injection_boundary,
-        flow=flow_boundary,
-        wall=fluid_wall,
-        interface=fluid_wall)
+        outflow=DummyBoundary(),
+        inflow=DummyBoundary(),
+        injection=DummyBoundary(),
+        flow=DummyBoundary(),
+        wall=DummyBoundary(),
+        interface=DummyBoundary())
 
     if use_wall:
         uncoupled_wall_boundaries = {
@@ -3721,6 +3719,7 @@ def main(actx_class,
                 comm_tag=_UpdateCoupledBoundariesCommTag)
         else:
             updated_fluid_boundaries = uncoupled_fluid_boundaries
+
             grad_fluid_cv = grad_cv_operator(
                 dcoll, gas_model, updated_fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid,
@@ -3748,21 +3747,22 @@ def main(actx_class,
         tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
 
         # have all the gradients and states, compute the rhs sources
-        fluid_rhs = ns_operator(
+        fluid_rhs = euler_operator(
             dcoll=dcoll,
             gas_model=gas_model,
             use_esdg=use_esdg,
             dd=dd_vol_fluid,
-            operator_states_quad=fluid_operator_states_quad,
-            grad_cv=grad_fluid_cv,
-            grad_t=grad_fluid_t,
+            limiter_func=limiter_func,
             boundaries=updated_fluid_boundaries,
             inviscid_numerical_flux_func=inviscid_numerical_flux_func,
-            viscous_numerical_flux_func=viscous_numerical_flux_func,
             state=fluid_state,
             time=t,
             quadrature_tag=quadrature_tag,
             comm_tag=_FluidOperatorCommTag)
+        fluid_rhs = fluid_rhs.replace(
+            mass=0*cv.mass,
+            energy=0*cv.energy,
+            momentum=0*cv.momentum)
 
         wall_rhs = None
         if use_wall:
@@ -3777,9 +3777,9 @@ def main(actx_class,
                 comm_tag=_WallOperatorCommTag
                 )
 
-        if use_combustion:
-            fluid_rhs = fluid_rhs + \
-                eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
+#         if use_combustion:
+#             fluid_rhs = fluid_rhs + \
+#                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
@@ -3839,10 +3839,10 @@ def main(actx_class,
                     ) + 1/tau * (smoothness_kappa - av_skappa)
                 )
 
-        #sponge_rhs = actx.np.zeros_like(cv)
-        if use_sponge:
-            fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
-            #sponge_rhs = _sponge_source(cv=cv)
+#         #sponge_rhs = actx.np.zeros_like(cv)
+#         if use_sponge:
+#             fluid_rhs = fluid_rhs + _sponge_source(cv=cv)
+#             #sponge_rhs = _sponge_source(cv=cv)
 
         if use_wall:
             # wall mass loss
@@ -3913,6 +3913,12 @@ def main(actx_class,
                     comm_tag=_FluidOxDiffCommTag)
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
+
+        from pytato.analysis import get_num_nodes
+        for i in range(nspecies):
+            print(f"unfiltered_rhs: {i=}, {get_num_nodes(fluid_rhs.species_mass[i][0])=}")
+        # from pytato.visualization import write_dot_graph
+        # write_dot_graph(fluid_rhs.species_mass[0][0], "species_mass.svg")
 
         rhs_stepper_state = make_stepper_state(
             cv=fluid_rhs,
