@@ -26,4 +26,6 @@ use_wall: False #turn off wall model
 use_av: 2 # artificial viscosity
 use_sponge: True
 use_injection: False
-#mesh_filename: "data/unstart_baseline.msh"
+mesh_filename: "data/unstart_baseline.msh"
+use_injection_boundary: False
+use_injection: False
