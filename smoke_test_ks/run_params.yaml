@@ -53,7 +53,7 @@ rhs_filter_cutoff: 2
 nspecies:  7
 #nspecies:  2
 #nspecies:  0
-pyro_temp_iter: 2
+pyro_temp_iter: 4
 pyro_temp_tol: 1.
 transport: 1
 #transport: 0
