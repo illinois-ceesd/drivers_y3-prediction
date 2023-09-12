@@ -45,6 +45,7 @@ from mirgecom.logging_quantities import (
     initialize_logmgr,
     logmgr_add_cl_device_info,
     logmgr_set_time,
+    logmgr_add_simulation_info,
     logmgr_add_device_memory_usage,
     logmgr_add_mempool_usage,
 )
@@ -412,9 +413,13 @@ def main(actx_class,
     logger.addHandler(h2)
 
     from mpi4py import MPI
-    comm = MPI.COMM_WORLD
+    from mpi4py.util import pkl5
+    comm_world = MPI.COMM_WORLD
+    comm = pkl5.Intracomm(comm_world)
     rank = comm.Get_rank()
     nparts = comm.Get_size()
+    sim_info = {}
+    sim_info["nparts"] = nparts
 
     if rank == 0:
         print(f"Running prediction driver on {nparts} MPI ranks.")
@@ -596,6 +601,7 @@ def main(actx_class,
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
     noslip = configurate("noslip", input_data, True)
+    num_batch_mesh = configurate("num_batch_mesh", input_data, 128) 
     use_1d_part = configurate("use_1d_part", input_data, True)
 
     # setting these to none in the input file toggles the check for that
@@ -1669,11 +1675,34 @@ def main(actx_class,
 
         volume_to_local_mesh_data, global_nelements = distribute_mesh(
             comm, get_mesh_data, partition_generator_func=part_func,
-            logmgr=logmgr)
+            logmgr=logmgr, num_per_batch=num_batch_mesh)
 
-    local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    local_nelements_wall = 0
+    local_nelements_fluid = volume_to_local_mesh_data["fluid"][0].nelements
     if use_wall:
-        local_nelements += volume_to_local_mesh_data["wall"][0].nelements
+        local_nelements_wall = volume_to_local_mesh_data["wall"][0].nelements
+    local_nelements = local_nelements_fluid + local_nelements_wall
+    sim_info["nel_fluid"] = local_nelements_fluid
+    sim_info["nel_wall"] = local_nelements_wall
+    sim_info["nel_global"] = global_nelements
+    if logmgr:
+        logmgr_add_simulation_info(logmgr, sim_info)
+
+    mesh_dist_only = True
+    if mesh_dist_only:
+        if rank == 0:
+            print("Mesh dist only mode.")
+        for p in range(nparts):
+            if rank == p:
+                print(f"Rank({rank}): {global_nelements=}, {local_nelements_fluid=},"
+                      f"{local_nelements_wall=}")
+            comm.Barrier()
+        if logmgr:
+            logmgr_set_time(logmgr, current_step, current_t)
+            logmgr.tick_before()
+            logmgr.tick_after()
+            logmgr.close()
+        exit()
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
