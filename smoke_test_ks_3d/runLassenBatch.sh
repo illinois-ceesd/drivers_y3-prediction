@@ -29,6 +29,7 @@ export PYOPENCL_CTX="port:tesla"
 jsrun_cmd="jsrun -g 1 -a 1 -n 4"
 export XDG_CACHE_ROOT="/tmp/$USER/xdg-scratch"
 export POCL_CACHE_ROOT="/tmp/$USER/pocl-cache"
+export PYTHONHASHSEED=1
 $jsrun_cmd js_task_info
 
 # Create the mesh for a small, simple test (size==mesh spacing)
