@@ -3484,7 +3484,7 @@ def main(actx_class,
                     break
 
     def my_health_check(fluid_state, wall_temperature):
-        from dataclass import fields
+        from dataclasses import fields
         health_error = False
         cv = fluid_state.cv
         dv = fluid_state.dv
