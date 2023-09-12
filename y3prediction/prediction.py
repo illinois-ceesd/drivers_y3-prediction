@@ -87,7 +87,10 @@ from mirgecom.diffusion import (
     NeumannDiffusionBoundary
 )
 #from mirgecom.initializers import (Uniform, PlanarDiscontinuity)
-from mirgecom.eos import IdealSingleGas, PyrometheusMixture
+from mirgecom.eos import (
+    IdealSingleGas, PyrometheusMixture,
+    MixtureDependentVars, GasDependentVars
+)
 from mirgecom.transport import (SimpleTransport,
                                 PowerLawTransport,
                                 ArtificialViscosityTransportDiv,
@@ -1955,7 +1958,6 @@ def main(actx_class,
     create_fluid_state = actx.compile(_create_fluid_state)
 
     def update_dv(cv, temperature, smoothness_mu, smoothness_beta, smoothness_kappa):
-        from mirgecom.eos import MixtureDependentVars, GasDependentVars
         if eos_type == 0:
             return GasDependentVars(
                 temperature=temperature,
@@ -3482,20 +3484,29 @@ def main(actx_class,
                     break
 
     def my_health_check(fluid_state, wall_temperature):
+        from dataclass import fields
         health_error = False
         cv = fluid_state.cv
         dv = fluid_state.dv
 
-        if check_naninf_local(dcoll, dd_vol_fluid, dv.pressure):
-            health_error = True
-            logger.info(f"{rank=}: NANs/Infs in pressure data.")
-            print(f"{rank=}: NANs/Infs in pressure data.")
+        dv_fields = fields(GasDependentVars)
+        if nspecies > 2:
+            dv_fields = fields(MixtureDependentVars)
+
+        for field in dv_fields:
+            field_name = field.name
+            field_val = getattr(dv, field_name)
+            if check_naninf_local(dcoll, dd_vol_fluid, field_val):
+                health_error = True
+                logger.info(f"{rank=}: NANs/Infs in {field_name} data.")
+                print(f"{rank=}: NANs/Infs in {field_name} data.")
 
         if use_wall:
             if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
                 health_error = True
                 logger.info(f"{rank=}: NANs/Infs in wall temperature data.")
 
+        # These range checking bits seem oblivious/impervious to NANs
         if global_range_check(dd_vol_fluid, dv.pressure,
                               health_pres_min, health_pres_max):
             health_error = True
@@ -3818,28 +3829,24 @@ def main(actx_class,
             t_wall = t_wall_start + (step - first_step)*dt*wall_time_scale
             my_write_status_lite(step=step, t=t, t_wall=t_wall)
 
+            if do_health:
+                wall_temptr = wdv.temperature if use_wall else None
+                health_errors = global_reduce(
+                    my_health_check(fluid_state, wall_temperature=wall_temptr),
+                    op="lor")
+                if health_errors:
+                    if rank == 0:
+                        logger.info("Solution failed health check.")
+                    comm.Barrier()  # make msg before any rank raises
+                    raise MyRuntimeError("Failed simulation health check.")
+
+            # Let's not bother with status if we detect health error
             # these status updates require global reductions on state data
             if do_status:
                 my_write_status_fluid(cv=cv, dv=dv, dt=dt, cfl_fluid=cfl_fluid)
                 if use_wall:
                     my_write_status_wall(wall_temperature=wdv.temperature,
                                          dt=dt*wall_time_scale, cfl_wall=cfl_wall)
-
-            if do_health:
-                if use_wall:
-                    health_errors = global_reduce(
-                        my_health_check(fluid_state,
-                                        wall_temperature=wdv.temperature),
-                        op="lor")
-                else:
-                    health_errors = global_reduce(
-                        my_health_check(fluid_state, wall_temperature=None),
-                        op="lor")
-                if health_errors:
-                    if rank == 0:
-                        #logger.warning("Solution failed health check.")
-                        logger.info("Solution failed health check.")
-                    raise MyRuntimeError("Failed simulation health check.")
 
             if do_restart:
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
@@ -3886,6 +3893,7 @@ def main(actx_class,
                 dump_number=dump_number)
 
             my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
+            comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
 
         return stepper_state.get_obj_array(), dt
