@@ -2326,6 +2326,16 @@ def main(actx_class,
                 smoothness_kappa=restart_av_skappa)
             temperature_seed = restart_fluid_state.temperature
 
+            if use_upstream_injection:
+                restart_cv = bulk_init.add_injection_upstream(restart_fluid_state,
+                                                              eos=eos_init,
+                                                              x_vec=fluid_nodes)
+                restart_fluid_state = create_fluid_state(
+                    cv=restart_cv, temperature_seed=temperature_seed,
+                    smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                    smoothness_kappa=restart_av_skappa)
+                temperature_seed = restart_fluid_state.temperature
+
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
     else:
@@ -3484,17 +3494,18 @@ def main(actx_class,
                     break
 
     def my_health_check(fluid_state, wall_temperature):
-        from dataclasses import fields
         health_error = False
         cv = fluid_state.cv
         dv = fluid_state.dv
 
-        dv_fields = fields(GasDependentVars)
-        if nspecies > 2:
-            dv_fields = fields(MixtureDependentVars)
+        dv_fields = ["temperature",
+                     "pressure",
+                     "smoothness_mu",
+                     "smoothness_kappa",
+                     "smoothness_beta"]
 
         for field in dv_fields:
-            field_name = field.name
+            field_name = field
             field_val = getattr(dv, field_name)
             if check_naninf_local(dcoll, dd_vol_fluid, field_val):
                 health_error = True
