@@ -33,6 +33,7 @@ import grudge.op as op
 from pytools.obj_array import make_obj_array
 from functools import partial
 from mirgecom.discretization import create_discretization_collection
+import os
 
 from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
@@ -54,6 +55,7 @@ from mirgecom.simutil import (
     SimulationConfigurationError,
     check_step,
     distribute_mesh,
+    distribute_mesh_pkl,
     write_visfile,
     check_naninf_local,
     check_range_local,
@@ -438,7 +440,6 @@ def main(actx_class,
     logname = log_path + "/" + casename + ".sqlite"
 
     if rank == 0:
-        import os
         log_dir = os.path.dirname(logname)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -600,6 +601,11 @@ def main(actx_class,
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
+    mesh_source_filename = configurate("mesh_source_filename",
+                                       input_data, "data/actii_2d.msh")
+    mesh_dist_only = configurate("mesh_dist_only", input_data, False)
+    mesh_dist_nparts = configurate("mesh_dist_nparts", input_data, nparts)
+
     noslip = configurate("noslip", input_data, True)
     num_batch_mesh = configurate("num_batch_mesh", input_data, 128) 
     use_1d_part = configurate("use_1d_part", input_data, True)
@@ -1647,13 +1653,15 @@ def main(actx_class,
 
                 return mesh, tag_to_elements, volume_to_tags
         elif init_case == "y3prediction":
+            if not mesh_dist_only:
+                mesh_source_filename = mesh_filename
             if rank == 0:
-                print(f"Reading mesh from {mesh_filename}")
+                print(f"Reading mesh from {mesh_source_filename}")
 
             def get_mesh_data():
                 from meshmode.mesh.io import read_gmsh
                 mesh, tag_to_elements = read_gmsh(
-                    mesh_filename, force_ambient_dim=dim,
+                    mesh_source_filename, force_ambient_dim=dim,
                     return_tag_to_elements_map=True)
                 volume_to_tags = {
                     "fluid": ["fluid"]}
@@ -1673,9 +1681,57 @@ def main(actx_class,
 
         part_func = my_partitioner if use_1d_part else None
 
-        volume_to_local_mesh_data, global_nelements = distribute_mesh(
-            comm, get_mesh_data, partition_generator_func=part_func,
-            logmgr=logmgr, num_per_batch=num_batch_mesh)
+        if mesh_dist_only:
+
+            if os.path.exists(mesh_filename):
+                if not os.path.isdir(mesh_filename):
+                    raise SimulationConfigurationError(
+                        "Mesh dist mode requires \"mesh_filename\""
+                        " parameter to be a directory for output.")
+            if rank == 0:
+                if not os.path.exists(mesh_filename):
+                    os.makedirs(mesh_filename)
+
+            comm.Barrier()
+
+            mesh_filename = mesh_filename + "/" + casename + "_mesh"
+            if rank == 0:
+                print("Mesh dist only mode: Writing mesh pkl files to "
+                      f"{mesh_filename}")
+
+            distribute_mesh_pkl(
+                comm, get_mesh_data, filename=mesh_filename,
+                num_target_ranks=mesh_dist_nparts,
+                partition_generator_func=part_func, logmgr=logmgr)
+
+            comm.Barrier()
+
+            if logmgr:
+                logmgr_set_time(logmgr, current_step, current_t)
+                logmgr.tick_before()
+                logmgr.tick_after()
+                logmgr.close()
+
+            exit()
+
+        import os
+        import pickle
+        if os.path.isdir(mesh_filename):
+            pkl_filename = (mesh_filename + "/" + casename
+                            + f"_mesh_rank{rank}.pkl")
+            if rank == 0:
+                print("Reading mesh from pkl files in directory"
+                      f" {mesh_filename}.")
+            if not os.path.exists(pkl_filename):
+                raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
+                                   " not found.")
+            with open(pkl_filename, "rb") as pkl_file:
+                global_nelements, volume_to_local_mesh_data = \
+                            pickle.load(pkl_file)
+        else:
+            volume_to_local_mesh_data, global_nelements = distribute_mesh(
+                comm, get_mesh_data, partition_generator_func=part_func,
+                logmgr=logmgr, num_per_batch=num_batch_mesh)
 
     local_nelements_wall = 0
     local_nelements_fluid = volume_to_local_mesh_data["fluid"][0].nelements
@@ -1687,22 +1743,6 @@ def main(actx_class,
     sim_info["nel_global"] = global_nelements
     if logmgr:
         logmgr_add_simulation_info(logmgr, sim_info)
-
-    mesh_dist_only = True
-    if mesh_dist_only:
-        if rank == 0:
-            print("Mesh dist only mode.")
-        for p in range(nparts):
-            if rank == p:
-                print(f"Rank({rank}): {global_nelements=}, {local_nelements_fluid=},"
-                      f"{local_nelements_wall=}")
-            comm.Barrier()
-        if logmgr:
-            logmgr_set_time(logmgr, current_step, current_t)
-            logmgr.tick_before()
-            logmgr.tick_after()
-            logmgr.close()
-        exit()
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
@@ -1733,7 +1773,8 @@ def main(actx_class,
                 "Incorrect number of elements in target: {}".format(target_nelements)
             raise RuntimeError(error_message)
     else:
-        logger.warning("No target file specied, using restart as target")
+        if rank == 0:
+            logger.warning("No target file specied, using restart as target")
 
     disc_msg = f"Making {dim}D order {order} discretization"
     if use_overintegration:
@@ -3890,7 +3931,6 @@ def main(actx_class,
                         op="lor")
                 if health_errors:
                     if rank == 0:
-                        #logger.warning("Solution failed health check.")
                         logger.info("Solution failed health check.")
                     raise MyRuntimeError("Failed simulation health check.")
 
