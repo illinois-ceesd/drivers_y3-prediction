@@ -715,6 +715,17 @@ def main(actx_class,
     spark_init_loc_x = configurate("ignition_init_loc_x", input_data, 0.677)
     spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
 
+    # initialization for the sponge
+    inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
+    inlet_sponge_thickness = configurate("inlet_sponge_thickness", input_data, 0.015)
+    outlet_sponge_x0 = configurate("outlet_sponge_x0", input_data, 0.89)
+    outlet_sponge_thickness = configurate("outlet_sponge_thickness",
+                                          input_data, 0.04)
+    inj_sponge_x0 = configurate("inj_sponge_x0", input_data, 0.645)
+    inj_sponge_thickness = configurate("inj_sponge_thickness", input_data, 0.005)
+    upstream_inj_sponge_y0 = configurate("upstream_inj_sponge_y0",
+                                         input_data, -0.01753)
+
     # param sanity check
     allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144", "compiled_lsrk54"]
     if integrator not in allowed_integrators:
@@ -2856,13 +2867,6 @@ def main(actx_class,
     from y3prediction.utils import InitSponge
 
     if init_case == "y3prediction":
-        inlet_sponge_x0 = 0.225
-        inlet_sponge_thickness = 0.015
-        outlet_sponge_x0 = 0.89
-        outlet_sponge_thickness = 0.04
-        inj_sponge_x0 = 0.645
-        inj_sponge_thickness = 0.005
-        upstream_inj_sponge_y0 = -0.02253 + inj_sponge_thickness
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
