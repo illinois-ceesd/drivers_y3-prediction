@@ -45,6 +45,7 @@ from mirgecom.logging_quantities import (
     initialize_logmgr,
     logmgr_add_cl_device_info,
     logmgr_set_time,
+    logmgr_add_simulation_info,
     logmgr_add_device_memory_usage,
     logmgr_add_mempool_usage,
 )
@@ -415,9 +416,20 @@ def main(actx_class,
     logger.addHandler(h2)
 
     from mpi4py import MPI
-    comm = MPI.COMM_WORLD
+    from mpi4py.util import pkl5
+    comm_world = MPI.COMM_WORLD
+    comm = pkl5.Intracomm(comm_world)
     rank = comm.Get_rank()
     nparts = comm.Get_size()
+    sim_info = {}
+    sim_info["nparts"] = nparts
+
+    if rank == 0:
+        print(f"Running prediction driver on {nparts} MPI ranks.")
+        print(f"Casename: {casename}")
+        print(f"Input file: {user_input_file}")
+        print(f"Restart filename: {restart_filename}")
+        print(f"Target filename: {target_filename}")
 
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
@@ -443,6 +455,81 @@ def main(actx_class,
     queue = getattr(actx, "queue", None)
     use_profiling = actx_class_is_profiling(actx_class)
     alloc = getattr(actx, "allocator", None)
+
+    vis_timer = None
+    monitor_memory = True
+    monitor_performance = 2
+
+    from contextlib import nullcontext
+    gc_timer = nullcontext()
+
+    if logmgr:
+        logmgr_add_cl_device_info(logmgr, queue)
+
+        soln_init_timer = IntervalTimer("t_soln_init", "Time initializing solution.")
+        logmgr.add_quantity(soln_init_timer)
+
+        vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
+        logmgr.add_quantity(vis_timer)
+
+        rst_write_timer = IntervalTimer("t_rst_write", "Time spent writing restart.")
+        logmgr.add_quantity(rst_write_timer)
+
+        rst_read_timer = IntervalTimer("t_rst_read", "Time spent reading restart.")
+        logmgr.add_quantity(rst_read_timer)
+
+        gc_timer_init = IntervalTimer("t_gc", "Time spent garbage collecting")
+        logmgr.add_quantity(gc_timer_init)
+
+        gc_timer = gc_timer_init.get_sub_timer()
+
+        if monitor_performance > 0:
+            logmgr.add_watches([
+                ("t_step.max", "| Performance:\n| \t walltime: {value:6g} s")
+            ])
+
+        if monitor_performance > 1:
+
+            logmgr.add_watches([
+                ("t_vis.max", "\n| \t visualization time: {value:6g} s\n"),
+                ("t_gc.max", "| \t garbage collection time: {value:6g} s\n"),
+                ("t_log.max", "| \t log walltime: {value:6g} s\n")
+            ])
+
+        if monitor_memory:
+            logmgr_add_device_memory_usage(logmgr, queue)
+            logmgr_add_mempool_usage(logmgr, alloc)
+
+            logmgr.add_watches([
+                ("memory_usage_python.max",
+                 "| Memory:\n| \t python memory: {value:7g} Mb\n")
+            ])
+
+            try:
+                logmgr.add_watches([
+                    ("memory_usage_gpu.max",
+                     "| \t gpu memory: {value:7g} Mb\n")
+                ])
+            except KeyError:
+                pass
+
+            logmgr.add_watches([
+                ("memory_usage_hwm.max",
+                 "| \t memory hwm: {value:7g} Mb\n")])
+
+            from mirgecom.array_context import actx_class_is_numpy
+
+            if not actx_class_is_numpy(actx_class):
+                # numpy has no CL mempool
+                logmgr.add_watches([
+                    ("memory_usage_mempool_managed.max",
+                    "| \t mempool total: {value:7g} Mb\n"),
+                    ("memory_usage_mempool_active.max",
+                    "| \t mempool active: {value:7g} Mb")
+                ])
+
+        if use_profiling:
+            logmgr.add_watches(["pyopencl_array_time.max"])
 
     # set up driver parameters
     from mirgecom.simutil import configurate
@@ -517,6 +604,7 @@ def main(actx_class,
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
     noslip = configurate("noslip", input_data, True)
+    num_batch_mesh = configurate("num_batch_mesh", input_data, 128) 
     use_1d_part = configurate("use_1d_part", input_data, True)
 
     # setting these to none in the input file toggles the check for that
@@ -787,7 +875,6 @@ def main(actx_class,
             error_message = "Unknown artifical viscosity model {}".format(use_av)
             raise RuntimeError(error_message)
 
-    if rank == 0:
         print("\n#### Simluation control data: ####")
         print(f"\tnrestart = {nrestart}")
         print(f"\tnhealth = {nhealth}")
@@ -815,7 +902,6 @@ def main(actx_class,
 
         print("#### Simluation control data: ####\n")
 
-    if rank == 0:
         print("\n#### Visualization setup: ####")
         if viz_level >= 0:
             print("\tBasic visualization output enabled.")
@@ -836,8 +922,6 @@ def main(actx_class,
         if viz_interval_type == 2:
             print(f"\tWriting viz data exactly every {t_viz_interval} seconds.")
         print("#### Visualization setup: ####")
-
-    if rank == 0:
         print("\n#### Simluation initialization data: ####")
         if init_case == "y3prediction":
             print("\tInitializing flow to y3prediction")
@@ -869,15 +953,18 @@ def main(actx_class,
     spark_center = np.zeros(shape=(dim,))
     spark_center[0] = spark_init_loc_x
     spark_center[1] = spark_init_loc_y
+
     if dim == 3:
         spark_center[2] = spark_init_loc_z
-    if rank == 0 and use_ignition > 0:
-        print("\n#### Ignition control parameters ####")
-        print(f"spark center ({spark_center[0]},{spark_center[1]})")
-        print(f"spark FWHM {spark_diameter}")
-        print(f"spark strength {spark_strength}")
-        print(f"ignition time {spark_init_time}")
-        print(f"ignition duration {spark_duration}")
+
+    if rank == 0:
+        if use_ignition > 0:
+            print("\n#### Ignition control parameters ####")
+            print(f"spark center ({spark_center[0]},{spark_center[1]})")
+            print(f"spark FWHM {spark_diameter}")
+            print(f"spark strength {spark_strength}")
+            print(f"ignition time {spark_init_time}")
+            print(f"ignition duration {spark_duration}")
         if use_ignition == 1:
             print("spark ignition")
         elif use_ignition == 2:
@@ -1500,7 +1587,10 @@ def main(actx_class,
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
 
         from mirgecom.restart import read_restart_data
-        restart_data = read_restart_data(actx, restart_filename)
+
+        with rst_read_timer.get_sub_timer():
+            restart_data = read_restart_data(actx, restart_filename)
+
         current_step = restart_data["step"]
         first_step = current_step
         current_t = restart_data["t"]
@@ -1601,18 +1691,44 @@ def main(actx_class,
         part_func = my_partitioner if use_1d_part else None
 
         volume_to_local_mesh_data, global_nelements = distribute_mesh(
-            comm, get_mesh_data, partition_generator_func=part_func)
+            comm, get_mesh_data, partition_generator_func=part_func,
+            logmgr=logmgr, num_per_batch=num_batch_mesh)
 
-    local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    local_nelements_wall = 0
+    local_nelements_fluid = volume_to_local_mesh_data["fluid"][0].nelements
     if use_wall:
-        local_nelements += volume_to_local_mesh_data["wall"][0].nelements
+        local_nelements_wall = volume_to_local_mesh_data["wall"][0].nelements
+    local_nelements = local_nelements_fluid + local_nelements_wall
+    sim_info["nel_fluid"] = local_nelements_fluid
+    sim_info["nel_wall"] = local_nelements_wall
+    sim_info["nel_global"] = global_nelements
+    if logmgr:
+        logmgr_add_simulation_info(logmgr, sim_info)
+
+    mesh_dist_only = True
+    if mesh_dist_only:
+        if rank == 0:
+            print("Mesh dist only mode.")
+        for p in range(nparts):
+            if rank == p:
+                print(f"Rank({rank}): {global_nelements=}, {local_nelements_fluid=},"
+                      f"{local_nelements_wall=}")
+            comm.Barrier()
+        if logmgr:
+            logmgr_set_time(logmgr, current_step, current_t)
+            logmgr.tick_before()
+            logmgr.tick_after()
+            logmgr.close()
+        exit()
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
         target_filename = f"{target_filename}-{rank:04d}.pkl"
 
         from mirgecom.restart import read_restart_data
-        target_data = read_restart_data(actx, target_filename)
+        with rst_read_timer.get_sub_timer():
+            target_data = read_restart_data(actx, target_filename)
+
         global_nelements = target_data["global_nelements"]
         target_order = int(target_data["order"])
 
@@ -2359,64 +2475,65 @@ def main(actx_class,
         # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
-        restart_cv = bulk_init(
-            dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
-            time=0)
 
-        restart_cv = force_evaluation(actx, restart_cv)
+        with soln_init_timer.get_sub_timer():
+            restart_cv = bulk_init(
+                dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
+                time=0)
 
-        temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
-        temperature_seed = force_evaluation(actx, temperature_seed)
+            restart_cv = force_evaluation(actx, restart_cv)
 
-        restart_av_smu = actx.np.zeros_like(restart_cv.mass)
-        restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
-        restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
+            temperature_seed = actx.np.zeros_like(restart_cv.mass) + init_temperature
+            temperature_seed = force_evaluation(actx, temperature_seed)
 
-        # get the initial temperature field to use as a seed
-        restart_fluid_state = create_fluid_state(cv=restart_cv,
-                                                 temperature_seed=temperature_seed,
-                                                 smoothness_mu=restart_av_smu,
-                                                 smoothness_beta=restart_av_sbeta,
-                                                 smoothness_kappa=restart_av_skappa)
-        temperature_seed = restart_fluid_state.temperature
+            restart_av_smu = actx.np.zeros_like(restart_cv.mass)
+            restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
+            restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
 
-        # update current state with injection intialization
-        if use_injection:
-            restart_cv = bulk_init.add_injection(restart_fluid_state,
-                                                 eos=eos_init,
-                                                 x_vec=fluid_nodes)
+            # get the initial temperature field to use as a seed
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
                 smoothness_kappa=restart_av_skappa)
             temperature_seed = restart_fluid_state.temperature
 
-        if use_upstream_injection:
-            restart_cv = bulk_init.add_injection_upstream(restart_fluid_state,
-                                                          eos=eos_init,
-                                                          x_vec=fluid_nodes)
-            restart_fluid_state = create_fluid_state(
-                cv=restart_cv, temperature_seed=temperature_seed,
-                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                smoothness_kappa=restart_av_skappa)
-            temperature_seed = restart_fluid_state.temperature
+            # update current state with injection intialization
+            if use_injection:
+                restart_cv = bulk_init.add_injection(restart_fluid_state,
+                                                     eos=eos_init,
+                                                     x_vec=fluid_nodes)
+                restart_fluid_state = create_fluid_state(
+                    cv=restart_cv, temperature_seed=temperature_seed,
+                    smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                    smoothness_kappa=restart_av_skappa)
+                temperature_seed = restart_fluid_state.temperature
 
-        # Ideally we would compute the smoothness variables here,
-        # but we need the boundary conditions (and hence the target state) first,
-        # so we defer until after those are setup
+            if use_upstream_injection:
+                restart_cv = bulk_init.add_injection_upstream(restart_fluid_state,
+                                                              eos=eos_init,
+                                                              x_vec=fluid_nodes)
+                restart_fluid_state = create_fluid_state(
+                    cv=restart_cv, temperature_seed=temperature_seed,
+                    smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                    smoothness_kappa=restart_av_skappa)
+                temperature_seed = restart_fluid_state.temperature
 
-        # initialize the wall
-        if use_wall:
-            wall_mass = (
-                wall_insert_rho * wall_insert_mask
-                + wall_surround_rho * wall_surround_mask)
-            wall_cp = (
-                wall_insert_cp * wall_insert_mask
-                + wall_surround_cp * wall_surround_mask)
-            restart_wv = WallVars(
-                mass=wall_mass,
-                energy=wall_mass * wall_cp * temp_wall,
-                ox_mass=actx.np.zeros_like(wall_mass))
+            # Ideally we would compute the smoothness variables here,
+            # but we need the boundary conditions (and hence the target state) first,
+            # so we defer until after those are setup
+
+            # initialize the wall
+            if use_wall:
+                wall_mass = (
+                    wall_insert_rho * wall_insert_mask
+                    + wall_surround_rho * wall_surround_mask)
+                wall_cp = (
+                    wall_insert_cp * wall_insert_mask
+                    + wall_surround_cp * wall_surround_mask)
+                restart_wv = WallVars(
+                    mass=wall_mass,
+                    energy=wall_mass * wall_cp * temp_wall,
+                    ox_mass=actx.np.zeros_like(wall_mass))
 
     if use_wall:
         restart_wv = force_evaluation(actx, restart_wv)
@@ -2934,71 +3051,6 @@ def main(actx_class,
         """Create sponge source."""
         return sigma*(target_fluid_state.cv - cv)
 
-    vis_timer = None
-    monitor_memory = True
-    monitor_performance = 2
-
-    from contextlib import nullcontext
-    gc_timer = nullcontext()
-
-    if logmgr:
-        logmgr_add_cl_device_info(logmgr, queue)
-
-        vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
-        logmgr.add_quantity(vis_timer)
-
-        gc_timer_init = IntervalTimer("t_gc", "Time spent garbage collecting")
-        logmgr.add_quantity(gc_timer_init)
-        gc_timer = gc_timer_init.get_sub_timer()
-
-        if monitor_performance > 0:
-            logmgr.add_watches([
-                ("t_step.max", "| Performance:\n| \t walltime: {value:6g} s")
-            ])
-
-        if monitor_performance > 1:
-
-            logmgr.add_watches([
-                ("t_vis.max", "\n| \t visualization time: {value:6g} s\n"),
-                ("t_gc.max", "| \t garbage collection time: {value:6g} s\n"),
-                ("t_log.max", "| \t log walltime: {value:6g} s\n")
-            ])
-
-        if monitor_memory:
-            logmgr_add_device_memory_usage(logmgr, queue)
-            logmgr_add_mempool_usage(logmgr, alloc)
-
-            logmgr.add_watches([
-                ("memory_usage_python.max",
-                 "| Memory:\n| \t python memory: {value:7g} Mb\n")
-            ])
-
-            try:
-                logmgr.add_watches([
-                    ("memory_usage_gpu.max",
-                     "| \t gpu memory: {value:7g} Mb\n")
-                ])
-            except KeyError:
-                pass
-
-            logmgr.add_watches([
-                ("memory_usage_hwm.max",
-                 "| \t memory hwm: {value:7g} Mb\n")])
-
-            from mirgecom.array_context import actx_class_is_numpy
-
-            if not actx_class_is_numpy(actx_class):
-                # numpy has no CL mempool
-                logmgr.add_watches([
-                    ("memory_usage_mempool_managed.max",
-                    "| \t mempool total: {value:7g} Mb\n"),
-                    ("memory_usage_mempool_active.max",
-                    "| \t mempool active: {value:7g} Mb")
-                ])
-
-        if use_profiling:
-            logmgr.add_watches(["pyopencl_array_time.max"])
-
     if rank == 0:
         logger.info("Viz & utilities processsing")
 
@@ -3468,7 +3520,8 @@ def main(actx_class,
                 restart_data["wv"] = state.wv
                 restart_data["t_wall"] = t_wall
 
-            write_restart_file(actx, restart_data, restart_fname, comm)
+            with rst_write_timer.get_sub_timer():
+                write_restart_file(actx, restart_data, restart_fname, comm)
 
         if rank == 0:
             print("******** Done Writing Restart File ********")
@@ -3927,8 +3980,9 @@ def main(actx_class,
                 gc.collect()
                 # Freeze the objects that are still alive so they will not
                 # be considered in future gc collections.
-                logger.info("Freezing GC objects to reduce overhead of "
-                            "future GC collections")
+                if rank == 0:
+                    logger.info("Freezing GC objects to reduce overhead of "
+                                "future GC collections")
                 gc.freeze()
 
         if logmgr:

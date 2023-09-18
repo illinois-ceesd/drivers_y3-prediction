@@ -1,5 +1,4 @@
 import logging
-import sys
 import argparse
 
 if __name__ == "__main__":
@@ -34,12 +33,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # for writing output
-    casename = "prediction"
-    if args.casename:
-        print(f"Custom casename {args.casename}")
-        casename = args.casename.replace("'", "")
-    else:
-        print(f"Default casename {casename}")
+    casename = args.casename or "prediction"
+    casename = casename.replace("'", "")
 
     from mirgecom.simutil import ApplicationOptionsError
     if args.esdg and not (args.lazy or args.numpy):
@@ -52,25 +47,18 @@ if __name__ == "__main__":
     restart_filename = None
     if args.restart_file:
         restart_filename = (args.restart_file).replace("'", "")
-        print(f"Restarting from file: {restart_filename}")
 
     target_filename = None
     if args.target_file:
         target_filename = (args.target_file).replace("'", "")
-        print(f"Target file specified: {target_filename}")
 
     input_file = None
     if args.input_file:
         input_file = args.input_file.replace("'", "")
-        print(f"Using user input from file: {input_file}")
-    else:
-        print("No user input file, using default values")
 
     log_path = "log_data"
     if args.log_path:
         log_path = args.log_path.replace("'", "")
-
-    print(f"Running {sys.argv[0]}\n")
 
     from y3prediction.prediction import main
     main(actx_class, restart_filename=restart_filename,
