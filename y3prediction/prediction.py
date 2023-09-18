@@ -1044,6 +1044,7 @@ def main(actx_class,
     transport_beta = 4.093e-7
     transport_sigma = 2.0
     transport_n = 0.666
+    transport_le = 1.0
 
     if rank == 0:
         if transport_type == 0:
@@ -1059,6 +1060,7 @@ def main(actx_class,
             print(f"\ttransport_beta = {transport_beta}")
             print(f"\ttransport_sigma = {transport_sigma}")
             print(f"\ttransport_n = {transport_n}")
+            print(f"\ttransport Lewis Number = {transport_le}")
             print(f"\tspecies diffusivity = {spec_diff}")
         elif transport_type == 2:
             print("\t Pyrometheus transport model:")
@@ -1114,6 +1116,7 @@ def main(actx_class,
         physical_transport_model = PowerLawTransport(
             alpha=transport_alpha, beta=transport_beta,
             sigma=transport_sigma, n=transport_n,
+            lewis=transport_le,
             species_diffusivity=spec_diffusivity)
 
     transport_model = physical_transport_model
@@ -2048,14 +2051,17 @@ def main(actx_class,
         div_v = np.trace(vel_grad)
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
-        r = gas_model.eos.gas_const(cv)
+        # somehow this can be negative ... which is bad
+        r = actx.np.abs(gas_model.eos.gas_const(cv))
         c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
+        #c_star = 460
         href = smoothed_char_length_fluid
         indicator = -href*div_v/c_star
 
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
         indicator_max = 2/actx.np.sqrt(gamma - 1)
+        #indicator_max = 3.16
         smoothness_beta = (lmin(lmax(indicator - av2_beta_s0) - indicator_max)
                            + indicator_max)*href
 
