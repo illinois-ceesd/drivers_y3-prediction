@@ -34,6 +34,7 @@ from pytools.obj_array import make_obj_array
 from functools import partial
 from mirgecom.discretization import create_discretization_collection
 import os
+import pickle
 
 from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
@@ -438,6 +439,9 @@ def main(actx_class,
 
     # logging and profiling
     logname = log_path + "/" + casename + ".sqlite"
+    print(f"{logname=}")
+    log_dir = os.path.dirname(logname)
+    print(f"{log_dir=}")
 
     if rank == 0:
         log_dir = os.path.dirname(logname)
@@ -1714,8 +1718,6 @@ def main(actx_class,
 
             exit()
 
-        import os
-        import pickle
         if os.path.isdir(mesh_filename):
             pkl_filename = (mesh_filename + "/" + casename
                             + f"_mesh_rank{rank}.pkl")
@@ -4306,6 +4308,12 @@ def main(actx_class,
                                              smoothness_mu=current_av_smu,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa)
+    final_dv = current_fluid_state.dv
+    current_t_wall = (
+        t_wall_start + (current_step - first_step)*dt*wall_time_scale
+    )
+
+
     if use_wall:
         current_wv = current_stepper_state.wv
         current_wdv = create_wall_dependent_vars_compiled(current_wv)
@@ -4314,50 +4322,54 @@ def main(actx_class,
     if rank == 0:
         logger.info("Checkpointing final state ...")
 
-    final_dv = current_fluid_state.dv
-    ts_field_fluid, cfl, dt = my_get_timestep(dcoll=dcoll,
-        fluid_state=current_fluid_state,
-        t=current_t, dt=current_dt, cfl=current_cfl,
-        t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+    if nviz > 0 or nstatus > 0:
+        ts_field_fluid, cfl, dt = my_get_timestep(
+            dcoll=dcoll, fluid_state=current_fluid_state,
+            t=current_t, dt=current_dt, cfl=current_cfl,
+            t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
 
-    ts_field_wall = None
-    if use_wall:
-        ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(dcoll=dcoll,
-            wv=current_wv, wall_kappa=current_wdv.thermal_conductivity,
-            wall_temperature=current_wdv.temperature, t=current_t, dt=current_dt,
-            cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
-            wall_dd=dd_vol_wall)
-    current_t_wall = t_wall_start + (current_step - first_step)*dt*wall_time_scale
-
-    my_write_status_lite(step=current_step, t=current_t,
-                         t_wall=current_t_wall)
-
-    my_write_status_fluid(cv=current_cv, dv=final_dv, dt=dt, cfl_fluid=cfl)
-    if use_wall:
-        my_write_status_wall(wall_temperature=current_wdv.temperature,
-                             dt=dt*wall_time_scale, cfl_wall=cfl_wall)
-
-    if viz_interval_type == 0:
-        dump_number = current_step
-    else:
-        dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
-            last_viz_interval)
-
-    if nviz > 0:
-        # pack things up
+        ts_field_wall = None
         if use_wall:
-            viz_state = make_obj_array([current_fluid_state, current_wv])
-            viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
-        else:
-            viz_state = current_fluid_state
-            viz_dv = current_fluid_state.dv
+            ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
+                dcoll=dcoll, wv=current_wv,
+                wall_kappa=current_wdv.thermal_conductivity,
+                wall_temperature=current_wdv.temperature,
+                t=current_t, dt=current_dt, cfl=current_cfl,
+                t_final=t_final, constant_cfl=constant_cfl,
+                wall_dd=dd_vol_wall)
 
-        my_write_viz(
-            step=current_step, t=current_t, t_wall=current_t_wall,
-            viz_state=viz_state, viz_dv=viz_dv,
-            ts_field_fluid=ts_field_fluid,
-            ts_field_wall=ts_field_wall,
-            dump_number=dump_number)
+        if nstatus > 0:
+            my_write_status_lite(step=current_step, t=current_t,
+                                 t_wall=current_t_wall)
+
+            my_write_status_fluid(cv=current_cv, dv=final_dv, dt=dt,
+                                  cfl_fluid=cfl)
+            if use_wall:
+                my_write_status_wall(
+                    wall_temperature=current_wdv.temperature,
+                    dt=dt*wall_time_scale, cfl_wall=cfl_wall)
+
+        if nviz > 0:
+            if viz_interval_type == 0:
+                dump_number = current_step
+            else:
+                dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
+                               last_viz_interval)
+
+            # pack things up
+            if use_wall:
+                viz_state = make_obj_array([current_fluid_state, current_wv])
+                viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
+            else:
+                viz_state = current_fluid_state
+                viz_dv = current_fluid_state.dv
+
+            my_write_viz(
+                step=current_step, t=current_t, t_wall=current_t_wall,
+                viz_state=viz_state, viz_dv=viz_dv,
+                ts_field_fluid=ts_field_fluid,
+                ts_field_wall=ts_field_wall,
+                dump_number=dump_number)
 
     if nrestart > 0:
         my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
