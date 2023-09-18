@@ -1044,7 +1044,7 @@ def main(actx_class,
     transport_beta = 4.093e-7
     transport_sigma = 2.0
     transport_n = 0.666
-    transport_le = 1.0
+    transport_le = np.ones(nspecies,)
 
     if rank == 0:
         if transport_type == 0:
