@@ -572,7 +572,7 @@ Mesh.MeshSizeFromCurvature = 0;
 //Mesh.Algorithm = 8;
 // HXT, re-implemented Delaunay in parallel
 Mesh.Algorithm3D = 10;
-//Mesh.OptimizeNetgen = 1;
-//Mesh.Smoothing = 100;
-Mesh.Smoothing = 0;
-Mesh.OptimizeNetgen = 0;
+Mesh.OptimizeNetgen = 1;
+Mesh.Smoothing = 100;
+//Mesh.Smoothing = 0;
+//Mesh.OptimizeNetgen = 0;
