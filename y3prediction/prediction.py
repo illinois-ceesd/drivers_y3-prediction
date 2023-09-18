@@ -4310,7 +4310,7 @@ def main(actx_class,
                                              smoothness_kappa=current_av_skappa)
     final_dv = current_fluid_state.dv
     current_t_wall = (
-        t_wall_start + (current_step - first_step)*dt*wall_time_scale
+        t_wall_start + (current_step - first_step)*current_dt*wall_time_scale
     )
 
 
@@ -4327,6 +4327,10 @@ def main(actx_class,
             dcoll=dcoll, fluid_state=current_fluid_state,
             t=current_t, dt=current_dt, cfl=current_cfl,
             t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+
+        current_t_wall = (
+            t_wall_start + (current_step - first_step)*dt*wall_time_scale
+        )
 
         ts_field_wall = None
         if use_wall:
