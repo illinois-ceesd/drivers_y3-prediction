@@ -32,7 +32,9 @@ class InitACTII:
             self, *, dim=2, nspecies=0, geom_top, geom_bottom,
             P0, T0, temp_wall, temp_sigma, vel_sigma, gamma_guess,
             mass_frac=None,
-            inj_pres, inj_temp, inj_vel, inj_mass_frac=None,
+            inj_pres, inj_temp, inj_vel,
+            inj_pres_u, inj_temp_u, inj_vel_u,
+            inj_mass_frac=None,
             inj_gamma_guess,
             inj_temp_sigma, inj_vel_sigma,
             inj_ytop, inj_ybottom,
@@ -73,6 +75,9 @@ class InitACTII:
         if inj_vel is None:
             inj_vel = np.zeros(shape=(dim,))
 
+        if inj_vel_u is None:
+            inj_vel_u = np.zeros(shape=(dim,))
+
         self._dim = dim
         self._nspecies = nspecies
         self._P0 = P0
@@ -91,6 +96,9 @@ class InitACTII:
         self._inj_P0 = inj_pres
         self._inj_T0 = inj_temp
         self._inj_vel = inj_vel
+        self._inju_P0 = inj_pres_u
+        self._inju_T0 = inj_temp_u
+        self._inju_vel = inj_vel_u
         self._inj_gamma_guess = inj_gamma_guess
 
         self._temp_sigma_injection = inj_temp_sigma
@@ -910,7 +918,7 @@ class InitACTII:
         inj_y = ones*self._inj_mass_frac
 
         inj_velocity = mass*np.zeros(self._dim, dtype=object)
-        inj_velocity[1] = self._inj_vel[0]
+        inj_velocity = self._inju_vel
 
         inj_mach = self._inj_mach*ones
 
@@ -936,12 +944,12 @@ class InitACTII:
 
         inj_pressure = getIsentropicPressure(
             mach=inj_mach,
-            P0=self._inj_P0,
+            P0=self._inju_P0,
             gamma=inj_gamma
         )
         inj_temperature = getIsentropicTemperature(
             mach=inj_mach,
-            T0=self._inj_T0,
+            T0=self._inju_T0,
             gamma=inj_gamma
         )
 
