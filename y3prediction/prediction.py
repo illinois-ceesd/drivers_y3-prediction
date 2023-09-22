@@ -467,7 +467,7 @@ def main(actx_class,
 
     if logmgr:
         logmgr_add_cl_device_info(logmgr, queue)
-
+        t_mesh_data = IntervalTimer("t_mesh_data", "Time to read initial mesh")
         soln_init_timer = IntervalTimer("t_soln_init", "Time initializing solution.")
         logmgr.add_quantity(soln_init_timer)
 
@@ -1727,9 +1727,10 @@ def main(actx_class,
             if not os.path.exists(pkl_filename):
                 raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
                                    " not found.")
-            with open(pkl_filename, "rb") as pkl_file:
-                global_nelements, volume_to_local_mesh_data = \
-                            pickle.load(pkl_file)
+            with t_mesh_data.get_sub_timer():
+                with open(pkl_filename, "rb") as pkl_file:
+                    global_nelements, volume_to_local_mesh_data = \
+                        pickle.load(pkl_file)
         else:
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
                 comm, get_mesh_data, partition_generator_func=part_func,
