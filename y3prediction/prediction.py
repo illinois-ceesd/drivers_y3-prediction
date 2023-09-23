@@ -674,6 +674,10 @@ def main(actx_class,
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
+    total_pres_inj_upstream = configurate("total_pres_inj_upstream",
+                                          input_data, 50400.)
+    total_temp_inj_upstream = configurate("total_temp_inj_upstream",
+                                          input_data, 300.)
     total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
     total_temp_inj = configurate("total_temp_inj", input_data, 300.)
     mach_inj = configurate("mach_inj", input_data, 1.0)
@@ -845,6 +849,10 @@ def main(actx_class,
             print(f"\tInflow stagnation temperature {total_temp_inflow}")
             print(f"\tInjection stagnation pressure {total_pres_inj}")
             print(f"\tInjection stagnation temperature {total_temp_inj}")
+            print("\tUpstream injection stagnation pressure"
+                  f"{total_pres_inj_upstream}")
+            print("\tUpstream injection stagnation temperature"
+                  f"{total_temp_inj_upstream}")
         elif init_case == "shock1d":
             print("\tInitializing flow to shock1d")
             print(f"Shock Mach number {mach}")
@@ -1260,6 +1268,7 @@ def main(actx_class,
         vel_inflow = np.zeros(shape=(dim,))
         vel_outflow = np.zeros(shape=(dim,))
         vel_injection = np.zeros(shape=(dim,))
+        vel_injection_upstream = np.zeros(shape=(dim,))
 
         throat_height = 3.61909e-3
         inlet_height = 54.129e-3
@@ -1406,39 +1415,37 @@ def main(actx_class,
 
             if eos_type == 0:
                 rho_injection = pres_injection/temp_injection/r
-                sos = math.sqrt(gamma*pres_injection/rho_injection)
+                sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
             else:
                 rho_injection = pyro_mech.get_density(p=pres_injection,
                                                       temperature=temp_injection,
-                                                      mass_fractions=y)
-                gamma_injection = \
-                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_injection, y) /
-                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_injection, y))
+                                                      mass_fractions=y_fuel)
+                gamma_guess = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(
+                        temp_injection, y_fuel) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(
+                        temp_injection, y_fuel))
 
-                gamma_error = (gamma - gamma_injection)
-                gamma_guess = gamma_injection
+                gamma_error = np.abs(gamma_guess - gamma_injection)
                 toler = 1.e-6
                 # iterate over the gamma/mach since gamma = gamma(T)
                 while gamma_error > toler:
 
-                    outlet_mach = getMachFromAreaRatio(area_ratio=outlet_area_ratio,
-                                                      gamma=gamma_guess,
-                                                      mach_guess=0.01)
-                    pres_outflow = getIsentropicPressure(mach=outlet_mach,
-                                                        P0=total_pres_inj,
-                                                        gamma=gamma_guess)
-                    temp_outflow = getIsentropicTemperature(mach=outlet_mach,
-                                                           T0=total_temp_inj,
+                    pres_injection = getIsentropicPressure(mach=mach_inj,
+                                                           P0=total_pres_inj,
                                                            gamma=gamma_guess)
+                    temp_injection = getIsentropicTemperature(mach=mach_inj,
+                                                              T0=total_temp_inj,
+                                                              gamma=gamma_guess)
                     rho_injection = pyro_mech.get_density(p=pres_injection,
                                                           temperature=temp_injection,
-                                                          mass_fractions=y)
+                                                          mass_fractions=y_fuel)
                     gamma_injection = \
                         (pyro_mech.get_mixture_specific_heat_cp_mass(
-                            temp_injection, y) /
+                            temp_injection, y_fuel) /
                          pyro_mech.get_mixture_specific_heat_cv_mass(
-                             temp_injection, y))
-                    gamma_error = (gamma_guess - gamma_injection)
+                             temp_injection, y_fuel))
+                    gamma_error = np.abs(gamma_guess - gamma_injection)
                     gamma_guess = gamma_injection
 
                 sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
@@ -1453,7 +1460,86 @@ def main(actx_class,
                 print(f"\tinjector pressure {pres_injection}")
                 print(f"\tinjector rho {rho_injection}")
                 print(f"\tinjector velocity {vel_injection[0]}")
-                print("#### Simluation initialization data: ####\n")
+
+            # upstream injection
+            if use_upstream_injection:
+                gamma_injection_upstream = gamma_injection
+                if nspecies > 0:
+                    # injection mach number
+                    pres_injection_upstream = \
+                        getIsentropicPressure(mach=mach_inj,
+                                              P0=total_pres_inj_upstream,
+                                              gamma=gamma_injection_upstream)
+                    temp_injection_upstream = \
+                        getIsentropicTemperature(mach=mach_inj,
+                                                 T0=total_temp_inj_upstream,
+                                                 gamma=gamma_injection_upstream)
+
+                    if eos_type == 0:
+                        rho_injection_upstream = \
+                            pres_injection_upstream/temp_injection_upstream/r
+                        sos_upstream = math.sqrt(
+                            gamma_injection_upstream *
+                            pres_injection_upstream/rho_injection_upstream)
+                    else:
+                        rho_injection_upstream = \
+                            pyro_mech.get_density(
+                                p=pres_injection_upstream,
+                                temperature=temp_injection_upstream,
+                                mass_fractions=y_fuel)
+                        gamma_guess = \
+                            (pyro_mech.get_mixture_specific_heat_cp_mass(
+                                temp_injection_upstream, y_fuel) /
+                             pyro_mech.get_mixture_specific_heat_cv_mass(
+                                temp_injection_upstream, y_fuel))
+
+                        gamma_error = np.abs(gamma_guess - gamma_injection_upstream)
+                        toler = 1.e-6
+                        # iterate over the gamma/mach since gamma = gamma(T)
+                        while gamma_error > toler:
+
+                            pres_injection_upstream = \
+                                getIsentropicPressure(mach=mach_inj,
+                                                      P0=total_pres_inj_upstream,
+                                                      gamma=gamma_guess)
+                            temp_injection_upstream = \
+                                getIsentropicTemperature(mach=mach_inj,
+                                                         T0=total_temp_inj_upstream,
+                                                         gamma=gamma_guess)
+                            rho_injection_upstream = \
+                                pyro_mech.get_density(
+                                    p=pres_injection_upstream,
+                                    temperature=temp_injection_upstream,
+                                    mass_fractions=y_fuel)
+                            gamma_injection_upstream = \
+                                (pyro_mech.get_mixture_specific_heat_cp_mass(
+                                    temp_injection_upstream, y_fuel) /
+                                 pyro_mech.get_mixture_specific_heat_cv_mass(
+                                    temp_injection_upstream, y_fuel))
+                            gamma_error = np.abs(gamma_guess -
+                                                   gamma_injection_upstream)
+                            gamma_guess = gamma_injection_upstream
+
+                        sos_upstream = math.sqrt(
+                            gamma_injection_upstream*pres_injection_upstream /
+                            rho_injection_upstream)
+
+                    vel_injection_upstream[1] = mach_inj*sos_upstream
+
+                    if rank == 0:
+                        print("\t********")
+                        print(f"\tUpstream injector Mach number {mach_inj}")
+                        print("\tUpstream injector gamma "
+                              f"{gamma_injection_upstream}")
+                        print("\tUpstream injector temperature "
+                              f"{temp_injection_upstream}")
+                        print("\tUpstream injector pressure "
+                              f"{pres_injection_upstream}")
+                        print(f"\tUpstream injector rho {rho_injection_upstream}")
+                        print("\tUpstream injector velocity "
+                              f"{vel_injection_upstream[1]}")
+                        print("#### Simluation initialization data: ####\n")
+
         else:
             if rank == 0:
                 print("\t********")
@@ -1483,7 +1569,11 @@ def main(actx_class,
                               inj_gamma_guess=gamma_injection,
                               inj_pres=total_pres_inj,
                               inj_temp=total_temp_inj,
-                              inj_vel=vel_injection, inj_mass_frac=y_fuel,
+                              inj_vel=vel_injection,
+                              inj_pres_u=total_pres_inj_upstream,
+                              inj_temp_u=total_temp_inj_upstream,
+                              inj_vel_u=vel_injection_upstream,
+                              inj_mass_frac=y_fuel,
                               inj_temp_sigma=temp_sigma_inj,
                               inj_vel_sigma=vel_sigma_inj,
                               inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
