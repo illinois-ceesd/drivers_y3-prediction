@@ -674,12 +674,12 @@ def main(actx_class,
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
-    total_pres_inj_upstream = configurate("total_pres_inj_upstream",
-                                          input_data, 50400.)
-    total_temp_inj_upstream = configurate("total_temp_inj_upstream",
-                                          input_data, 300.)
     total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
     total_temp_inj = configurate("total_temp_inj", input_data, 300.)
+    total_pres_inj_upstream = configurate("total_pres_inj_upstream",
+                                          input_data, total_pres_inj)
+    total_temp_inj_upstream = configurate("total_temp_inj_upstream",
+                                          input_data, total_temp_inj)
     mach_inj = configurate("mach_inj", input_data, 1.0)
 
     # parameters to adjust the shape of the initialization
