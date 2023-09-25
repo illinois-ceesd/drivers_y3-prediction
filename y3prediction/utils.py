@@ -336,7 +336,7 @@ class InitSponge:
         xpos = x_vec[0]
         ypos = x_vec[1]
         actx = xpos.array_context
-        zeros = actx.zeros_like(xpos)
+        zeros = actx.np.zeros_like(xpos)
         x0 = zeros + self._x0
 
         if abs(self._direction) == 1:
