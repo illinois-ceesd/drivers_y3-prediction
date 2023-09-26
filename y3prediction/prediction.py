@@ -1690,7 +1690,7 @@ def main(actx_class,
             if os.path.exists(mesh_filename):
                 if not os.path.isdir(mesh_filename):
                     raise SimulationConfigurationError(
-                        "Mesh dist mode requires \"mesh_filename\""
+                        "Mesh dist mode requires 'mesh_filename'"
                         " parameter to be a directory for output.")
             if rank == 0:
                 if not os.path.exists(mesh_filename):
