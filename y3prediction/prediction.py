@@ -674,12 +674,12 @@ def main(actx_class,
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
 
     # injection flow properties
-    total_pres_inj_upstream = configurate("total_pres_inj_upstream",
-                                          input_data, 50400.)
-    total_temp_inj_upstream = configurate("total_temp_inj_upstream",
-                                          input_data, 300.)
     total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
     total_temp_inj = configurate("total_temp_inj", input_data, 300.)
+    total_pres_inj_upstream = configurate("total_pres_inj_upstream",
+                                          input_data, total_pres_inj)
+    total_temp_inj_upstream = configurate("total_temp_inj_upstream",
+                                          input_data, total_temp_inj)
     mach_inj = configurate("mach_inj", input_data, 1.0)
 
     # parameters to adjust the shape of the initialization
@@ -3148,7 +3148,10 @@ def main(actx_class,
         if rank == 0:
             logger.info(status_msg)
 
-    def my_write_status_fluid(cv, dv, dt, cfl_fluid):
+    def my_write_status_fluid(fluid_state, dt, cfl_fluid):
+        cv = fluid_state.cv
+        dv = fluid_state.dv
+
         status_msg = (f"----   dt {dt:1.3e},"
                       f" cfl_fluid {cfl_fluid:1.8f}")
 
@@ -3616,6 +3619,7 @@ def main(actx_class,
             if check_naninf_local(dcoll, dd_vol_wall, wall_temperature):
                 health_error = True
                 logger.info(f"{rank=}: NANs/Infs in wall temperature data.")
+                print(f"{rank=}: NANs/Infs in wall temperature data.")
 
         # These range checking bits seem oblivious/impervious to NANs
         if global_range_check(dd_vol_fluid, dv.pressure,
@@ -3633,6 +3637,8 @@ def main(actx_class,
                             f"\tGlobal Range     ({p_min:1.9e}, {p_max:1.9e})")
             logger.info(f"{rank=}: "
                         f"Local Range      ({p_min_loc:1.9e}, {p_max_loc:1.9e})")
+            print(f"{rank=}: Local Pressure Range "
+                  f"({p_min_loc:1.9e}, {p_max_loc:1.9e})")
             report_violators(dv.pressure, health_pres_min, health_pres_max)
 
         if global_range_check(dd_vol_fluid, dv.temperature,
@@ -3649,6 +3655,8 @@ def main(actx_class,
                             f"\tGlobal Range     ({t_min:7g}, {t_max:7g})")
             logger.info(f"{rank=}: "
                         f"Local Range      ({t_min_loc:7g}, {t_max_loc:7g})")
+            print(f"{rank=}: Local Temperature Range "
+                  f"({t_min_loc:1.9e}, {t_max_loc:1.9e})")
             report_violators(dv.temperature, health_temp_min, health_temp_max)
 
         if use_wall:
@@ -3662,6 +3670,10 @@ def main(actx_class,
                     "Wall temperature range violation: "
                     f"Simulation Range ({t_min=}, {t_max=}) "
                     f"Specified Limits ({health_temp_min=}, {health_temp_max=})")
+                t_min_loc = vol_min(dd_vol_wall, wall_temperature)
+                t_max_loc = vol_max(dd_vol_wall, wall_temperature)
+                print(f"{rank=}: Local Wall Temperature Range "
+                      f"({t_min_loc:1.9e}, {t_max_loc:1.9e})")
 
         for i in range(nspecies):
             if global_range_check(dd_vol_fluid, cv.species_mass_fractions[i],
@@ -3681,6 +3693,9 @@ def main(actx_class,
                 logger.info(f"{rank=}: "
                             f"Local Range      {species_names[i]}: "
                             f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                print(f"{rank=}: "
+                      f"Local Range      {species_names[i]}: "
+                      f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
                 report_violators(cv.species_mass_fractions[i],
                                  health_mass_frac_min, health_mass_frac_max)
 
@@ -3691,11 +3706,15 @@ def main(actx_class,
             temp_resid = get_temperature_update_compiled(
                 cv, dv.temperature)/dv.temperature
             temp_err = vol_max(dd_vol_fluid, temp_resid)
+            temp_err_loc = vol_max_loc(dd_vol_fluid, temp_resid)
             if temp_err > pyro_temp_tol:
                 health_error = True
                 logger.info(f"{rank=}:"
                              "Temperature is not converged "
                             f"{temp_err=} > {pyro_temp_tol}.")
+                logger.info(f"{rank=}: Temperature is not converged."
+                            f" Local Residual {temp_err_loc:7g} > {pyro_temp_tol}")
+                print(f"{rank=}: Local Temperature Residual ({temp_err_loc:1.9e})")
 
         return health_error
 
@@ -3864,11 +3883,8 @@ def main(actx_class,
             do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
 
-            # This re-creation of the state resets *tseed* to current temp
-            # and forces the limited cv into state
-
-            stepper_state = stepper_state.replace(cv=cv,
-                                                  tseed=fluid_state.temperature)
+            # This re-creation of the state forces the limited cv into state
+            stepper_state = stepper_state.replace(cv=cv)
 
             if any([do_viz, do_restart, do_health, do_status]):
 
@@ -3940,6 +3956,13 @@ def main(actx_class,
             t_wall = t_wall_start + (step - first_step)*dt*wall_time_scale
             my_write_status_lite(step=step, t=t, t_wall=t_wall)
 
+            # these status updates require global reductions on state data
+            if do_status:
+                my_write_status_fluid(fluid_state, dt=dt, cfl_fluid=cfl_fluid)
+                if use_wall:
+                    my_write_status_wall(wall_temperature=wdv.temperature,
+                                         dt=dt*wall_time_scale, cfl_wall=cfl_wall)
+
             if do_health:
                 wall_temptr = wdv.temperature if use_wall else None
                 health_errors = global_reduce(
@@ -3948,16 +3971,10 @@ def main(actx_class,
                 if health_errors:
                     if rank == 0:
                         logger.info("Solution failed health check.")
+                    logger.info(f"{rank=}: Solution failed health check. Logger")
+                    print(f"{rank=}:Solution failed health check. Print.")
                     comm.Barrier()  # make msg before any rank raises
                     raise MyRuntimeError("Failed simulation health check.")
-
-            # Let's not bother with status if we detect health error
-            # these status updates require global reductions on state data
-            if do_status:
-                my_write_status_fluid(cv=cv, dv=dv, dt=dt, cfl_fluid=cfl_fluid)
-                if use_wall:
-                    my_write_status_wall(wall_temperature=wdv.temperature,
-                                         dt=dt*wall_time_scale, cfl_wall=cfl_wall)
 
             if do_restart:
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
@@ -4006,6 +4023,9 @@ def main(actx_class,
             my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
             comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
+
+        # This re-creation of the state resets *tseed* to current temp
+        stepper_state = stepper_state.replace(tseed=fluid_state.temperature)
 
         return stepper_state.get_obj_array(), dt
 
@@ -4206,7 +4226,7 @@ def main(actx_class,
             wall_ox_mass_rhs = actx.np.zeros_like(wv.mass)
             if use_wall_ox:
                 if nspecies == 0:
-                    fluid_ox_mass = actx.np.zeros_like(cv.mass)
+                    fluid_ox_mass = mf_o2 + actx.np.zeros_like(cv.mass)
                 elif nspecies > 3:
                     fluid_ox_mass = cv.species_mass[i_ox]
                 else:
@@ -4339,7 +4359,6 @@ def main(actx_class,
     if rank == 0:
         logger.info("Checkpointing final state ...")
 
-    final_dv = current_fluid_state.dv
     ts_field_fluid, cfl, dt = my_get_timestep(dcoll=dcoll,
         fluid_state=current_fluid_state,
         t=current_t, dt=current_dt, cfl=current_cfl,
@@ -4357,7 +4376,7 @@ def main(actx_class,
     my_write_status_lite(step=current_step, t=current_t,
                          t_wall=current_t_wall)
 
-    my_write_status_fluid(cv=current_cv, dv=final_dv, dt=dt, cfl_fluid=cfl)
+    my_write_status_fluid(fluid_state=current_fluid_state, dt=dt, cfl_fluid=cfl)
     if use_wall:
         my_write_status_wall(wall_temperature=current_wdv.temperature,
                              dt=dt*wall_time_scale, cfl_wall=cfl_wall)
