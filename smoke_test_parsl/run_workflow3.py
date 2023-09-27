@@ -60,7 +60,10 @@ else:
         ),
     )
 
-config = Config(executors=[executor], strategy=None)
+# used for low priority tasks, not parallel
+local_executor_name = "local_executor"
+local_executor = ThreadPoolExecutor(label=local_executor_name, max_threads=5)
+config = Config(executors=[executor, local_executor], strategy=None)
 parsl.load(config)
 
 
@@ -71,7 +74,6 @@ def execute(execution_string="",
     return(execution_string)
 
 
-#@bash_app(executors=[executor_name])
 def build_execution_string(module="driver.py", yml="run_params.yaml",
                            c=None, t=None, r=None,
                            lazy=True, log=True):
@@ -104,7 +106,8 @@ def build_execution_string(module="driver.py", yml="run_params.yaml",
     return cmd
 
 
-def monitor_restart(file, outputs=[]):
+@python_app(executors=[local_executor_name])
+def monitor_restart(file, start_time, outputs=[]):
     """ Monitor the restart directory for existence of a file
 
         Parameters
@@ -114,23 +117,27 @@ def monitor_restart(file, outputs=[]):
 
     """
     import os
-    from parsl.data_provider.files import File
+    #from parsl.data_provider.files import File
     import time
-
-    target_file = "{os.getcwd()}/restart_data/{file}"
-    abort_file = "{os.getcwd()}/stop_workflow"
+    import datetime
+    target_file = f"{os.getcwd()}/restart_data/{file}"
+    abort_file = f"{os.getcwd()}/stop_workflow"
     filenotfound = True
-    delay = 15
+    delay = 5
 
     while filenotfound:
+        print(f"Waiting for {target_file}")
         if os.path.isfile(target_file):
-            outputs.append(File(target_file))
-            filenotfound = False
+            # ensure that it has been modified since run inception
+            target_time = os.path.getmtime(target_file)
+            if target_time > start_time:
+                filenotfound = False
 
         if os.path.isfile(abort_file):
             filenotfound = False
 
         time.sleep(delay)
+    return 0
 
 
 def main():
@@ -164,32 +171,53 @@ def main():
     flame_init = run_mirge(execution_string=ex_str, stdout=stdout_str, stderr=stderr_str, outputs=[init_restart_file])
     """
 
+    import datetime
+    start_time = datetime.datetime.timestamp(datetime.datetime.now())
     mirge_cmd = build_execution_string(
         yml="run_params.yaml", lazy=False, log=True)
     run_mirge = execute(execution_string=mirge_cmd,
                         stderr="run_stderr.txt",
                         stdout="run_stdout.txt",
                         outputs=parsl_restart_outfile)
-    run_mirge.result()  # wait until it is done
+
+    #run_mirge.result()  # wait until it is done
+    print(run_mirge)
     print(run_mirge.outputs)
 
-    """
-    run_viz_files = ["viz_data/prediction-000000000-0000.pkl",
-                     "restart_data/prediction-000000005-0000.pkl",
-                         "restart_data/prediction-000000010-0000.pkl",
-                         "restart_data/prediction-000000015-0000.pkl",
-                         "restart_data/prediction-000000020-0000.pkl"]
-
-    """
     #######
-    # 2. run mirgecom and generate viz_data from restart data
+    # 2. monitor the mirgecom restart files to determine when they become available
+    #    we do this seperately from the run future, as it won't tell us the files
+    #    are complete until the app completes
     #######
 
-    make_viz_data = []
+    monitor_restart_data = []
     for future in run_mirge.outputs:
+        print(future.filename)
+
+        # run mirge and make the viz files
+        monitor_restart_data.append(
+            monitor_restart(
+                file=os.path.basename(future.filename),
+                start_time=start_time,
+                #outputs=[File(f"{future.filename}.exists")]
+                outputs=[File(future.filename)]
+            )
+        )
+
+    print(monitor_restart_data)
+
+    #######
+    # 3. run mirgecom and generate viz_data from restart data
+    #######
+    make_viz_data = []
+    for app_future in monitor_restart_data:
         # first figure out the names of the viz files to be created
         # so we can make data futures for them
-        print(future.filename)
+        #print(future.filename)
+        #print(app_future)
+        #print(app_future.outputs)
+        future = app_future.outputs[0]
+        #print(future.filename)
         restart_name = os.path.basename(future.filename)
         # remove extension
         restart_name = os.path.splitext(restart_name)[0]
@@ -198,14 +226,14 @@ def main():
         # get dump number and the casename
         dump_number = restart_name[len(restart_name)-9:]
         case_name = restart_name[:len(restart_name)-10]
-        print(restart_name)
-        print(case_name)
-        print(dump_number)
+        #print(restart_name)
+        #print(case_name)
+        #print(dump_number)
         # construct dump name
         viz_name_fluid = (f"viz_data/{case_name}-fluid-{dump_number}.pvtu")
         viz_name_wall = (f"viz_data/{case_name}-wall-{dump_number}.pvtu")
-        print(viz_name_fluid)
-        print(viz_name_wall)
+        #print(viz_name_fluid)
+        #print(viz_name_wall)
 
         parsl_viz_outfile = []
         parsl_viz_outfile.append(File(os.path.join(os.getcwd(), viz_name_fluid),))
@@ -252,6 +280,7 @@ def main():
     #viz_output = [i.result() for i in make_viz_data]
     #print(viz_output)
 
+    run_mirge.result()  # wait until mirge execution is done
 
 if __name__ == "__main__":
     main()
