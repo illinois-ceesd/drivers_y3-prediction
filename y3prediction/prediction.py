@@ -394,6 +394,7 @@ def update_coupled_boundaries(
 def main(actx_class,
          restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
+         disable_logpyle=True,
          casename=None, log_path="log_data", use_esdg=False):
     # control log messages
     logger = logging.getLogger(__name__)
@@ -426,17 +427,19 @@ def main(actx_class,
         casename = "mirgecom"
 
     # logging and profiling
-    logname = log_path + "/" + casename + ".sqlite"
+    logmgr = None
+    if not disable_logpyle:
+        logname = log_path + "/" + casename + ".sqlite"
 
-    if rank == 0:
-        import os
-        log_dir = os.path.dirname(logname)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-    comm.Barrier()
+        if rank == 0:
+            import os
+            log_dir = os.path.dirname(logname)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+        comm.Barrier()
 
-    logmgr = initialize_logmgr(True,
-        filename=logname, mode="wu", mpi_comm=comm)
+        logmgr = initialize_logmgr(True,
+            filename=logname, mode="wu", mpi_comm=comm)
 
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
     actx = initialize_actx(actx_class, comm)
