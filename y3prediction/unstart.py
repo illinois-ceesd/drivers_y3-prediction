@@ -84,10 +84,15 @@ class InitACTII:
         self._vel_sigma = vel_sigma
         self._gamma_guess = gamma_guess
         # TODO, calculate these from the geometry files
-        self._throat_height = 3.638976e-3  #3.61909e-3
-        self._x_throat = 89.519951e-3  #0.283718298
+        self._throat_height = 3.638976e-3  # 3.61909e-3
+        self._x_throat = 89.519951e-3  # 0.283718298
         self._mass_frac = mass_frac
-
+        self._x_cav_upstream = 0.46071995183
+        self._x_cav_downstream = 0.49221995183
+        self._x_cav_ramp = 0.48521995183 
+        self._y_cav_top = 0.0
+        self._y_cav_bottom = -0.007
+        self._smooth_offset = 0.001 
         self._inj_P0 = inj_pres
         self._inj_T0 = inj_temp
         self._inj_vel = inj_vel
@@ -226,7 +231,7 @@ class InitACTII:
         )
 
         # save the unsmoothed temerature, so we can use it with the injector init
-        #unsmoothed_temperature = temperature
+        # unsmoothed_temperature = temperature
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
@@ -252,14 +257,10 @@ class InitACTII:
 
         # make a little region along the top of the cavity where we don't want
         # the temperature smoothed
-        #xc_left = zeros + 0.65163 + 0.0004
-        #xc_right = zeros + 0.72163 - 0.0004
-        #xc_left = zeros + 0.60628 + 0.0010
-        #xc_right = zeros + 0.63578 - 0.0015
-        xc_left = zeros + 0.46071994  # 0.60628
-        xc_right = zeros + 0.492219940 # .63578
-        yc_top = zeros + 0.002 # - 0.006
-        yc_bottom = zeros - 0.006 #0.01
+        xc_left = zeros + self._x_cav_upstream 
+        xc_right = zeros + self._x_cav_downstream 
+        yc_top = zeros + self._y_cav_top + self._smooth_offset # - 0.006
+        yc_bottom = zeros + self._y_cav_top -2*self._smooth_offset # 0.002 #0.01
         zc_fore = 0.0175 - 0.001
         zc_aft = -0.0175 + 0.001
 
@@ -278,20 +279,20 @@ class InitACTII:
 
         # smooth the temperature in the cavity region, this helps along the wall
         # initially in pressure/temperature equilibrium with the exterior flow
-        xc_left = zeros + 0.46071 # 0.60627
-        xc_right = zeros + 0.49221 # 0.65088
-        #xc_left = zeros + 0.65163 - 0.000001
-        #xc_right = zeros + 0.742 + 0.000001
-        #xc_left = zeros + 0.60628 + 0.0004
-        #xc_right = zeros + 0.63578 - 0.0004
-        #yc_top = zeros - 0.0083245 + 0.0006
-        yc_top = zeros #- 0.0083245
+        xc_left = zeros + self._x_cav_upstream 
+        xc_right = zeros + self._x_cav_downstream 
+        # xc_left = zeros + 0.65163 - 0.000001
+        # xc_right = zeros + 0.742 + 0.000001
+        # xc_left = zeros + 0.60628 + 0.0004
+        # xc_right = zeros + 0.63578 - 0.0004
+        # yc_top = zeros - 0.0083245 + 0.0006
+        yc_top = zeros + self._y_cav_top 
         if self._temp_sigma <= 0:
-            yc_top = zeros - 0.0099
-        #yc_bottom = zeros - 0.0283245
-        #xc_bottom = zeros + 0.70163
-        yc_bottom = zeros - 0.007 #0.0133245
-        xc_bottom = zeros + .48521994 #0.63078
+            yc_top = zeros + self.y_cav_top - 0.0099
+        # yc_bottom = zeros - 0.0283245
+        # xc_bottom = zeros + 0.70163
+        yc_bottom = zeros + self._y_cav_bottom  # 0.0133245
+        xc_bottom = zeros + self._x_cav_ramp # .48521994 #0.63078
         wall_theta = np.sqrt(2)/2.
 
         left_edge = actx.np.greater(xpos, xc_left)
@@ -323,10 +324,10 @@ class InitACTII:
                                            smooth_temperature)
 
         # smooth the temperature at the upstream corner
-        xc_left = zeros + 0.46071 #0.60627
-        xc_right = xc_left + 0.00075 #0.0015
-        yc_bottom = zeros # - 0.0083245
-        yc_top = yc_bottom + 0.00075 #0.0015
+        xc_left = zeros + self._x_cav_upstream 
+        xc_right = xc_left + self._smooth_offset # 0.00075 #0.0015
+        yc_bottom = zeros + self._y_cav_top 
+        yc_top = yc_bottom + self._smooth_offset # 0.00075 #0.0015
         zc_aft = zeros - 0.0175 + 0.001
         zc_fore = zeros + 0.0175 - 0.001
 
@@ -360,10 +361,10 @@ class InitACTII:
                                            smooth_temperature)
 
         # smooth the temperature at the downstream corner
-        xc_right = zeros + 0.63578
-        xc_left = xc_right - 0.0015
-        yc_bottom = zeros - 0.0083245
-        yc_top = yc_bottom + 0.0015
+        xc_right = zeros + self._x_cav_downstream 
+        xc_left = xc_right - self._smooth_offset # 0.0015
+        yc_bottom = zeros + self._y_cav_top 
+        yc_top = yc_bottom + self._smooth_offset # 0.0015
         zc_aft = zeros - 0.0175 + 0.001
         zc_fore = zeros + 0.0175 - 0.001
 
@@ -390,8 +391,8 @@ class InitACTII:
             smoothing_slant = smooth_step(actx, sigma*wall_dist)
             smoothing_top = smooth_step(actx, sigma*(ypos - yc_bottom))
             smoothing_func = smoothing_corner
-            #smoothing_func = (smoothing_top + smoothing_slant)/2.
-            #smoothing_func = (smoothing_top*smoothing_slant*smoothing_corner)
+            # smoothing_func = (smoothing_top + smoothing_slant)/2.
+            # smoothing_func = (smoothing_top*smoothing_slant*smoothing_corner)
             corner_temperature = (wall_temperature +
                 (temperature - wall_temperature)*smoothing_func)
         else:
@@ -439,14 +440,14 @@ class InitACTII:
             velocity[2] = 0.*velocity[2]
 
         # zero out the velocity in the cavity region, let the flow develop naturally
-        #xc_left = zeros + 0.60627
-        xc_left = zeros + 0.45  #0.50
-        xc_right = zeros + 0.5 #0.65088
-        yc_top = zeros #- 0.0083245
+        # xc_left = zeros + 0.60627
+        xc_left = zeros + self._x_cav_upstream - .01 # use this to make sure it extends beyoond the cavity
+        xc_right = zeros + self._x_cav_downstream + 0.01 # 0.65088
+        yc_top = zeros + self._y_cav_top # - 0.0083245
         if self._vel_sigma <= 0:
-            yc_top = zeros - 0.0099
-        #yc_bottom = zeros - 0.0133245
-        #xc_bottom = zeros + 0.63078
+            yc_top = zeros + self._y_cav_top - 0.00099
+        # yc_bottom = zeros - 0.0133245
+        # xc_bottom = zeros + 0.63078
 
         left_edge = actx.np.greater(xpos, xc_left)
         right_edge = actx.np.less(xpos, xc_right)
@@ -461,11 +462,11 @@ class InitACTII:
         # this approximates the BL velocity profile
         if self._vel_sigma <= 0:
 
-            xc_left = zeros + 0.606 - 0.000001
-            xc_right = zeros + 0.636 + 0.000001
-            yc_top = zeros
-            #yc_bottom = zeros - 0.0083246
-            yc_bottom = zeros - 0.0099
+            xc_left = zeros + self._x_cav_upstream - 0.000001
+            xc_right = zeros + self._x_cav_downstream + 0.000001
+            yc_top = zeros + self._y_cav_top + 0.001
+            # yc_bottom = zeros - 0.0083246
+            yc_bottom = zeros +self._y_cav_top - 0.0099
 
             left_edge = actx.np.greater(xpos, xc_left)
             right_edge = actx.np.less(xpos, xc_right)
@@ -557,38 +558,38 @@ class InitACTII:
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
-        #inj_left = 0.71
+        # inj_left = 0.71
         # even with the bottom corner
-        #inj_left = 0.632
+        # inj_left = 0.632
         # even with the top corner
-        inj_left = 0.6337
-        inj_right = 0.651
-        inj_top = -0.0105
-        inj_bottom = -0.01213
-        inj_fore = 1.59e-3
-        inj_aft = -1.59e-3
-        xc_left = zeros + inj_left
-        xc_right = zeros + inj_right
-        yc_top = zeros + inj_top
-        yc_bottom = zeros + inj_bottom
-        zc_fore = zeros + inj_fore
-        zc_aft = zeros + inj_aft
+        # inj_left = 0.6337
+        # inj_right = 0.651
+        # inj_top = -0.0105
+        # inj_bottom = -0.01213
+        # inj_fore = 1.59e-3
+        # inj_aft = -1.59e-3
+        # xc_left = zeros + inj_left
+        # xc_right = zeros + inj_right
+        # yc_top = zeros + inj_top
+        # yc_bottom = zeros + inj_bottom
+        # zc_fore = zeros + inj_fore
+        # zc_aft = zeros + inj_aft
 
-        yc_center = zeros - 0.01212 + 1.59e-3/2.
-        zc_center = zeros
-        inj_radius = 1.59e-3/2.
+        # yc_center = zeros - 0.01212 + 1.59e-3/2.
+        # zc_center = zeros
+        # inj_radius = 1.59e-3/2.
 
         if self._dim == 2:
             radius = actx.np.sqrt((ypos - yc_center)**2)
         else:
             radius = actx.np.sqrt((ypos - yc_center)**2 + (zpos - zc_center)**2)
 
-        left_edge = actx.np.greater(xpos, xc_left)
-        right_edge = actx.np.less(xpos, xc_right)
-        bottom_edge = actx.np.greater(ypos, yc_bottom)
-        top_edge = actx.np.less(ypos, yc_top)
-        aft_edge = ones
-        fore_edge = ones
+        # left_edge = actx.np.greater(xpos, xc_left)
+        # right_edge = actx.np.less(xpos, xc_right)
+        # bottom_edge = actx.np.greater(ypos, yc_bottom)
+        # top_edge = actx.np.less(ypos, yc_top)
+        # aft_edge = ones
+        # fore_edge = ones
         if self._dim == 3:
             aft_edge = actx.np.greater(zpos, zc_aft)
             fore_edge = actx.np.less(zpos, zc_fore)

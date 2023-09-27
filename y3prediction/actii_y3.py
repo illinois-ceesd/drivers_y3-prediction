@@ -32,7 +32,9 @@ class InitACTII:
             self, *, dim=2, nspecies=0, geom_top, geom_bottom,
             P0, T0, temp_wall, temp_sigma, vel_sigma, gamma_guess,
             mass_frac=None,
-            inj_pres, inj_temp, inj_vel, inj_mass_frac=None,
+            inj_pres, inj_temp, inj_vel,
+            inj_pres_u, inj_temp_u, inj_vel_u,
+            inj_mass_frac=None,
             inj_gamma_guess,
             inj_temp_sigma, inj_vel_sigma,
             inj_ytop, inj_ybottom,
@@ -73,6 +75,9 @@ class InitACTII:
         if inj_vel is None:
             inj_vel = np.zeros(shape=(dim,))
 
+        if inj_vel_u is None:
+            inj_vel_u = np.zeros(shape=(dim,))
+
         self._dim = dim
         self._nspecies = nspecies
         self._P0 = P0
@@ -91,6 +96,9 @@ class InitACTII:
         self._inj_P0 = inj_pres
         self._inj_T0 = inj_temp
         self._inj_vel = inj_vel
+        self._inju_P0 = inj_pres_u
+        self._inju_T0 = inj_temp_u
+        self._inju_vel = inj_vel_u
         self._inj_gamma_guess = inj_gamma_guess
 
         self._temp_sigma_injection = inj_temp_sigma
@@ -131,10 +139,11 @@ class InitACTII:
         ones = zeros + 1.0
 
         mach = zeros
+        gamma = zeros + self._gamma_guess
         ytop = zeros
         ybottom = zeros
         theta = zeros
-        gamma = self._gamma_guess
+        gamma_guess = self._gamma_guess
 
         theta_geom_top = get_theta_from_data(self._geom_top)
         theta_geom_bottom = get_theta_from_data(self._geom_bottom)
@@ -145,49 +154,169 @@ class InitACTII:
                       self._throat_height)
         if self._geom_top[0][0] < self._x_throat:
             mach_left = getMachFromAreaRatio(area_ratio=area_ratio,
-                                             gamma=gamma,
+                                             gamma=gamma_guess,
                                              mach_guess=0.01)
         elif self._geom_top[0][0] > self._x_throat:
             mach_left = getMachFromAreaRatio(area_ratio=area_ratio,
-                                             gamma=gamma,
+                                             gamma=gamma_guess,
                                              mach_guess=1.01)
         else:
             mach_left = 1.0
+
         x_left = self._geom_top[0][0]
         ytop_left = self._geom_top[0][1]
         ybottom_left = self._geom_bottom[0][1]
         theta_top_left = theta_geom_top[0][1]
         theta_bottom_left = theta_geom_bottom[0][1]
 
+        pres_left = getIsentropicPressure(mach=mach_left,
+                                          P0=self._P0,
+                                          gamma=gamma_guess)
+        temp_left = getIsentropicTemperature(mach=mach_left,
+                                             T0=self._T0,
+                                             gamma=gamma_guess)
+
+        # iterate over gamma to get a better initial condition
+        y = np.zeros(self._nspecies, dtype=object)
+        for i in range(self._nspecies):
+            y[i] = self._mass_frac[i]
+        mass = eos.get_density(pressure=pres_left, temperature=temp_left,
+                               species_mass_fractions=y)
+        energy = mass*eos.get_internal_energy(temperature=temp_left,
+                                              species_mass_fractions=y)
+
+        velocity = np.zeros(self._dim, dtype=object)
+        mom = mass*velocity
+
+        cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                            energy=energy, species_mass=mass*y)
+        gamma_left = eos.gamma(cv, temp_left)
+
+        gamma_error = (gamma_guess - gamma_left)
+        gamma_iter = gamma_left
+        toler = 1.e-6
+        # iterate over the gamma/mach since gamma = gamma(T)
+        while gamma_error > toler:
+            if self._geom_top[0][0] < self._x_throat:
+                mach_left = getMachFromAreaRatio(area_ratio=area_ratio,
+                                                 gamma=gamma_iter,
+                                                 mach_guess=0.01)
+            elif self._geom_top[0][0] > self._x_throat:
+                mach_left = getMachFromAreaRatio(area_ratio=area_ratio,
+                                                 gamma=gamma_iter,
+                                                 mach_guess=1.01)
+            else:
+                mach_left = 1.0
+
+            pres_left = getIsentropicPressure(mach=mach_left,
+                                                 P0=self._P0,
+                                                 gamma=gamma_iter)
+            temp_left = getIsentropicTemperature(mach=mach_left,
+                                                    T0=self._T0,
+                                                    gamma=gamma_iter)
+            mass = eos.get_density(pressure=pres_left, temperature=temp_left,
+                                   species_mass_fractions=y)
+            energy = mass*eos.get_internal_energy(temperature=temp_left,
+                                                  species_mass_fractions=y)
+
+            velocity = np.zeros(self._dim, dtype=object)
+            mom = mass*velocity
+            cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                                energy=energy, species_mass=mass*y)
+            gamma_left = eos.gamma(cv, temp_left)
+            gamma_error = (gamma_iter - gamma_left)
+            gamma_iter = gamma_left
+
         for ind in range(1, self._geom_top.shape[0]):
             area_ratio = ((self._geom_top[ind][1] - self._geom_bottom[ind][1]) /
                           self._throat_height)
             if self._geom_top[ind][0] < self._x_throat:
                 mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
-                                                 gamma=gamma,
+                                                 gamma=gamma_left,
                                                  mach_guess=0.01)
             elif self._geom_top[ind][0] > self._x_throat:
                 mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
-                                                 gamma=gamma,
+                                                 gamma=gamma_left,
                                                  mach_guess=1.01)
             else:
                 mach_right = 1.0
+
             ytop_right = self._geom_top[ind][1]
             ybottom_right = self._geom_bottom[ind][1]
             theta_top_right = theta_geom_top[ind][1]
             theta_bottom_right = theta_geom_bottom[ind][1]
+
+            pres_right = getIsentropicPressure(mach=mach_right,
+                                               P0=self._P0,
+                                               gamma=gamma_left)
+            temp_right = getIsentropicTemperature(mach=mach_right,
+                                                  T0=self._T0,
+                                                  gamma=gamma_left)
+
+            # iterate over gamma to get a better initial condition
+            y = np.zeros(self._nspecies, dtype=object)
+            for i in range(self._nspecies):
+                y[i] = self._mass_frac[i]
+            mass = eos.get_density(pressure=pres_right, temperature=temp_right,
+                                   species_mass_fractions=y)
+            energy = mass*eos.get_internal_energy(temperature=temp_right,
+                                                  species_mass_fractions=y)
+
+            velocity = np.zeros(self._dim, dtype=object)
+            mom = mass*velocity
+            cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                                energy=energy, species_mass=mass*y)
+            gamma_right = eos.gamma(cv, temp_right)
+
+            gamma_error = (gamma_left - gamma_right)
+            gamma_iter = gamma_right
+            toler = 1.e-6
+            # iterate over the gamma/mach since gamma = gamma(T)
+            while gamma_error > toler:
+                if self._geom_top[ind][0] < self._x_throat:
+                    mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
+                                                     gamma=gamma_iter,
+                                                     mach_guess=0.01)
+                elif self._geom_top[ind][0] > self._x_throat:
+                    mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
+                                                     gamma=gamma_iter,
+                                                     mach_guess=1.01)
+                else:
+                    mach_right = 1.0
+
+                pres_right = getIsentropicPressure(mach=mach_right,
+                                                     P0=self._P0,
+                                                     gamma=gamma_iter)
+                temp_right = getIsentropicTemperature(mach=mach_right,
+                                                        T0=self._T0,
+                                                        gamma=gamma_iter)
+                mass = eos.get_density(pressure=pres_right,
+                                       temperature=temp_right,
+                                       species_mass_fractions=y)
+                energy = mass*eos.get_internal_energy(temperature=temp_right,
+                                                      species_mass_fractions=y)
+
+                velocity = np.zeros(self._dim, dtype=object)
+                mom = mass*velocity
+                cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                                    energy=energy, species_mass=mass*y)
+                gamma_right = eos.gamma(cv, temp_right)
+                gamma_error = (gamma_iter - gamma_right)
+                gamma_iter = gamma_right
 
             # interpolate our data
             x_right = self._geom_top[ind][0]
 
             dx = x_right - x_left
             dm = mach_right - mach_left
+            dg = gamma_right - gamma_left
             dyt = ytop_right - ytop_left
             dyb = ybottom_right - ybottom_left
             dtb = theta_bottom_right - theta_bottom_left
             dtt = theta_top_right - theta_top_left
 
             local_mach = mach_left + (xpos - x_left)*dm/dx
+            local_gamma = gamma_left + (xpos - x_left)*dg/dx
             local_ytop = ytop_left + (xpos - x_left)*dyt/dx
             local_ybottom = ybottom_left + (xpos - x_left)*dyb/dx
             local_theta_bottom = theta_bottom_left + (xpos - x_left)*dtb/dx
@@ -203,11 +332,13 @@ class InitACTII:
             inside_block = left_edge*right_edge
 
             mach = actx.np.where(inside_block, local_mach, mach)
+            gamma = actx.np.where(inside_block, local_gamma, gamma)
             ytop = actx.np.where(inside_block, local_ytop, ytop)
             ybottom = actx.np.where(inside_block, local_ybottom, ybottom)
             theta = actx.np.where(inside_block, local_theta, theta)
 
             mach_left = mach_right
+            gamma_left = gamma_right
             ytop_left = ytop_right
             ybottom_left = ybottom_right
             theta_bottom_left = theta_bottom_right
@@ -787,7 +918,7 @@ class InitACTII:
         inj_y = ones*self._inj_mass_frac
 
         inj_velocity = mass*np.zeros(self._dim, dtype=object)
-        inj_velocity[1] = self._inj_vel[0]
+        inj_velocity = self._inju_vel
 
         inj_mach = self._inj_mach*ones
 
@@ -813,12 +944,12 @@ class InitACTII:
 
         inj_pressure = getIsentropicPressure(
             mach=inj_mach,
-            P0=self._inj_P0,
+            P0=self._inju_P0,
             gamma=inj_gamma
         )
         inj_temperature = getIsentropicTemperature(
             mach=inj_mach,
-            T0=self._inj_T0,
+            T0=self._inju_T0,
             gamma=inj_gamma
         )
 
