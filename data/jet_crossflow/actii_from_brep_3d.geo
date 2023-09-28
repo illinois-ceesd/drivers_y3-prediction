@@ -128,6 +128,24 @@ Field[14].DistMin = 0.001;
 Field[14].DistMax = 1.0;
 Field[14].StopAtDistMax = 1;
 
+// Create distance field from corners for wall meshing, excludes cavity, injector
+Field[4001] = Distance;
+Field[4001].CurvesList = {
+    1 // injector/isolator edge
+};
+Field[4001].Sampling = 1000;
+////
+//Create threshold field that varrries element size near boundaries
+blratiocorner = boundratioinjector*2;
+//blratiocorner = boundratioinjector;
+Field[4002] = Threshold;
+Field[4002].InField = 4001;
+Field[4002].SizeMin = injectorsize/blratiocorner;
+Field[4002].SizeMax = injectorsize/blratiocorner*(2.-1./blratiocorner);
+Field[4002].DistMin = 0.02;
+Field[4002].DistMax = 1.0;
+Field[4002].StopAtDistMax = 1;
+
 //  background mesh size in the isolator (downstream of the nozzle)
 Field[3] = Box;
 Field[3].XMin = 0.2;
@@ -146,18 +164,29 @@ Field[217].XCenter =  533.2;
 Field[217].YCenter = -22.5;
 Field[217].ZCenter = 0.;
 Field[217].Radius = 3;
-Field[217].VIn = injectorsize;
+Field[217].VIn = isosize/4;
 Field[217].VOut = bigsize;
-//
+
 // background mesh size between upstream injection and cavity
 Field[218] = Cylinder;
 Field[218].XAxis = 65;
-Field[218].XCenter =  580;
+Field[218].XCenter =  590;
 Field[218].YCenter = -9;
 Field[218].ZCenter = 0.;
 Field[218].Radius = 6;
 Field[218].VIn = injectorsize;
+//Field[218].VIn = injectorsize + 0.5*(isosize/blratio - injectorsize);
 Field[218].VOut = bigsize;
+
+// background mesh size between upstream injection and cavity
+Field[219] = Cylinder;
+Field[219].XAxis = 85;
+Field[219].XCenter =  590;
+Field[219].YCenter = -9;
+Field[219].ZCenter = 0.;
+Field[219].Radius = 9;
+Field[219].VIn = isosize/blratio;
+Field[219].VOut = bigsize;
 
 // background mesh size in the isolator-injector/cavity/combustor region
 shear_start_x = 520;
@@ -180,7 +209,9 @@ Field[119].VOut = bigsize;
 // take the minimum of all defined meshing fields
 Field[100] = Min;
 Field[100].FieldsList = {
-2 ,3002, 14, 3, 217, 218, 119
+2 ,3002, 
+4002, 
+14, 3, 217, 218, 219, 119
     };
 Background Field = 100;
 
