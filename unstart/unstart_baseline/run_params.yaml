@@ -13,7 +13,7 @@ nstatus: 1
 constant_cfl: 0
 current_cfl: 0.05
 current_dt: 1e-10
-t_final: 1e-9
+t_final: 0.5e-9
 nspecies:  2
 order:  2
 alpha_sc: 0.01
@@ -23,7 +23,7 @@ integrator: euler
 #health_pres_min: 2828
 #health_ares_max: 274259
 use_wall: False #turn off wall model
-use_av: 2 # artificial viscosity
+use_av: 1 # artificial viscosity
 use_sponge: True
 mesh_filename: "data/unstart_2d_coarse.msh"
 use_injection: False
@@ -31,6 +31,7 @@ use_outflow_boundary: "prescribed"
 use_inflow_boundary: "prescribed"
 use_flow_boundary: "none"
 use_wall_boundary: "isothermal_noslip"
+use_injection_boundary: "none"
 use_interface_boundary: "none"
 total_pres_inflow: 551581
 total_temp_inflow: 273
