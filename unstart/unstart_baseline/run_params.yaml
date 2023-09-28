@@ -13,7 +13,7 @@ nstatus: 1
 constant_cfl: 0
 current_cfl: 0.05
 current_dt: 1e-10
-t_final: 1e-7
+t_final: 1e-9
 nspecies:  2
 order:  2
 alpha_sc: 0.01
@@ -25,7 +25,7 @@ integrator: euler
 use_wall: False #turn off wall model
 use_av: 2 # artificial viscosity
 use_sponge: True
-mesh_filename: "data/unstart_baseline.msh"
+mesh_filename: "data/unstart_2d_coarse.msh"
 use_injection: False
 use_outflow_boundary: "prescribed"
 use_inflow_boundary: "prescribed"
