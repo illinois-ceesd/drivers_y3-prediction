@@ -1,0 +1,98 @@
+/g/g20/lauer5/.bashrc: line 33: module: command not found
+/g/g20/lauer5/.bashrc: line 34: module: command not found
+/g/g20/lauer5/.bashrc: line 35: module: command not found
+Activating 'mirgeDriver.Y3prediction' environment for '/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/bin/conda'.
+Info    : Running 'gmsh -setnumber size 12.8 -setnumber blratio 4 -setnumber cavityfac 6 -setnumber isofac 2 -setnumber injectorfac 4 -setnumber blratiocavity 2 -setnumber blratioinjector 2 -setnumber samplefac 4 -setnumber blratiosample 8 -setnumber blratiosurround 2 -setnumber shearfac 6 -o unstart_coarse.msh -nopopup -format msh2 ./unstart_from_brep_2d.geo -2 -nt 1' [Gmsh 4.11.1, 1 node, max. 1 thread]
+Info    : Started on Thu Sep 28 20:06:23 2023
+Info    : Reading './unstart_from_brep_2d.geo'...
+basesize = 12.800000
+inletsize = 25.600000
+isosize = 6.400000
+nozzlesize = 2.133333
+cavitysize = 2.133333
+shearsize = 1.066667
+boundratio = 4.000000
+boundratiocavity = 2.000000
+boundratiosurround = 2.000000
+Warning : Boolean fragments skipped - too few arguments
+Info    : Done reading './unstart_from_brep_2d.geo'
+Info    : Meshing 1D...
+Info    : [  0%] Meshing curve 1 (Line)
+Info    : [ 10%] Meshing curve 2 (Line)
+Info    : [ 20%] Meshing curve 3 (Line)
+Info    : [ 30%] Meshing curve 4 (Line)
+Info    : [ 30%] Meshing curve 5 (Line)
+Info    : [ 40%] Meshing curve 6 (Line)
+Info    : [ 50%] Meshing curve 7 (Line)
+Info    : [ 50%] Meshing curve 8 (Line)
+Info    : [ 60%] Meshing curve 9 (BSpline)
+Info    : [ 70%] Meshing curve 10 (Circle)
+Info    : [ 80%] Meshing curve 11 (Line)
+Info    : [ 80%] Meshing curve 12 (Line)
+Info    : [ 90%] Meshing curve 13 (Line)
+Info    : [100%] Meshing curve 14 (Circle)
+Info    : Done meshing 1D (Wall 3.0332s, CPU 3.03112s)
+Info    : Meshing 2D...
+Info    : [  0%] Meshing surface 1 (Plane, Unknown)
+Info    : [ 50%] Meshing surface 2 (Plane, Unknown)
+Info    : Done meshing 2D (Wall 5.53077s, CPU 5.53086s)
+Info    : 10377 nodes 22051 elements
+Info    : Writing 'unstart_coarse.msh'...
+Info    : Done writing 'unstart_coarse.msh'
+Info    : Stopped on Thu Sep 28 20:06:31 2023 (From start: Wall 8.7126s, CPU 8.68263s)
+grep: actii_2d.msh: No such file or directory
+Created mesh with  tets.
+logout
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@lassen710>
+Subject: Job 5244420: <mesh> in cluster <lassen> Done
+
+Job <mesh> was submitted from host <lassen708> by user <lauer5> in cluster <lassen> at Thu Sep 28 20:06:07 2023
+Job was executed on host(s) <1*lassen710>, in queue <pdebug>, as user <lauer5> in cluster <lassen> at Thu Sep 28 20:06:11 2023
+                            <40*lassen34>
+</g/g20/lauer5> was used as the home directory.
+</p/gpfs1/lauer5/drivers_y3-prediction/data/unstart/2D/coarse> was used as the working directory.
+Started at Thu Sep 28 20:06:11 2023
+Terminated at Thu Sep 28 20:06:32 2023
+Results reported at Thu Sep 28 20:06:32 2023
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -nnodes 1
+#BSUB -G uiuc 
+#BSUB -J mesh
+#BSUB -W 20
+#BSUB -q pdebug
+##BSUB -W 720
+##BSUB -q pbatch
+#BSUB -o output.txt
+
+source /p/gpfs1/lauer5/drivers_y3-prediction/emirge/config/activate_env.sh
+
+
+export OMP_NUM_THREADS=36
+sh make_mesh.sh
+
+------------------------------------------------------------
+
+Successfully completed.
+
+Resource usage summary:
+
+    CPU time :                                   0.23 sec.
+    Max Memory :                                 -
+    Average Memory :                             -
+    Total Requested Memory :                     -
+    Delta Memory :                               -
+    Max Swap :                                   -
+    Max Processes :                              -
+    Max Threads :                                -
+    Run time :                                   21 sec.
+    Turnaround time :                            25 sec.
+
+The output (if any) is above this job summary.
+

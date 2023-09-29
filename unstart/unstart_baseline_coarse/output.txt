@@ -1,0 +1,494 @@
+/g/g20/lauer5/.bashrc: line 33: module: command not found
+/g/g20/lauer5/.bashrc: line 34: module: command not found
+/g/g20/lauer5/.bashrc: line 35: module: command not found
+Activating 'mirgeDriver.Y3prediction' environment for '/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/bin/conda'.
+Default casename prediction
+Default casename prediction
+2023-09-28 20:20:30,645 - INFO - grudge.array_context - get_reasonable_array_context_class: MPIPyOpenCLArrayContext lazy=False distributed=True device-parallel=True
+2023-09-28 20:20:30,645 - INFO - grudge.array_context - get_reasonable_array_context_class: MPIPyOpenCLArrayContext lazy=False distributed=True device-parallel=True
+Using user input from file: run_params.yaml
+Running driver.py
+
+Using user input from file: run_params.yaml
+Running driver.py
+
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'XDG_CACHE_HOME' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'XDG_CACHE_HOME' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'POCL_CACHE_DIR' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'POCL_CACHE_DIR' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+2023-09-28 20:20:54,421 - INFO - mirgecom.simutil - Using SVM-based memory pool on <pyopencl.Device 'cpu-POWER9, altivec supported' on 'Portable Computing Language' at 0x1028a8970>.
+2023-09-28 20:20:54,431 - INFO - mirgecom.simutil - Using SVM-based memory pool on <pyopencl.Device 'cpu-POWER9, altivec supported' on 'Portable Computing Language' at 0x1028a86d0>.
+Shock capturing parameters: alpha 0.01, s0 -5.204119982655925, kappa 0.5
+Smoothing characteristic length for use in artificial viscosity
+smoothing_alpha 0.025
+Artificial viscosity smoothness_alpha=0.1
+Artificial viscosity smoothness_tau=0.01
+Artificial viscosity using modified physical viscosity
+Using velocity divergence indicator
+Shock capturing parameters: alpha 0.01, gamma_sc 1.5theta_sc 100, beta_sc 0.01, Pr 0.75, stagnation temperature 2076.43
+
+#### Simluation control data: ####
+	nrestart = 10
+	nhealth = 1
+	nstatus = 1
+	Constant dt mode, current_dt = 1e-10
+	t_final = 5e-10
+	order = 2
+	dimension = 2
+	Time integration euler
+   Boundary Conditions:
+	Checking for outflow boundary in mesh.
+	Checking for inflow boundary in mesh.
+	Checking for flow boundary in mesh.
+	Checking for injection boundary in mesh.
+	Checking for isothermal_wall boundary in mesh.
+	Checking for wall_interface boundary in mesh.
+
+	Interface wall boundary conditions are noslip for velocity
+#### Simluation control data: ####
+
+
+#### Visualization setup: ####
+	Basic visualization output enabled.
+	(cv, dv, cfl)
+	Extra visualization output enabled for derived quantities.
+	(velocity, mass_fractions, etc.)
+	Non-dimensional parameter visualization output enabled.
+	(Re, Pr, etc.)
+	Writing viz data every 5 steps.
+#### Visualization setup: ####
+
+#### Simluation initialization data: ####
+	Initializing flow to y3prediction
+	Inflow stagnation pressure 551581.0
+	Inflow stagnation temperature 273.0
+	Injection stagnation pressure 50400.0
+	Injection stagnation temperature 300.0
+	Upstream injection stagnation pressure50400.0
+	Upstream injection stagnation temperature300.0
+#### Simluation initialization data: ####
+
+#### Simluation setup data: ####
+	vel_sigma = 1000
+	temp_sigma = 1250
+	vel_sigma_injection = 5000
+	temp_sigma_injection = 5000
+#### Simluation setup data: ####
+
+Setting inviscid numerical flux to: Rusanov
+Setting viscous numerical flux to: Central
+
+
+#### Simluation material properties: ####
+#### Fluid domain: ####
+	mu = 4.216360056e-05
+	kappa = 0.05621788139856423
+	Prandtl Number  = 0.75
+	nspecies = 2
+	passive scalars to track air/fuel/inert mixture, ideal gas eos
+	Ideal Gas EOS
+	 Simple transport model:
+		 constant viscosity, species diffusivity
+	mu = 4.216360056e-05
+	kappa = 0.05621788139856423
+	species diffusivity = 0.0001
+	Wall model disabled
+#### Simluation material properties: ####
+#### Simluation initialization data: ####
+	inlet Mach number 0.038727226466056475
+	inlet gamma 1.4
+	inlet temperature 272.91813558141087
+	inlet pressure 551002.3085295856
+	inlet rho 7.066282875535186
+	inlet velocity 12.795628209380567
+	********
+	outlet Mach number 3.8694909183933484
+	outlet gamma 1.4
+	outlet temperature 68.34239903445327
+	outlet pressure 4329.680031534352
+	outlet rho 0.2217356785293076
+	outlet velocity 639.7760250260686
+	********
+	injector Mach number 1.0
+	injector gamma 1.4
+	injector temperature 250.0
+	injector pressure 26625.40210094558
+	injector rho 0.37275730483083286
+	injector velocity -316.2270553477892
+Reading mesh from data/unstart_coarse.msh
+Read GMSH: 0.1905806064605713
+MeshData: 0.4017939567565918
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/simutil.py:573: UserWarning: num_ranks is deprecated, use nranks_per_axis instead.
+  warn("num_ranks is deprecated, use nranks_per_axis instead.")
+No target file specied, using restart as target
+No target file specied, using restart as target
+Making 2D order 2 discretization.
+2023-09-28 20:20:55,598 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:20:55,603 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:00,093 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:00,093 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:00,095 - INFO - meshmode.distributed - bdry comm rank 0 comm begin
+2023-09-28 20:21:00,095 - INFO - meshmode.distributed - bdry comm rank 1 comm begin
+2023-09-28 20:21:08,639 - INFO - meshmode.distributed - bdry comm rank 1 comm end
+2023-09-28 20:21:08,721 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:08,732 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:08,804 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:08,811 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:08,874 - INFO - meshmode.distributed - bdry comm rank 0 comm end
+Done making discretization
+2023-09-28 20:21:08,887 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:08,903 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:08,962 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:08,969 - INFO - meshmode.discretization.connection.face - building face restriction: done
+Found boundary named outflow in fluid domain
+2023-09-28 20:21:09,046 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:09,057 - INFO - meshmode.discretization.connection.face - building face restriction: done
+Found boundary named inflow in fluid domain
+2023-09-28 20:21:09,131 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:09,152 - INFO - meshmode.discretization.connection.face - building face restriction: done
+Found boundary named isothermal_wall in fluid domain
+### Boundary Condition Summary ###
+The following boundary conditions are enabled:
+	outflow = prescribed
+	inflow = prescribed
+	isothermal_wall = isothermal_noslip
+The following boundary conditions are unused:
+	flow
+	injection
+	wall_interface
+### Boundary Condition Summary ###
+2023-09-28 20:21:09,934 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:10,024 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:10,495 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:10,727 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:10,758 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:10,797 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:11,015 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:11,080 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:11,090 - INFO - meshmode.discretization.connection.face - building face restriction: done
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1217478032'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+2023-09-28 20:21:11,251 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:21:11,465 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:21:11,474 - INFO - meshmode.discretization.connection.face - building face restriction: done
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1217478032'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '40402096'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '40402096'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1311882541'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1311882541'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '755909827'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '755909827'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '53210803'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '53210803'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '345616790'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '345616790'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '384447514'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '384447514'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '317773693'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '317773693'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1084359135'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1084359135'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1188596828'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1188596828'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '915295856'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '915295856'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1959474090'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1959474090'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1766409140'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1766409140'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1805244504'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1805244504'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1827666678'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1827666678'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '2002774429'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '2002774429'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1421606957'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1421606957'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1840296401'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1840296401'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '966650064'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '966650064'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1031825703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1031825703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+Before restart/init
+Smoothness functions processing
+Initial flow conditions processing
+Initializing soln.
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/boundary.py:1028: UserWarning: Using dummy boundary: copies interior solution.
+  PrescribedFluidBoundary.__init__(self)
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidCVTag'>, None))', assigning a value of '379402929'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+More gradient processing
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/boundary.py:1028: UserWarning: Using dummy boundary: copies interior solution.
+  PrescribedFluidBoundary.__init__(self)
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidCVTag'>, None))', assigning a value of '379402929'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessMuTag'>, None))', assigning a value of '1823503703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessMuTag'>, None))', assigning a value of '1823503703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessKappaTag'>, None))', assigning a value of '878833475'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessKappaTag'>, None))', assigning a value of '878833475'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessBetaTag'>, None))', assigning a value of '419877991'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessBetaTag'>, None))', assigning a value of '419877991'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+2023-09-28 20:21:20,714 - INFO - pyopencl - build program: kernel 'actx_special_exp' was part of a lengthy source build resulting from a binary cache miss (1.13 s)
+2023-09-28 20:21:20,761 - INFO - pyopencl - build program: kernel 'actx_special_exp' was part of a lengthy source build resulting from a binary cache miss (1.19 s)
+2023-09-28 20:21:21,245 - INFO - pyopencl - build program: kernel 'actx_special_log' was part of a lengthy source build resulting from a binary cache miss (0.34 s)
+bound_list=['outflow', 'inflow', 'isothermal_wall']
+bound_list=['outflow', 'inflow', 'isothermal_wall']
+Sponges processsing
+Viz & utilities processsing
+/p/gpfs1/lauer5/drivers_y3-prediction/y3prediction/prediction.py:3855: UserWarning: Running gc.collect() to work around memory growth issue https://github.com/illinois-ceesd/mirgecom/issues/839
+  warn("Running gc.collect() to work around memory growth issue "
+Initialization for Case(prediction)
+===
+Num 2d order-2 elements: 5158
+Num global elements: 10375
+Timestep:        1e-10
+Initial time:    0
+Final time:      5e-10
+CFL:             0.05
+Constant CFL:    False
+Initialization:  prediction
+EOS:             IdealSingleGas
+
+/p/gpfs1/lauer5/drivers_y3-prediction/y3prediction/prediction.py:3855: UserWarning: Running gc.collect() to work around memory growth issue https://github.com/illinois-ceesd/mirgecom/issues/839
+  warn("Running gc.collect() to work around memory growth issue "
+
+--     step         0:
+----   fluid sim time 0.00000000e+00
+----   dt 1.000e-10, cfl_fluid 0.00052312
+------ P       (min, max) (Pa) = (4.534041087e+03, 5.509931224e+05)
+------ T_fluid (min, max) (K)  = (69.2489,     300)
+------ y_air   (min, max)      = (1.000e+00, 1.000e+00)
+------ y_fuel  (min, max)      = (0.000e+00, 0.000e+00)
+******** Writing Restart File at step 0, sim time 0.000000e+00 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 0 at step 0, sim time 0.000000e+00 s ********
+******** Done Writing Fluid Visualization File ********
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradCVTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '186853975'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradCVTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '186853975'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradTemperatureTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '128005233'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradTemperatureTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '128005233'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1528146735'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1528146735'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '498766501'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '498766501'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1374306013'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1374306013'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '85929291'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '85929291'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+| Performance:
+| 	 walltime: 6.85517 s
+| 	 visualization time: 0.126304 s
+| 	 garbage collection time: 0.0347089 s
+| 	 log walltime: 0.000301823 s
+| Memory:
+| 	 python memory: 1028.12 Mb
+| 	 memory hwm: 1028.12 Mb
+| 	 mempool total: 99.8833 Mb
+| 	 mempool active:  20.986 Mb
+
+--     step         1:
+----   fluid sim time 1.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00052309
+------ P       (min, max) (Pa) = (4.532628924e+03, 5.509931621e+05)
+------ T_fluid (min, max) (K)  = (69.2454, 300.058)
+------ y_air   (min, max)      = (1.000e+00, 1.000e+00)
+------ y_fuel  (min, max)      = (0.000e+00, 0.000e+00)
+Freezing GC objects to reduce overhead of future GC collections
+Freezing GC objects to reduce overhead of future GC collections
+| Performance:
+| 	 walltime: 6.63434 s
+| 	 visualization time:      0 s
+| 	 garbage collection time: 0.040348 s
+| 	 log walltime: 0.000298852 s
+| Memory:
+| 	 python memory: 1028.12 Mb
+| 	 memory hwm: 1028.12 Mb
+| 	 mempool total: 102.063 Mb
+| 	 mempool active: 20.9852 Mb
+
+--     step         2:
+----   fluid sim time 2.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00052310
+------ P       (min, max) (Pa) = (4.531216894e+03, 5.509931958e+05)
+------ T_fluid (min, max) (K)  = (69.2419, 300.116)
+------ y_air   (min, max)      = (1.000e+00, 1.000e+00)
+------ y_fuel  (min, max)      = (0.000e+00, 0.000e+00)
+| Performance:
+| 	 walltime: 6.9481 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000109887 s
+| Memory:
+| 	 python memory: 1028.12 Mb
+| 	 memory hwm: 1028.12 Mb
+| 	 mempool total: 102.063 Mb
+| 	 mempool active: 20.9947 Mb
+
+--     step         3:
+----   fluid sim time 3.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00052311
+------ P       (min, max) (Pa) = (4.529804298e+03, 5.509932243e+05)
+------ T_fluid (min, max) (K)  = (69.2384, 300.174)
+------ y_air   (min, max)      = (1.000e+00, 1.000e+00)
+------ y_fuel  (min, max)      = (0.000e+00, 0.000e+00)
+| Performance:
+| 	 walltime: 6.60729 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000103962 s
+| Memory:
+| 	 python memory: 1028.12 Mb
+| 	 memory hwm: 1028.12 Mb
+| 	 mempool total: 102.066 Mb
+| 	 mempool active: 20.9891 Mb
+
+--     step         4:
+----   fluid sim time 4.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00052312
+------ P       (min, max) (Pa) = (4.528391563e+03, 5.509932485e+05)
+------ T_fluid (min, max) (K)  = (69.2348, 300.232)
+------ y_air   (min, max)      = (1.000e+00, 1.000e+00)
+------ y_fuel  (min, max)      = (0.000e+00, 0.000e+00)
+| Performance:
+| 	 walltime: 6.45671 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000298385 s
+| Memory:
+| 	 python memory: 1028.12 Mb
+| 	 memory hwm: 1028.12 Mb
+| 	 mempool total: 102.066 Mb
+| 	 mempool active: 20.9978 Mb
+Checkpointing final state ...
+
+--     step         5:
+----   fluid sim time 5.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00052312
+------ P       (min, max) (Pa) = (4.526978420e+03, 5.509932690e+05)
+------ T_fluid (min, max) (K)  = (69.2313,  300.29)
+------ y_air   (min, max)      = (1.000e+00, 1.000e+00)
+------ y_fuel  (min, max)      = (0.000e+00, 0.000e+00)
+******** Writing Fluid Visualization File 5 at step 5, sim time 5.000000e-10 s ********
+******** Done Writing Fluid Visualization File ********
+******** Writing Restart File at step 5, sim time 5.000000e-10 s ********
+******** Done Writing Restart File ********
+logout
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@lassen710>
+Subject: Job 5244440: <unstart_test> in cluster <lassen> Done
+
+Job <unstart_test> was submitted from host <lassen708> by user <lauer5> in cluster <lassen> at Thu Sep 28 20:20:19 2023
+Job was executed on host(s) <1*lassen710>, in queue <pdebug>, as user <lauer5> in cluster <lassen> at Thu Sep 28 20:20:22 2023
+                            <40*lassen34>
+</g/g20/lauer5> was used as the home directory.
+</p/gpfs1/lauer5/drivers_y3-prediction/unstart/unstart_baseline_coarse> was used as the working directory.
+Started at Thu Sep 28 20:20:22 2023
+Terminated at Thu Sep 28 20:22:50 2023
+Results reported at Thu Sep 28 20:22:50 2023
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -nnodes 1
+#BSUB -G uiuc 
+#BSUB -J unstart_test
+#BSUB -W 00:20
+#BSUB -q pdebug
+##BSUB -W 720
+##BSUB -q pbatch
+#BSUB -o output.txt
+
+exec="driver.py"
+
+#rst_file="./restart_data/burner_mix-d2p2e21350n1-230000-0000.pkl"
+
+source /p/gpfs1/lauer5/drivers_y3-prediction/emirge/config/activate_env.sh
+
+#$MIRGE_MPI_EXEC -n 1 $MIRGE_PARALLEL_SPAWNER python -m mpi4py $exec --lazy -r $rst_file
+#$MIRGE_MPI_EXEC $MIRGE_PARALLEL_SPAWNER python -m mpi4py $exec # -r $rst_file
+mpirun -n 2 python -u -m mpi4py $exec -i run_params.yaml
+
+------------------------------------------------------------
+
+Successfully completed.
+
+Resource usage summary:
+
+    CPU time :                                   0.26 sec.
+    Max Memory :                                 59 MB
+    Average Memory :                             56.00 MB
+    Total Requested Memory :                     -
+    Delta Memory :                               -
+    Max Swap :                                   1425 MB
+    Max Processes :                              4
+    Max Threads :                                27
+    Run time :                                   148 sec.
+    Turnaround time :                            151 sec.
+
+The output (if any) is above this job summary.
+

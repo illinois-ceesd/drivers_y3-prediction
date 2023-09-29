@@ -1,0 +1,91 @@
+/g/g20/lauer5/.bashrc: line 33: module: command not found
+/g/g20/lauer5/.bashrc: line 34: module: command not found
+/g/g20/lauer5/.bashrc: line 35: module: command not found
+Activating 'mirgeDriver.Y3prediction' environment for '/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/bin/conda'.
+Info    : Running 'gmsh -setnumber size 6.4 -setnumber blratio 10 -setnumber cavityfac 12 -setnumber isofac 10 -setnumber blratiocavity 10 -setnumber shearfac 6 -o unstart_test.msh -nopopup -format msh2 ./unstart_from_brep_2d.geo -2 -nt 1' [Gmsh 4.11.1, 1 node, max. 1 thread]
+Info    : Started on Thu Sep 28 20:31:09 2023
+Info    : Reading './unstart_from_brep_2d.geo'...
+basesize = 6.400000
+inletsize = 12.800000
+isosize = 0.640000
+nozzlesize = 1.066667
+cavitysize = 0.533333
+shearsize = 0.106667
+boundratio = 10.000000
+boundratiocavity = 10.000000
+boundratiosurround = 2.000000
+Warning : Boolean fragments skipped - too few arguments
+Info    : Done reading './unstart_from_brep_2d.geo'
+Info    : Meshing 1D...
+Info    : [  0%] Meshing curve 1 (Line)
+Info    : [ 10%] Meshing curve 2 (Line)
+Info    : [ 20%] Meshing curve 3 (Line)
+Info    : [ 30%] Meshing curve 4 (Line)
+Info    : [ 30%] Meshing curve 5 (Line)
+Info    : [ 40%] Meshing curve 6 (Line)
+Info    : [ 50%] Meshing curve 7 (Line)
+Info    : [ 50%] Meshing curve 8 (Line)
+Info    : [ 60%] Meshing curve 9 (BSpline)
+Info    : [ 70%] Meshing curve 10 (Circle)
+Info    : [ 80%] Meshing curve 11 (Line)
+Info    : [ 80%] Meshing curve 12 (Line)
+Info    : [ 90%] Meshing curve 13 (Line)
+Info    : [100%] Meshing curve 14 (Circle)
+Info    : Done meshing 1D (Wall 11.6608s, CPU 11.6438s)
+Info    : Meshing 2D...
+Info    : [  0%] Meshing surface 1 (Plane, Unknown)
+User defined signal 2
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@lassen710>
+Subject: Job 5244483: <mesh> in cluster <lassen> Exited
+
+Job <mesh> was submitted from host <lassen708> by user <lauer5> in cluster <lassen> at Thu Sep 28 20:30:58 2023
+Job was executed on host(s) <1*lassen710>, in queue <pdebug>, as user <lauer5> in cluster <lassen> at Thu Sep 28 20:31:02 2023
+                            <40*lassen35>
+</g/g20/lauer5> was used as the home directory.
+</p/gpfs1/lauer5/drivers_y3-prediction/data/unstart/2D/test> was used as the working directory.
+Started at Thu Sep 28 20:31:02 2023
+Terminated at Thu Sep 28 20:51:34 2023
+Results reported at Thu Sep 28 20:51:34 2023
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -nnodes 1
+#BSUB -G uiuc 
+#BSUB -J mesh
+#BSUB -W 20
+#BSUB -q pdebug
+##BSUB -W 720
+##BSUB -q pbatch
+#BSUB -o output.txt
+
+source /p/gpfs1/lauer5/drivers_y3-prediction/emirge/config/activate_env.sh
+
+
+export OMP_NUM_THREADS=36
+sh make_mesh.sh
+
+------------------------------------------------------------
+
+TERM_RUNLIMIT: job killed after reaching LSF run time limit.
+Exited with exit code 140.
+
+Resource usage summary:
+
+    CPU time :                                   0.63 sec.
+    Max Memory :                                 59 MB
+    Average Memory :                             58.56 MB
+    Total Requested Memory :                     -
+    Delta Memory :                               -
+    Max Swap :                                   1425 MB
+    Max Processes :                              4
+    Max Threads :                                27
+    Run time :                                   1231 sec.
+    Turnaround time :                            1236 sec.
+
+The output (if any) is above this job summary.
+
