@@ -4,7 +4,7 @@ from mirgecom.fluid import make_conserved
 
 
 class InitCompressionRamp:
-    r"""Solution initializer for flow with a discontinuity.
+    r"""Solution initializer for flow with a discontinuity in the compression ramp case.
 
     This initializer creates a physics-consistent flow solution
     given an initial thermal state (pressure, temperature) and an EOS.
@@ -190,6 +190,7 @@ class InitCompressionRamp:
 
         kinetic_energy = 0.5 * np.dot(velocity, velocity)
         energy = mass * (internal_energy + kinetic_energy)
+
 
         return make_conserved(dim=self._dim, mass=mass, energy=energy,
                               momentum=mom, species_mass=specmass)

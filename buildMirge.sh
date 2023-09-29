@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+set -x
+
 # default branch for building mirgecom for this driver
 mirge_branch="production"
 #mirge_branch="wall_model_exposed_gradients"

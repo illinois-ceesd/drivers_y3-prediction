@@ -445,6 +445,7 @@ def main(actx_class,
 
     # case selection
     do_compression_ramp = configurate("do_compression_ramp", input_data, False)
+    do_compression_ramp_oblique = configurate("do_compression_ramp_oblique", input_data, False)
 
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
@@ -862,7 +863,7 @@ def main(actx_class,
 
     # }}}
 
-    # constants
+    # s
     mw_o = 15.999
     mw_o2 = mw_o*2
     mw_co = 28.010
@@ -1094,7 +1095,9 @@ def main(actx_class,
     gas_model = GasModel(eos=eos, transport=transport_model)
 
     # case-specific initialization
-    if do_compression_ramp:
+    if do_compression_ramp and not do_compression_ramp_oblique:
+        ## MOVING NORMAL SHOCK INIT ##
+
         # ambient fluid conditions
         #   100 Pa
         #   298 K
@@ -1102,14 +1105,16 @@ def main(actx_class,
         #   velocity = 0,0,0
         pres_bkrnd = 100
         temp_bkrnd = 300
-        mach = 2.0
-
+        mach = 2.9
+        
+        #isentropic/normal shock relations
         rho_bkrnd = pres_bkrnd/r/temp_bkrnd
-        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
-        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
-        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd) #SPEED OF SOUND
+        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.) #NORMAL SHOCK
+        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.) #NORMAL SHOCK
         #mach2 = math.sqrt(((gamma-1.)*mach*mach+2.)/(2.*gamma*mach*mach-(gamma-1.)))
 
+        #get values from normal shock
         rho1 = rho_bkrnd
         pressure1 = pres_bkrnd
         temperature1 = pressure1/rho1/r
@@ -1139,16 +1144,17 @@ def main(actx_class,
 
         plane_normal = np.zeros(shape=(dim,))
         mesh_angle = 0.
+        
         # init params
         disc_location = np.zeros(shape=(dim,))
-        shock_loc_x = -0.4
+        shock_loc_x = -0.0
 
         fuel_location = np.zeros(shape=(dim,))
         fuel_loc_x = 0.07
 
         disc_location[0] = shock_loc_x
         fuel_location[0] = fuel_loc_x
-        theta = mesh_angle/180.*np.pi/2.
+        theta = mesh_angle/180.*np.pi
         plane_normal[0] = np.cos(theta)
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
@@ -1174,6 +1180,113 @@ def main(actx_class,
                                         temp_wall=temp_bkrnd,
                                         vel_sigma=vel_sigma,
                                         temp_sigma=temp_sigma)
+        
+    ### OBLIQUE SHOCK INIT
+    elif do_compression_ramp_oblique and not do_compression_ramp:
+            # ambient fluid conditions
+        #   100 Pa
+        #   298 K
+        #   rho = 1.77619667e-3 kg/m^3
+        #   velocity = 0,0,0
+        pres_bkrnd = 100
+        temp_bkrnd = 300
+        mach = 2.9
+        wave_beta = 43.6722542
+        wave_angle = np.radians(wave_beta)
+        ramp_angle = np.radians(24.0)
+        
+
+        #isentropic/normal shock relations
+        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
+        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd) #SPEED OF SOUND
+        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.) #NORMAL SHOCK
+        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.) #NORMAL SHOCK
+        #mach2 = math.sqrt(((gamma-1.)*mach*mach+2.)/(2.*gamma*mach*mach-(gamma-1.)))
+
+        #oblique shock relations
+        mach_n = mach * math.sin(wave_angle)
+        pressure_ratio_oblique = 1 + (2*gamma) /(gamma + 1) * (mach_n**2 -1)
+        density_ratio_oblique = ((gamma + 1) * mach_n**2) / (2 + (gamma - 1) * mach_n**2)
+        mach2_n = math.sqrt((1 + ((gamma - 1) / 2) * mach_n**2) / (gamma * mach_n**2 - (gamma - 1) / 2))
+        mach2 = mach2_n / math.sin(wave_angle - ramp_angle)
+
+        # #get values from normal shock
+        # rho1 = rho_bkrnd
+        # pressure1 = pres_bkrnd
+        # temperature1 = pressure1/rho1/r
+        # rho2 = rho1*density_ratio
+        # pressure2 = pressure1*pressure_ratio
+        # temperature2 = pressure2/rho2/r
+        # velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
+        # temp_wall = temperature1
+
+        #get values from oblique shock
+        rho1 = rho_bkrnd
+        pressure1 = pres_bkrnd
+        temperature1 = pressure1/rho1/r
+        rho2 = rho1*density_ratio_oblique
+        pressure2 = pressure1*pressure_ratio_oblique
+        temperature2 = pressure2/rho2/r
+        velocity2 = mach2 * math.sqrt(gamma * r * temperature2)
+        temp_wall = temperature1
+
+        vel_left = np.zeros(shape=(dim,))
+        vel_right = np.zeros(shape=(dim,))
+        vel_cross = np.zeros(shape=(dim,))
+        vel_cross[1] = 0
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tShock Mach number {mach}")
+            print(f"\tgamma {gamma}")
+            print(f"\tambient temperature {temperature1}")
+            print(f"\tambient pressure {pressure1}")
+            print(f"\tambient rho {rho1}")
+            print(f"\tambient velocity {vel_right[0]}")
+            print(f"\tpost-shock temperature {temperature2}")
+            print(f"\tpost-shock pressure {pressure2}")
+            print(f"\tpost-shock rho {rho2}")
+            print(f"\tpost-shock velocity {velocity2}")
+
+        plane_normal = np.zeros(shape=(dim,))
+        mesh_angle = wave_beta - 90
+        
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        shock_loc_x = -0.0
+
+        fuel_location = np.zeros(shape=(dim,))
+        fuel_loc_x = 0.07
+
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = fuel_loc_x
+        theta = mesh_angle/180.*np.pi
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        vel_left = velocity2*plane_normal
+
+        from y3prediction.compressionRamp import InitCompressionRamp
+        bulk_init = InitCompressionRamp(dim=dim,
+                                        normal_dir=plane_normal,
+                                        disc_location=disc_location,
+                                        disc_location_species=fuel_location,
+                                        nspecies=nspecies,
+                                        sigma=0.01,
+                                        pressure_left=pressure2,
+                                        pressure_right=pressure1,
+                                        temperature_left=temperature2,
+                                        temperature_right=temperature1,
+                                        velocity_left=vel_left,
+                                        velocity_right=vel_right,
+                                        velocity_cross=vel_cross,
+                                        #species_mass_left=y,
+                                        #species_mass_right= y_fuel,
+                                        temp_wall=temp_bkrnd,
+                                        vel_sigma=vel_sigma,
+                                        temp_sigma=temp_sigma)
+
     else:
 
         # initialize eos and species mass fractions

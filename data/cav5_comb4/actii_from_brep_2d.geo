@@ -172,6 +172,7 @@ Field[1].CurvesList = {
     28 // inflow top ramp
 };
 Field[1].Sampling = 1000;
+
 ////
 //Create threshold field that varrries element size near boundaries
 Field[2] = Threshold;

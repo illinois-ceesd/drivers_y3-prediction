@@ -1,6 +1,6 @@
 do_compression_ramp: True
 mesh_filename: ./em18data/compressionRamp.msh
-nviz: 5
+nviz: 300
 viz_level: 3
 wall_time_scale: 1
 wall_penalty_amount: 0
@@ -10,7 +10,7 @@ nrestart: 100
 nhealth: 1
 nstatus: 1
 #constant_cfl: 1
-use_av: 2 
+use_av: 2
 constant_cfl: 0
 current_cfl: 0.05
 current_dt: 2.5e-7
@@ -26,7 +26,7 @@ noslip: True
 adiabatic: True 
 mu: 1e-3
 av2_beta0: 6.0
-
-
+# use_inflow_boundary: False
+# use_outflow_boundary: False
 #health_pres_min: 2828
 #health_pres_max: 274259
