@@ -1,4 +1,4 @@
-do_compression_ramp: True
+do_compression_ramp_os: True
 mesh_filename: ./em18data/compressionRamp.msh
 nviz: 300
 viz_level: 3
@@ -15,8 +15,8 @@ constant_cfl: 0
 current_cfl: 0.05
 current_dt: 2.5e-7
 t_final: 4e-3
-vel_sigma: 30
-temp_sigma: 30
+vel_sigma: 25
+temp_sigma: 25
 sponge_sigma: 2
 nspecies:  0
 order:  4
@@ -24,7 +24,7 @@ integrator: compiled_lsrk54
 use_wall: False
 noslip: True
 adiabatic: True 
-mu: 1e-3
+mu: 1e-4
 av2_beta0: 6.0
 # use_inflow_boundary: False
 # use_outflow_boundary: False
