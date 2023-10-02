@@ -8,5 +8,6 @@ runError*
 runOutput*
 *.out
 *.msh
-
+output*
+*.tar
 __pycache__/

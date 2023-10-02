@@ -86,7 +86,7 @@ class InitACTII:
         self._temp_sigma = temp_sigma
         self._vel_sigma = vel_sigma
         self._gamma_guess = gamma_guess
-        # TODO, calculate these from the geometry files
+        
         self._throat_height = 3.638976e-3  # 3.61909e-3
         self._x_throat = 89.519951e-3  # 0.283718298
         self._mass_frac = mass_frac
@@ -285,13 +285,13 @@ class InitACTII:
 
         # smooth the temperature in the cavity region, this helps along the wall
         # initially in pressure/temperature equilibrium with the exterior flow
-        xc_left = zeros + self._x_cav_upstream
+        xc_left = zeros + self._x_cav_upstream - 0.0001 #- self._smooth_offset
         xc_right = zeros + self._x_cav_downstream
-        # xc_left = zeros + 0.65163 - 0.000001
-        # xc_right = zeros + 0.742 + 0.000001
-        # xc_left = zeros + 0.60628 + 0.0004
-        # xc_right = zeros + 0.63578 - 0.0004
-        # yc_top = zeros - 0.0083245 + 0.0006
+
+
+
+
+
         yc_top = zeros + self._y_cav_top
         if self._temp_sigma <= 0:
             yc_top = zeros + self.y_cav_top - 0.0099

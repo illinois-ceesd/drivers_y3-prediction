@@ -1,0 +1,37 @@
+nviz: 100
+viz_level: 2
+viz_interval_type: 0  
+#viz_interval_type: 1
+#viz_interval_type: 2
+t_viz_interval: 1.e-5
+wall_time_scale: 10000
+wall_penalty_amount: 0
+nrestart: 10
+nhealth: 1
+nstatus: 1
+#constant_cfl: 1
+constant_cfl: True
+current_cfl: 0.2
+#current_dt: 1e-8
+t_final: 1e-3
+nspecies:  0
+order:  3
+alpha_sc: 0.01
+s0_sc: -5.0
+kappa_sc: 0.5
+integrator: "compiled_lsrk54"
+#health_pres_min: 2828
+#health_ares_max: 274259
+use_wall: False #turn off wall model
+use_av: 2 # artificial viscosity
+use_sponge: True
+mesh_filename: "data/unstart_2d_coarse.msh"
+use_injection: False
+use_outflow_boundary: "prescribed"
+use_inflow_boundary: "prescribed"
+use_flow_boundary: "none"
+use_wall_boundary: "isothermal_noslip"
+use_injection_boundary: "none"
+use_interface_boundary: "none"
+total_pres_inflow: 551581
+total_temp_inflow: 273
