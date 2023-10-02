@@ -1,0 +1,4942 @@
+/g/g20/lauer5/.bashrc: line 33: module: command not found
+/g/g20/lauer5/.bashrc: line 34: module: command not found
+/g/g20/lauer5/.bashrc: line 35: module: command not found
+Activating 'mirgeDriver.Y3prediction' environment for '/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/bin/conda'.
+Default casename prediction
+Default casename prediction
+2023-09-28 20:41:29,195 - INFO - grudge.array_context - get_reasonable_array_context_class: MPIPyOpenCLArrayContext lazy=False distributed=True device-parallel=True
+2023-09-28 20:41:29,195 - INFO - grudge.array_context - get_reasonable_array_context_class: MPIPyOpenCLArrayContext lazy=False distributed=True device-parallel=True
+Using user input from file: run_params.yaml
+Running driver.py
+
+Using user input from file: run_params.yaml
+Running driver.py
+
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'XDG_CACHE_HOME' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'XDG_CACHE_HOME' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'POCL_CACHE_DIR' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'POCL_CACHE_DIR' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@lassen710>
+Subject: Job 5244520: <unstart_test> in cluster <lassen> Exited
+
+Job <unstart_test> was submitted from host <lassen708> by user <lauer5> in cluster <lassen> at Thu Sep 28 20:41:16 2023
+Job was executed on host(s) <1*lassen710>, in queue <pdebug>, as user <lauer5> in cluster <lassen> at Thu Sep 28 20:41:21 2023
+                            <40*lassen33>
+</g/g20/lauer5> was used as the home directory.
+</p/gpfs1/lauer5/drivers_y3-prediction/unstart/2d_test> was used as the working directory.
+Started at Thu Sep 28 20:41:21 2023
+Terminated at Thu Sep 28 20:41:37 2023
+Results reported at Thu Sep 28 20:41:37 2023
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -nnodes 1
+#BSUB -G uiuc 
+#BSUB -J unstart_test
+#BSUB -W 00:20
+#BSUB -q pdebug
+##BSUB -W 720
+##BSUB -q pbatch
+#BSUB -o output.txt
+
+exec="driver.py"
+
+#rst_file="./restart_data/burner_mix-d2p2e21350n1-230000-0000.pkl"
+
+source /p/gpfs1/lauer5/drivers_y3-prediction/emirge/config/activate_env.sh
+
+#$MIRGE_MPI_EXEC -n 1 $MIRGE_PARALLEL_SPAWNER python -m mpi4py $exec --lazy -r $rst_file
+#$MIRGE_MPI_EXEC $MIRGE_PARALLEL_SPAWNER python -m mpi4py $exec # -r $rst_file
+mpirun -n 2 python -u -m mpi4py $exec -i run_params.yaml
+
+------------------------------------------------------------
+
+TERM_OWNER: job killed by owner.
+Exited with exit code 255.
+
+Resource usage summary:
+
+    CPU time :                                   0.13 sec.
+    Max Memory :                                 -
+    Average Memory :                             -
+    Total Requested Memory :                     -
+    Delta Memory :                               -
+    Max Swap :                                   -
+    Max Processes :                              -
+    Max Threads :                                -
+    Run time :                                   16 sec.
+    Turnaround time :                            21 sec.
+
+The output (if any) is above this job summary.
+
+/g/g20/lauer5/.bashrc: line 33: module: command not found
+/g/g20/lauer5/.bashrc: line 34: module: command not found
+/g/g20/lauer5/.bashrc: line 35: module: command not found
+Activating 'mirgeDriver.Y3prediction' environment for '/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/bin/conda'.
+Default casename prediction
+Default casename prediction
+2023-09-28 20:52:21,403 - INFO - grudge.array_context - get_reasonable_array_context_class: MPIPyOpenCLArrayContext lazy=False distributed=True device-parallel=True
+2023-09-28 20:52:21,403 - INFO - grudge.array_context - get_reasonable_array_context_class: MPIPyOpenCLArrayContext lazy=False distributed=True device-parallel=True
+Using user input from file: run_params.yaml
+Running driver.py
+
+Using user input from file: run_params.yaml
+Running driver.py
+
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'XDG_CACHE_HOME' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'XDG_CACHE_HOME' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'POCL_CACHE_DIR' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/mpi.py:73: UserWarning: Please set the 'POCL_CACHE_DIR' variable in your job script to avoid file system overheads when running on large numbers of ranks. See https://mirgecom.readthedocs.io/en/latest/running/large-systems.html for more information.
+  warn(f"Please set the '{var}' variable in your job script to "
+2023-09-28 20:52:58,151 - INFO - mirgecom.simutil - Using SVM-based memory pool on <pyopencl.Device 'cpu-POWER9, altivec supported' on 'Portable Computing Language' at 0x1028a82d0>.
+2023-09-28 20:52:58,151 - INFO - mirgecom.simutil - Using SVM-based memory pool on <pyopencl.Device 'cpu-POWER9, altivec supported' on 'Portable Computing Language' at 0x1028a87e0>.
+Setting force_eval = False for pre-compiled time integration
+Shock capturing parameters: alpha 0.01, s0 -5.9084850188786495, kappa 0.5
+Smoothing characteristic length for use in artificial viscosity
+smoothing_alpha 0.025
+Artificial viscosity smoothness_alpha=0.1
+Artificial viscosity smoothness_tau=0.01
+Artificial viscosity using modified transport properties
+	 mu, beta, kappa
+Shock capturing parameters:	av_mu 0.1	av_beta 6.0	av_kappa 1.0	av_prantdl 0.9stagnation temperature 2076.43
+
+#### Simluation control data: ####
+	nrestart = 10
+	nhealth = 1
+	nstatus = 1
+	Constant dt mode, current_dt = 1e-10
+	t_final = 1e-05
+	order = 3
+	dimension = 2
+	Time integration compiled_lsrk54
+   Boundary Conditions:
+	Checking for outflow boundary in mesh.
+	Checking for inflow boundary in mesh.
+	Checking for flow boundary in mesh.
+	Checking for injection boundary in mesh.
+	Checking for isothermal_wall boundary in mesh.
+	Checking for wall_interface boundary in mesh.
+
+	Interface wall boundary conditions are noslip for velocity
+#### Simluation control data: ####
+
+
+#### Visualization setup: ####
+	Basic visualization output enabled.
+	(cv, dv, cfl)
+	Extra visualization output enabled for derived quantities.
+	(velocity, mass_fractions, etc.)
+	Non-dimensional parameter visualization output enabled.
+	(Re, Pr, etc.)
+	Writing viz data every 5 steps.
+#### Visualization setup: ####
+
+#### Simluation initialization data: ####
+	Initializing flow to y3prediction
+	Inflow stagnation pressure 551581.0
+	Inflow stagnation temperature 273.0
+	Injection stagnation pressure 50400.0
+	Injection stagnation temperature 300.0
+	Upstream injection stagnation pressure50400.0
+	Upstream injection stagnation temperature300.0
+#### Simluation initialization data: ####
+
+#### Simluation setup data: ####
+	vel_sigma = 1000
+	temp_sigma = 1250
+	vel_sigma_injection = 5000
+	temp_sigma_injection = 5000
+#### Simluation setup data: ####
+
+Setting inviscid numerical flux to: Rusanov
+Setting viscous numerical flux to: Central
+
+
+#### Simluation material properties: ####
+#### Fluid domain: ####
+	mu = 4.216360056e-05
+	kappa = 0.05621788139856423
+	Prandtl Number  = 0.75
+	nspecies = 0
+	no passive scalars, uniform species mixture
+	O2/N2 mix material properties.
+	Ideal Gas EOS
+	 Simple transport model:
+		 constant viscosity, species diffusivity
+	mu = 4.216360056e-05
+	kappa = 0.05621788139856423
+	species diffusivity = 0.0001
+	Wall model disabled
+#### Simluation material properties: ####
+#### Simluation initialization data: ####
+	inlet Mach number 0.038727226466056475
+	inlet gamma 1.4
+	inlet temperature 272.91813558141087
+	inlet pressure 551002.3085295856
+	inlet rho 7.066282875535186
+	inlet velocity 12.795628209380567
+	********
+	outlet Mach number 3.8694909183933484
+	outlet gamma 1.4
+	outlet temperature 68.34239903445327
+	outlet pressure 4329.680031534352
+	outlet rho 0.2217356785293076
+	outlet velocity 639.7760250260686
+	********
+	nspecies=0, injection disabled
+Reading mesh from data/unstart_2d_coarse.msh
+Read GMSH: 3.595384120941162
+MeshData: 5.712967872619629
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/simutil.py:573: UserWarning: num_ranks is deprecated, use nranks_per_axis instead.
+  warn("num_ranks is deprecated, use nranks_per_axis instead.")
+No target file specied, using restart as target
+Making 2D order 3 discretization.
+No target file specied, using restart as target
+2023-09-28 20:53:14,748 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:14,751 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:18,388 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:18,389 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:18,390 - INFO - meshmode.distributed - bdry comm rank 0 comm begin
+2023-09-28 20:53:18,390 - INFO - meshmode.distributed - bdry comm rank 1 comm begin
+2023-09-28 20:53:18,714 - INFO - meshmode.distributed - bdry comm rank 1 comm end
+2023-09-28 20:53:18,776 - INFO - meshmode.distributed - bdry comm rank 0 comm end
+Done making discretization
+2023-09-28 20:53:18,818 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:18,827 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:18,878 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:18,885 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:18,904 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:18,910 - INFO - meshmode.discretization.connection.face - building face restriction: done
+Found boundary named outflow in fluid domain
+2023-09-28 20:53:18,961 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:18,970 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:18,986 - INFO - meshmode.discretization.connection.face - building face restriction: start
+Found boundary named inflow in fluid domain
+2023-09-28 20:53:19,048 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:19,112 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:19,182 - INFO - meshmode.discretization.connection.face - building face restriction: done
+Found boundary named isothermal_wall in fluid domain
+### Boundary Condition Summary ###
+The following boundary conditions are enabled:
+	outflow = prescribed
+	inflow = prescribed
+	isothermal_wall = isothermal_noslip
+The following boundary conditions are unused:
+	flow
+	injection
+	wall_interface
+### Boundary Condition Summary ###
+2023-09-28 20:53:19,729 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:19,779 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:20,164 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:20,194 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:20,685 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:20,714 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:24,452 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:24,504 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:25,317 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:25,334 - INFO - meshmode.discretization.connection.face - building face restriction: done
+2023-09-28 20:53:25,358 - INFO - meshmode.discretization.connection.face - building face restriction: start
+2023-09-28 20:53:25,367 - INFO - meshmode.discretization.connection.face - building face restriction: done
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1217478032'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1217478032'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '40402096'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '40402096'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1311882541'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '1311882541'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '755909827'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 0)))', assigning a value of '755909827'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '53210803'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '53210803'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '345616790'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '345616790'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '384447514'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '384447514'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '317773693'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 1)))', assigning a value of '317773693'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1084359135'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1084359135'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1188596828'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1188596828'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '915295856'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '915295856'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1959474090'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 2)))', assigning a value of '1959474090'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1766409140'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1766409140'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1805244504'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1805244504'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1827666678'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '1827666678'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '2002774429'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 3)))', assigning a value of '2002774429'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1421606957'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1421606957'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1840296401'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1840296401'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '966650064'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '966650064'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1031825703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, (<class 'y3prediction.prediction._SmoothCharDiffFluidCommTag'>, 4)))', assigning a value of '1031825703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+Before restart/init
+Smoothness functions processing
+Initial flow conditions processing
+Initializing soln.
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/boundary.py:1028: UserWarning: Using dummy boundary: copies interior solution.
+  PrescribedFluidBoundary.__init__(self)
+More gradient processing
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/mirgecom/mirgecom/boundary.py:1028: UserWarning: Using dummy boundary: copies interior solution.
+  PrescribedFluidBoundary.__init__(self)
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidCVTag'>, None))', assigning a value of '379402929'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidCVTag'>, None))', assigning a value of '379402929'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessMuTag'>, None))', assigning a value of '1823503703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessMuTag'>, None))', assigning a value of '1823503703'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessKappaTag'>, None))', assigning a value of '878833475'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessKappaTag'>, None))', assigning a value of '878833475'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessBetaTag'>, None))', assigning a value of '419877991'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.gas_model._FluidSmoothnessBetaTag'>, None))', assigning a value of '419877991'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+bound_list=['outflow', 'inflow', 'isothermal_wall']
+bound_list=['outflow', 'inflow', 'isothermal_wall']
+Sponges processsing
+Viz & utilities processsing
+Initialization for Case(prediction)
+===
+Num 2d order-3 elements: 103201
+Num global elements: 207638
+Timestep:        1e-10
+Initial time:    0
+Final time:      1e-05
+CFL:             0.05
+Constant CFL:    False
+Initialization:  prediction
+EOS:             IdealSingleGas
+
+/p/gpfs1/lauer5/drivers_y3-prediction/y3prediction/prediction.py:3855: UserWarning: Running gc.collect() to work around memory growth issue https://github.com/illinois-ceesd/mirgecom/issues/839
+  warn("Running gc.collect() to work around memory growth issue "
+/p/gpfs1/lauer5/drivers_y3-prediction/y3prediction/prediction.py:3855: UserWarning: Running gc.collect() to work around memory growth issue https://github.com/illinois-ceesd/mirgecom/issues/839
+  warn("Running gc.collect() to work around memory growth issue "
+
+--     step         0:
+----   fluid sim time 0.00000000e+00
+----   dt 1.000e-10, cfl_fluid 0.00704639
+------ P       (min, max) (Pa) = (4.534041087e+03, 5.509931224e+05)
+------ T_fluid (min, max) (K)  = (69.2489,     300)
+******** Writing Restart File at step 0, sim time 0.000000e+00 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 0 at step 0, sim time 0.000000e+00 s ********
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/envs/mirgeDriver.Y3prediction/lib/python3.11/site-packages/pyopencl/array.py:174: RuntimeWarning: divide by zero encountered in divide
+  result = (x1/x2).dtype
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/envs/mirgeDriver.Y3prediction/lib/python3.11/site-packages/pyopencl/array.py:1386: RuntimeWarning: divide by zero encountered in divide
+  np.true_divide(common_dtype.type(1), other),
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/envs/mirgeDriver.Y3prediction/lib/python3.11/site-packages/pyopencl/array.py:174: RuntimeWarning: divide by zero encountered in divide
+  result = (x1/x2).dtype
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/miniforge3/envs/mirgeDriver.Y3prediction/lib/python3.11/site-packages/pyopencl/array.py:1386: RuntimeWarning: divide by zero encountered in divide
+  np.true_divide(common_dtype.type(1), other),
+******** Done Writing Fluid Visualization File ********
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradCVTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '186853975'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradCVTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '186853975'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradTemperatureTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '128005233'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.navierstokes._NSGradTemperatureTag'>, <class 'y3prediction.prediction._FluidOperatorCommTag'>))', assigning a value of '128005233'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1528146735'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1528146735'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '498766501'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '498766501'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1374306013'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '1374306013'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '85929291'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._MuDiffFluidCommTag'>))', assigning a value of '85929291'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '288794805'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '288794805'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '1069012934'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '1069012934'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '1574053808'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '1574053808'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '1769944131'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._BetaDiffFluidCommTag'>))', assigning a value of '1769944131'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '307437768'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionKappaTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '307437768'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '711287057'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionStateTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '711287057'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '373551691'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionGradTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '373551691'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '1455429717'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+/p/gpfs1/lauer5/drivers_y3-prediction/emirge/grudge/grudge/trace_pair.py:529: UserWarning: Encountered unknown symbolic tag '('fluid', (<class 'mirgecom.diffusion._DiffusionLengthscalesTag'>, <class 'y3prediction.prediction._KappaDiffFluidCommTag'>))', assigning a value of '1455429717'. This is a temporary workaround, please ensure that tags are sufficiently distinct for your use case.
+  warn("Encountered unknown symbolic tag "
+| Performance:
+| 	 walltime: 108.261 s
+| 	 visualization time: 1.4155 s
+| 	 garbage collection time: 0.0580499 s
+| 	 log walltime: 0.000252947 s
+| Memory:
+| 	 python memory: 3267.88 Mb
+| 	 memory hwm: 3267.88 Mb
+| 	 mempool total: 2289.92 Mb
+| 	 mempool active: 607.908 Mb
+
+--     step         1:
+----   fluid sim time 1.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.533989448e+03, 5.509931575e+05)
+------ T_fluid (min, max) (K)  = (69.2485, 302.312)
+Freezing GC objects to reduce overhead of future GC collections
+Freezing GC objects to reduce overhead of future GC collections
+| Performance:
+| 	 walltime: 107.511 s
+| 	 visualization time:      0 s
+| 	 garbage collection time: 0.0994258 s
+| 	 log walltime: 0.000333864 s
+| Memory:
+| 	 python memory: 3363.88 Mb
+| 	 memory hwm: 3363.88 Mb
+| 	 mempool total: 2385.93 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step         2:
+----   fluid sim time 2.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533937957e+03, 5.509931875e+05)
+------ T_fluid (min, max) (K)  = (69.2481, 304.283)
+| Performance:
+| 	 walltime: 106.082 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000351816 s
+| Memory:
+| 	 python memory: 3363.88 Mb
+| 	 memory hwm: 3363.88 Mb
+| 	 mempool total: 2385.93 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step         3:
+----   fluid sim time 3.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533886604e+03, 5.509932132e+05)
+------ T_fluid (min, max) (K)  = (69.2477, 305.827)
+| Performance:
+| 	 walltime: 107.15 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000329737 s
+| Memory:
+| 	 python memory: 3363.88 Mb
+| 	 memory hwm: 3363.88 Mb
+| 	 mempool total: 2385.93 Mb
+| 	 mempool active: 598.526 Mb
+
+--     step         4:
+----   fluid sim time 4.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533835386e+03, 5.509932353e+05)
+------ T_fluid (min, max) (K)  = (69.2473,  307.08)
+| Performance:
+| 	 walltime: 107.121 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000355139 s
+| Memory:
+| 	 python memory: 3363.88 Mb
+| 	 memory hwm: 3363.88 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.536 Mb
+
+--     step         5:
+----   fluid sim time 5.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533784302e+03, 5.509932542e+05)
+------ T_fluid (min, max) (K)  = (69.2469, 308.126)
+******** Writing Fluid Visualization File 5 at step 5, sim time 5.000000e-10 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.935 s
+| 	 visualization time: 1.41944 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000310864 s
+| Memory:
+| 	 python memory:    3364 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step         6:
+----   fluid sim time 6.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533733348e+03, 5.509932703e+05)
+------ T_fluid (min, max) (K)  = (69.2466,  309.02)
+| Performance:
+| 	 walltime: 106.519 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000336975 s
+| Memory:
+| 	 python memory:    3364 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step         7:
+----   fluid sim time 7.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533682525e+03, 5.509932842e+05)
+------ T_fluid (min, max) (K)  = (69.2462, 309.801)
+| Performance:
+| 	 walltime: 106.709 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000330593 s
+| Memory:
+| 	 python memory:    3364 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.526 Mb
+
+--     step         8:
+----   fluid sim time 8.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533631832e+03, 5.509932961e+05)
+------ T_fluid (min, max) (K)  = (69.2458, 310.493)
+| Performance:
+| 	 walltime: 106.842 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000105936 s
+| Memory:
+| 	 python memory: 3365.19 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.526 Mb
+
+--     step         9:
+----   fluid sim time 9.00000000e-10
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533581267e+03, 5.509933062e+05)
+------ T_fluid (min, max) (K)  = (69.2454, 311.115)
+| Performance:
+| 	 walltime: 107.278 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.63733e-05 s
+| Memory:
+| 	 python memory: 3366.56 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        10:
+----   fluid sim time 1.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533530830e+03, 5.509933150e+05)
+------ T_fluid (min, max) (K)  = ( 69.245,  311.68)
+******** Writing Restart File at step 10, sim time 1.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 10 at step 10, sim time 1.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.368 s
+| 	 visualization time: 1.42729 s
+| 	 garbage collection time: 0.000567354 s
+| 	 log walltime: 0.000336614 s
+| Memory:
+| 	 python memory: 3358.31 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        11:
+----   fluid sim time 1.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533480521e+03, 5.509933224e+05)
+------ T_fluid (min, max) (K)  = (69.2447, 312.196)
+| Performance:
+| 	 walltime: 106.769 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000115976 s
+| Memory:
+| 	 python memory: 3369.06 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        12:
+----   fluid sim time 1.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533430338e+03, 5.509933288e+05)
+------ T_fluid (min, max) (K)  = (69.2443, 312.672)
+| Performance:
+| 	 walltime: 107.039 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100784 s
+| Memory:
+| 	 python memory: 3370.44 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        13:
+----   fluid sim time 1.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533380281e+03, 5.509933343e+05)
+------ T_fluid (min, max) (K)  = (69.2439, 313.112)
+| Performance:
+| 	 walltime: 106.278 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000296887 s
+| Memory:
+| 	 python memory: 3371.62 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        14:
+----   fluid sim time 1.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533330350e+03, 5.509933390e+05)
+------ T_fluid (min, max) (K)  = (69.2435, 313.521)
+| Performance:
+| 	 walltime: 107.767 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000108242 s
+| Memory:
+| 	 python memory: 3373.25 Mb
+| 	 memory hwm: 4096.38 Mb
+| 	 mempool total: 2385.94 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        15:
+----   fluid sim time 1.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533280544e+03, 5.509933430e+05)
+------ T_fluid (min, max) (K)  = (69.2432, 313.903)
+******** Writing Fluid Visualization File 15 at step 15, sim time 1.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.342 s
+| 	 visualization time: 1.42586 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102617 s
+| Memory:
+| 	 python memory:    3384 Mb
+| 	 memory hwm: 4107.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        16:
+----   fluid sim time 1.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533230862e+03, 5.509933465e+05)
+------ T_fluid (min, max) (K)  = (69.2427,  314.26)
+| Performance:
+| 	 walltime: 106.883 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000290237 s
+| Memory:
+| 	 python memory:    3385 Mb
+| 	 memory hwm: 4107.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        17:
+----   fluid sim time 1.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533181303e+03, 5.509933495e+05)
+------ T_fluid (min, max) (K)  = (69.2421, 314.596)
+| Performance:
+| 	 walltime: 106.112 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00011874 s
+| Memory:
+| 	 python memory: 3386.75 Mb
+| 	 memory hwm: 4107.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        18:
+----   fluid sim time 1.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533131868e+03, 5.509933520e+05)
+------ T_fluid (min, max) (K)  = (69.2415, 314.912)
+| Performance:
+| 	 walltime: 107.069 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102311 s
+| Memory:
+| 	 python memory:    3388 Mb
+| 	 memory hwm: 4107.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        19:
+----   fluid sim time 1.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533082555e+03, 5.509933542e+05)
+------ T_fluid (min, max) (K)  = (69.2409, 315.209)
+| Performance:
+| 	 walltime: 106.894 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000327282 s
+| Memory:
+| 	 python memory: 3388.38 Mb
+| 	 memory hwm: 4107.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        20:
+----   fluid sim time 2.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704641
+------ P       (min, max) (Pa) = (4.533033364e+03, 5.509933560e+05)
+------ T_fluid (min, max) (K)  = (69.2402, 315.491)
+******** Writing Restart File at step 20, sim time 2.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 20 at step 20, sim time 2.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.702 s
+| 	 visualization time: 1.42425 s
+| 	 garbage collection time: 0.00069068 s
+| 	 log walltime: 0.000108246 s
+| Memory:
+| 	 python memory:    3377 Mb
+| 	 memory hwm: 4117.38 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        21:
+----   fluid sim time 2.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532984294e+03, 5.509933576e+05)
+------ T_fluid (min, max) (K)  = (69.2396, 315.757)
+| Performance:
+| 	 walltime: 107.036 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100538 s
+| Memory:
+| 	 python memory: 3391.56 Mb
+| 	 memory hwm: 4117.38 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        22:
+----   fluid sim time 2.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532935345e+03, 5.509933590e+05)
+------ T_fluid (min, max) (K)  = ( 69.239, 316.009)
+| Performance:
+| 	 walltime: 107.313 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000333868 s
+| Memory:
+| 	 python memory: 3393.19 Mb
+| 	 memory hwm: 4117.38 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        23:
+----   fluid sim time 2.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532886515e+03, 5.509933602e+05)
+------ T_fluid (min, max) (K)  = (69.2383, 316.252)
+| Performance:
+| 	 walltime: 106.011 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00011684 s
+| Memory:
+| 	 python memory: 3394.56 Mb
+| 	 memory hwm: 4117.38 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        24:
+----   fluid sim time 2.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532837805e+03, 5.509933612e+05)
+------ T_fluid (min, max) (K)  = (69.2377, 316.483)
+| Performance:
+| 	 walltime: 106.836 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000109207 s
+| Memory:
+| 	 python memory: 3395.94 Mb
+| 	 memory hwm: 4117.38 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        25:
+----   fluid sim time 2.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532789213e+03, 5.509933621e+05)
+------ T_fluid (min, max) (K)  = ( 69.237, 316.702)
+******** Writing Fluid Visualization File 25 at step 25, sim time 2.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.374 s
+| 	 visualization time: 1.44145 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000329088 s
+| Memory:
+| 	 python memory:  3386.5 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        26:
+----   fluid sim time 2.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532740740e+03, 5.509933628e+05)
+------ T_fluid (min, max) (K)  = (69.2364,  316.91)
+| Performance:
+| 	 walltime: 107.335 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.28156e-05 s
+| Memory:
+| 	 python memory: 3398.12 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        27:
+----   fluid sim time 2.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532692384e+03, 5.509933635e+05)
+------ T_fluid (min, max) (K)  = (69.2357, 317.107)
+| Performance:
+| 	 walltime: 106.683 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000108689 s
+| Memory:
+| 	 python memory: 3398.69 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        28:
+----   fluid sim time 2.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532644145e+03, 5.509933640e+05)
+------ T_fluid (min, max) (K)  = (69.2351, 317.294)
+| Performance:
+| 	 walltime: 107.207 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000338402 s
+| Memory:
+| 	 python memory: 3400.81 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        29:
+----   fluid sim time 2.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532596021e+03, 5.509933645e+05)
+------ T_fluid (min, max) (K)  = (69.2344,  317.47)
+| Performance:
+| 	 walltime: 106.73 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000118807 s
+| Memory:
+| 	 python memory: 3402.19 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        30:
+----   fluid sim time 3.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532548014e+03, 5.509933649e+05)
+------ T_fluid (min, max) (K)  = (69.2337, 317.638)
+******** Writing Restart File at step 30, sim time 3.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 30 at step 30, sim time 3.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.275 s
+| 	 visualization time: 1.41696 s
+| 	 garbage collection time: 0.000702504 s
+| 	 log walltime: 0.000111956 s
+| Memory:
+| 	 python memory: 3392.06 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        31:
+----   fluid sim time 3.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532500121e+03, 5.509933652e+05)
+------ T_fluid (min, max) (K)  = (69.2331, 317.796)
+| Performance:
+| 	 walltime: 106.847 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000246003 s
+| Memory:
+| 	 python memory: 3402.25 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        32:
+----   fluid sim time 3.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532452342e+03, 5.509933655e+05)
+------ T_fluid (min, max) (K)  = (69.2324, 317.945)
+| Performance:
+| 	 walltime: 107.037 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000124391 s
+| Memory:
+| 	 python memory: 3402.38 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        33:
+----   fluid sim time 3.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532404677e+03, 5.509933658e+05)
+------ T_fluid (min, max) (K)  = (69.2317, 318.085)
+| Performance:
+| 	 walltime: 106.829 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000101198 s
+| Memory:
+| 	 python memory: 3404.88 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        34:
+----   fluid sim time 3.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532357124e+03, 5.509933660e+05)
+------ T_fluid (min, max) (K)  = (69.2311, 318.217)
+| Performance:
+| 	 walltime: 106.97 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000309993 s
+| Memory:
+| 	 python memory: 3406.19 Mb
+| 	 memory hwm:    4120 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        35:
+----   fluid sim time 3.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532309684e+03, 5.509933662e+05)
+------ T_fluid (min, max) (K)  = (69.2304,  318.34)
+******** Writing Fluid Visualization File 35 at step 35, sim time 3.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.261 s
+| 	 visualization time: 1.4299 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000107229 s
+| Memory:
+| 	 python memory: 3376.81 Mb
+| 	 memory hwm: 4132.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        36:
+----   fluid sim time 3.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532262355e+03, 5.509933664e+05)
+------ T_fluid (min, max) (K)  = (69.2297, 318.456)
+| Performance:
+| 	 walltime: 106.953 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00010274 s
+| Memory:
+| 	 python memory: 3400.69 Mb
+| 	 memory hwm: 4132.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        37:
+----   fluid sim time 3.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532215137e+03, 5.509933665e+05)
+------ T_fluid (min, max) (K)  = ( 69.229, 318.563)
+| Performance:
+| 	 walltime: 107.215 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000336196 s
+| Memory:
+| 	 python memory: 3412.38 Mb
+| 	 memory hwm: 4132.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        38:
+----   fluid sim time 3.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532168029e+03, 5.509933666e+05)
+------ T_fluid (min, max) (K)  = (69.2284, 318.662)
+| Performance:
+| 	 walltime: 107.065 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.70153e-05 s
+| Memory:
+| 	 python memory: 3414.69 Mb
+| 	 memory hwm: 4132.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        39:
+----   fluid sim time 3.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532121030e+03, 5.509933667e+05)
+------ T_fluid (min, max) (K)  = (69.2277, 318.753)
+| Performance:
+| 	 walltime: 106.494 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000116456 s
+| Memory:
+| 	 python memory: 3415.38 Mb
+| 	 memory hwm: 4132.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        40:
+----   fluid sim time 4.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532074141e+03, 5.509933668e+05)
+------ T_fluid (min, max) (K)  = ( 69.227, 318.837)
+******** Writing Restart File at step 40, sim time 4.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 40 at step 40, sim time 4.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.268 s
+| 	 visualization time: 1.40934 s
+| 	 garbage collection time: 0.000723071 s
+| 	 log walltime: 0.000319932 s
+| Memory:
+| 	 python memory: 3369.94 Mb
+| 	 memory hwm: 4138.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        41:
+----   fluid sim time 4.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.532027359e+03, 5.509933669e+05)
+------ T_fluid (min, max) (K)  = (69.2263, 318.913)
+| Performance:
+| 	 walltime: 107.448 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.61311e-05 s
+| Memory:
+| 	 python memory:    3372 Mb
+| 	 memory hwm: 4138.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        42:
+----   fluid sim time 4.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00704640
+------ P       (min, max) (Pa) = (4.531980685e+03, 5.509933670e+05)
+------ T_fluid (min, max) (K)  = (69.2256, 318.982)
+| Performance:
+| 	 walltime: 106.136 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000125587 s
+| Memory:
+| 	 python memory: 3396.19 Mb
+| 	 memory hwm: 4138.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        43:
+----   fluid sim time 4.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00705067
+------ P       (min, max) (Pa) = (4.531934117e+03, 5.509933670e+05)
+------ T_fluid (min, max) (K)  = (69.2249, 319.043)
+| Performance:
+| 	 walltime: 107.116 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000321891 s
+| Memory:
+| 	 python memory: 3411.19 Mb
+| 	 memory hwm: 4138.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        44:
+----   fluid sim time 4.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00705886
+------ P       (min, max) (Pa) = (4.531887655e+03, 5.509933671e+05)
+------ T_fluid (min, max) (K)  = (69.2242, 319.097)
+| Performance:
+| 	 walltime: 107.118 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000109173 s
+| Memory:
+| 	 python memory: 3419.19 Mb
+| 	 memory hwm: 4138.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        45:
+----   fluid sim time 4.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00706713
+------ P       (min, max) (Pa) = (4.531841299e+03, 5.509933671e+05)
+------ T_fluid (min, max) (K)  = (69.2235, 319.144)
+******** Writing Fluid Visualization File 45 at step 45, sim time 4.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.087 s
+| 	 visualization time: 1.42952 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.21898e-05 s
+| Memory:
+| 	 python memory: 3418.62 Mb
+| 	 memory hwm:  4143.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        46:
+----   fluid sim time 4.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00707549
+------ P       (min, max) (Pa) = (4.531795048e+03, 5.509933672e+05)
+------ T_fluid (min, max) (K)  = (69.2228, 319.183)
+| Performance:
+| 	 walltime: 106.947 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000336066 s
+| Memory:
+| 	 python memory: 3420.56 Mb
+| 	 memory hwm:  4143.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        47:
+----   fluid sim time 4.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00708393
+------ P       (min, max) (Pa) = (4.531748900e+03, 5.509933672e+05)
+------ T_fluid (min, max) (K)  = (69.2221, 319.215)
+| Performance:
+| 	 walltime: 107.225 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000101026 s
+| Memory:
+| 	 python memory: 3420.56 Mb
+| 	 memory hwm:  4143.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        48:
+----   fluid sim time 4.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00709245
+------ P       (min, max) (Pa) = (4.531702855e+03, 5.509933672e+05)
+------ T_fluid (min, max) (K)  = (69.2214, 319.241)
+| Performance:
+| 	 walltime: 107.216 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000112515 s
+| Memory:
+| 	 python memory: 3422.81 Mb
+| 	 memory hwm:  4143.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        49:
+----   fluid sim time 4.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00710105
+------ P       (min, max) (Pa) = (4.531656913e+03, 5.509933673e+05)
+------ T_fluid (min, max) (K)  = (69.2207, 319.259)
+| Performance:
+| 	 walltime: 106.811 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000317514 s
+| Memory:
+| 	 python memory: 3427.81 Mb
+| 	 memory hwm:  4143.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        50:
+----   fluid sim time 5.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00710973
+------ P       (min, max) (Pa) = (4.531611073e+03, 5.509933673e+05)
+------ T_fluid (min, max) (K)  = (  69.22,  319.27)
+******** Writing Restart File at step 50, sim time 5.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 50 at step 50, sim time 5.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.358 s
+| 	 visualization time: 1.41706 s
+| 	 garbage collection time: 0.000639189 s
+| 	 log walltime: 0.00010559 s
+| Memory:
+| 	 python memory: 3411.12 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        51:
+----   fluid sim time 5.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00711848
+------ P       (min, max) (Pa) = (4.531565334e+03, 5.509933673e+05)
+------ T_fluid (min, max) (K)  = (69.2193, 319.275)
+| Performance:
+| 	 walltime: 106.693 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000105076 s
+| Memory:
+| 	 python memory: 3429.75 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        52:
+----   fluid sim time 5.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00712730
+------ P       (min, max) (Pa) = (4.531519696e+03, 5.509933673e+05)
+------ T_fluid (min, max) (K)  = (69.2186, 319.275)
+| Performance:
+| 	 walltime: 106.842 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00033376 s
+| Memory:
+| 	 python memory: 3431.56 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        53:
+----   fluid sim time 5.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00713619
+------ P       (min, max) (Pa) = (4.531474157e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2179, 319.271)
+| Performance:
+| 	 walltime: 106.503 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.33981e-05 s
+| Memory:
+| 	 python memory: 3433.88 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        54:
+----   fluid sim time 5.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00714514
+------ P       (min, max) (Pa) = (4.531428717e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2172,  319.26)
+| Performance:
+| 	 walltime: 107.007 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102285 s
+| Memory:
+| 	 python memory: 3434.75 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        55:
+----   fluid sim time 5.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00715416
+------ P       (min, max) (Pa) = (4.531383375e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2164, 319.244)
+******** Writing Fluid Visualization File 55 at step 55, sim time 5.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.69 s
+| 	 visualization time: 1.4161 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00031992 s
+| Memory:
+| 	 python memory: 3375.75 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        56:
+----   fluid sim time 5.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00716324
+------ P       (min, max) (Pa) = (4.531338131e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2157, 319.221)
+| Performance:
+| 	 walltime: 106.982 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000115529 s
+| Memory:
+| 	 python memory: 3375.75 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        57:
+----   fluid sim time 5.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00717238
+------ P       (min, max) (Pa) = (4.531292984e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = ( 69.215, 319.193)
+| Performance:
+| 	 walltime: 106.429 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102628 s
+| Memory:
+| 	 python memory: 3400.19 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        58:
+----   fluid sim time 5.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00718157
+------ P       (min, max) (Pa) = (4.531247933e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2143, 319.158)
+| Performance:
+| 	 walltime: 106.949 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000338051 s
+| Memory:
+| 	 python memory: 3418.88 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        59:
+----   fluid sim time 5.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00719081
+------ P       (min, max) (Pa) = (4.531202978e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2135, 319.117)
+| Performance:
+| 	 walltime: 106.62 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.97869e-05 s
+| Memory:
+| 	 python memory: 3430.12 Mb
+| 	 memory hwm:  4157.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        60:
+----   fluid sim time 6.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00720011
+------ P       (min, max) (Pa) = (4.531158117e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2128, 319.071)
+******** Writing Restart File at step 60, sim time 6.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 60 at step 60, sim time 6.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.294 s
+| 	 visualization time: 1.43761 s
+| 	 garbage collection time: 0.000641581 s
+| 	 log walltime: 0.000112753 s
+| Memory:
+| 	 python memory: 3403.88 Mb
+| 	 memory hwm: 4169.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        61:
+----   fluid sim time 6.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00720945
+------ P       (min, max) (Pa) = (4.531113351e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2121,  319.02)
+| Performance:
+| 	 walltime: 106.549 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000320382 s
+| Memory:
+| 	 python memory: 3431.56 Mb
+| 	 memory hwm: 4169.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        62:
+----   fluid sim time 6.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00721883
+------ P       (min, max) (Pa) = (4.531068678e+03, 5.509933674e+05)
+------ T_fluid (min, max) (K)  = (69.2114, 318.962)
+| Performance:
+| 	 walltime: 106.562 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000148866 s
+| Memory:
+| 	 python memory: 3444.25 Mb
+| 	 memory hwm: 4169.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        63:
+----   fluid sim time 6.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00722826
+------ P       (min, max) (Pa) = (4.531024097e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2106,   318.9)
+| Performance:
+| 	 walltime: 106.492 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000103895 s
+| Memory:
+| 	 python memory: 3444.25 Mb
+| 	 memory hwm: 4169.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        64:
+----   fluid sim time 6.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00723772
+------ P       (min, max) (Pa) = (4.530979608e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2099, 318.832)
+| Performance:
+| 	 walltime: 107.238 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000347402 s
+| Memory:
+| 	 python memory:    3446 Mb
+| 	 memory hwm: 4169.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        65:
+----   fluid sim time 6.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00724722
+------ P       (min, max) (Pa) = (4.530935211e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2091, 318.816)
+******** Writing Fluid Visualization File 65 at step 65, sim time 6.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.195 s
+| 	 visualization time: 1.41542 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000108756 s
+| Memory:
+| 	 python memory:  3417.5 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        66:
+----   fluid sim time 6.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00725675
+------ P       (min, max) (Pa) = (4.530890904e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2084, 318.892)
+| Performance:
+| 	 walltime: 108.17 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000115998 s
+| Memory:
+| 	 python memory:  3417.5 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        67:
+----   fluid sim time 6.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00726632
+------ P       (min, max) (Pa) = (4.530846686e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2077, 318.964)
+| Performance:
+| 	 walltime: 106.778 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000308432 s
+| Memory:
+| 	 python memory: 3422.88 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        68:
+----   fluid sim time 6.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00727591
+------ P       (min, max) (Pa) = (4.530802558e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2069, 319.034)
+| Performance:
+| 	 walltime: 106.997 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000106189 s
+| Memory:
+| 	 python memory: 3422.88 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        69:
+----   fluid sim time 6.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00728553
+------ P       (min, max) (Pa) = (4.530758518e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2062,   319.1)
+| Performance:
+| 	 walltime: 106.366 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000106633 s
+| Memory:
+| 	 python memory: 3425.38 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        70:
+----   fluid sim time 7.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00729516
+------ P       (min, max) (Pa) = (4.530714566e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2054, 319.164)
+******** Writing Restart File at step 70, sim time 7.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 70 at step 70, sim time 7.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.252 s
+| 	 visualization time: 1.41328 s
+| 	 garbage collection time: 0.000745229 s
+| 	 log walltime: 0.000331495 s
+| Memory:
+| 	 python memory: 3368.38 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        71:
+----   fluid sim time 7.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00730482
+------ P       (min, max) (Pa) = (4.530670701e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2047, 319.224)
+| Performance:
+| 	 walltime: 107.075 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.1528e-05 s
+| Memory:
+| 	 python memory: 3403.44 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        72:
+----   fluid sim time 7.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00731450
+------ P       (min, max) (Pa) = (4.530626922e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2039, 319.281)
+| Performance:
+| 	 walltime: 106.509 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000111833 s
+| Memory:
+| 	 python memory: 3426.31 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        73:
+----   fluid sim time 7.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00732419
+------ P       (min, max) (Pa) = (4.530583229e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2032, 319.335)
+| Performance:
+| 	 walltime: 107.322 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000346132 s
+| Memory:
+| 	 python memory: 3426.31 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        74:
+----   fluid sim time 7.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00733389
+------ P       (min, max) (Pa) = (4.530539620e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2024, 319.386)
+| Performance:
+| 	 walltime: 106.604 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102412 s
+| Memory:
+| 	 python memory: 3441.56 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        75:
+----   fluid sim time 7.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00734360
+------ P       (min, max) (Pa) = (4.530496095e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2017, 319.433)
+******** Writing Fluid Visualization File 75 at step 75, sim time 7.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.054 s
+| 	 visualization time: 1.44152 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00010775 s
+| Memory:
+| 	 python memory: 3437.56 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        76:
+----   fluid sim time 7.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00735332
+------ P       (min, max) (Pa) = (4.530452654e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2009, 319.478)
+| Performance:
+| 	 walltime: 107.558 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00028456 s
+| Memory:
+| 	 python memory: 3448.94 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        77:
+----   fluid sim time 7.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00736304
+------ P       (min, max) (Pa) = (4.530409295e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.2002, 319.519)
+| Performance:
+| 	 walltime: 107.869 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000101943 s
+| Memory:
+| 	 python memory: 3454.94 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        78:
+----   fluid sim time 7.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00737276
+------ P       (min, max) (Pa) = (4.530366019e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1994, 319.557)
+| Performance:
+| 	 walltime: 107.521 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000115074 s
+| Memory:
+| 	 python memory: 3455.81 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        79:
+----   fluid sim time 7.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00738248
+------ P       (min, max) (Pa) = (4.530322823e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1986, 319.592)
+| Performance:
+| 	 walltime: 106.386 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000318278 s
+| Memory:
+| 	 python memory:    3459 Mb
+| 	 memory hwm: 4183.69 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        80:
+----   fluid sim time 8.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00739219
+------ P       (min, max) (Pa) = (4.530279708e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1979, 319.624)
+******** Writing Restart File at step 80, sim time 8.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 80 at step 80, sim time 8.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.026 s
+| 	 visualization time: 1.4257 s
+| 	 garbage collection time: 0.000643134 s
+| 	 log walltime: 0.000105161 s
+| Memory:
+| 	 python memory: 3408.06 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        81:
+----   fluid sim time 8.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00740190
+------ P       (min, max) (Pa) = (4.530236673e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1971, 319.653)
+| Performance:
+| 	 walltime: 106.72 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000117265 s
+| Memory:
+| 	 python memory: 3408.06 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        82:
+----   fluid sim time 8.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00741173
+------ P       (min, max) (Pa) = (4.530193717e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1963, 319.679)
+| Performance:
+| 	 walltime: 106.796 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000324022 s
+| Memory:
+| 	 python memory:    3411 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        83:
+----   fluid sim time 8.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00742607
+------ P       (min, max) (Pa) = (4.530150840e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1956, 319.702)
+| Performance:
+| 	 walltime: 106.641 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.77367e-05 s
+| Memory:
+| 	 python memory: 3420.56 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        84:
+----   fluid sim time 8.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00744035
+------ P       (min, max) (Pa) = (4.530108040e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1948, 319.721)
+| Performance:
+| 	 walltime: 106.903 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000101391 s
+| Memory:
+| 	 python memory: 3432.62 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        85:
+----   fluid sim time 8.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00745457
+------ P       (min, max) (Pa) = (4.530065317e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = ( 69.194, 319.738)
+******** Writing Fluid Visualization File 85 at step 85, sim time 8.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.27 s
+| 	 visualization time: 1.44846 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000345979 s
+| Memory:
+| 	 python memory: 3417.69 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        86:
+----   fluid sim time 8.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00746873
+------ P       (min, max) (Pa) = (4.530022671e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1933, 319.752)
+| Performance:
+| 	 walltime: 107.103 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.61721e-05 s
+| Memory:
+| 	 python memory: 3438.69 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        87:
+----   fluid sim time 8.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00748282
+------ P       (min, max) (Pa) = (4.529980100e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1925, 319.762)
+| Performance:
+| 	 walltime: 107.738 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.60492e-05 s
+| Memory:
+| 	 python memory: 3451.06 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        88:
+----   fluid sim time 8.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00749684
+------ P       (min, max) (Pa) = (4.529937604e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1917,  319.77)
+| Performance:
+| 	 walltime: 107.123 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000300482 s
+| Memory:
+| 	 python memory: 3479.38 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        89:
+----   fluid sim time 8.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00751080
+------ P       (min, max) (Pa) = (4.529895182e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = ( 69.191, 319.774)
+| Performance:
+| 	 walltime: 106.805 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00012828 s
+| Memory:
+| 	 python memory: 3483.69 Mb
+| 	 memory hwm:  4184.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step        90:
+----   fluid sim time 9.00000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00752467
+------ P       (min, max) (Pa) = (4.529852833e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1902, 319.776)
+******** Writing Restart File at step 90, sim time 9.000000e-09 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 90 at step 90, sim time 9.000000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.383 s
+| 	 visualization time:  1.412 s
+| 	 garbage collection time: 0.000609055 s
+| 	 log walltime: 0.000108168 s
+| Memory:
+| 	 python memory: 3429.25 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        91:
+----   fluid sim time 9.10000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00753847
+------ P       (min, max) (Pa) = (4.529810558e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1894, 319.775)
+| Performance:
+| 	 walltime: 106.49 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000302207 s
+| Memory:
+| 	 python memory: 3433.38 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step        92:
+----   fluid sim time 9.20000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00755219
+------ P       (min, max) (Pa) = (4.529768354e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1886, 319.771)
+| Performance:
+| 	 walltime: 106.993 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104491 s
+| Memory:
+| 	 python memory: 3436.12 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step        93:
+----   fluid sim time 9.30000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00756583
+------ P       (min, max) (Pa) = (4.529726222e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1878, 319.764)
+| Performance:
+| 	 walltime: 106.786 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.75952e-05 s
+| Memory:
+| 	 python memory: 3436.12 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        94:
+----   fluid sim time 9.40000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00757938
+------ P       (min, max) (Pa) = (4.529684160e+03, 5.509933675e+05)
+------ T_fluid (min, max) (K)  = (69.1871, 319.754)
+| Performance:
+| 	 walltime: 106.997 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000291947 s
+| Memory:
+| 	 python memory: 3438.44 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step        95:
+----   fluid sim time 9.50000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00759284
+------ P       (min, max) (Pa) = (4.529642169e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1863, 319.741)
+******** Writing Fluid Visualization File 95 at step 95, sim time 9.500000e-09 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 113.707 s
+| 	 visualization time: 6.85928 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.54829e-05 s
+| Memory:
+| 	 python memory: 3405.06 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step        96:
+----   fluid sim time 9.60000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00760621
+------ P       (min, max) (Pa) = (4.529600247e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1855, 319.725)
+| Performance:
+| 	 walltime:    107 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00010905 s
+| Memory:
+| 	 python memory:    3439 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step        97:
+----   fluid sim time 9.70000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00761949
+------ P       (min, max) (Pa) = (4.529558393e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1847, 319.707)
+| Performance:
+| 	 walltime: 107.415 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000328455 s
+| Memory:
+| 	 python memory: 3461.75 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step        98:
+----   fluid sim time 9.80000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00763267
+------ P       (min, max) (Pa) = (4.529516608e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1839, 319.685)
+| Performance:
+| 	 walltime: 106.41 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00011399 s
+| Memory:
+| 	 python memory: 3468.31 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step        99:
+----   fluid sim time 9.90000000e-09
+----   dt 1.000e-10, cfl_fluid 0.00764576
+------ P       (min, max) (Pa) = (4.529474889e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1831, 319.661)
+| Performance:
+| 	 walltime: 106.403 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.70028e-05 s
+| Memory:
+| 	 python memory: 3492.56 Mb
+| 	 memory hwm: 4202.31 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       100:
+----   fluid sim time 1.00000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00765875
+------ P       (min, max) (Pa) = (4.529433237e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1823, 319.635)
+******** Writing Restart File at step 100, sim time 1.000000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 100 at step 100, sim time 1.000000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.686 s
+| 	 visualization time: 1.42017 s
+| 	 garbage collection time: 0.000757236 s
+| 	 log walltime: 0.00029736 s
+| Memory:
+| 	 python memory:    3453 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       101:
+----   fluid sim time 1.01000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00767164
+------ P       (min, max) (Pa) = (4.529391651e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1816, 319.605)
+| Performance:
+| 	 walltime: 106.143 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.3393e-05 s
+| Memory:
+| 	 python memory: 3457.25 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       102:
+----   fluid sim time 1.02000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00768452
+------ P       (min, max) (Pa) = (4.529350130e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1808, 319.574)
+| Performance:
+| 	 walltime: 108.182 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.32515e-05 s
+| Memory:
+| 	 python memory: 3463.69 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       103:
+----   fluid sim time 1.03000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00769730
+------ P       (min, max) (Pa) = (4.529308674e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (  69.18, 319.539)
+| Performance:
+| 	 walltime: 106.441 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000372712 s
+| Memory:
+| 	 python memory: 3463.69 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       104:
+----   fluid sim time 1.04000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00770998
+------ P       (min, max) (Pa) = (4.529267281e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1792, 319.502)
+| Performance:
+| 	 walltime: 106.932 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.87588e-05 s
+| Memory:
+| 	 python memory: 3467.69 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       105:
+----   fluid sim time 1.05000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00772255
+------ P       (min, max) (Pa) = (4.529225952e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1784, 319.462)
+******** Writing Fluid Visualization File 105 at step 105, sim time 1.050000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.928 s
+| 	 visualization time: 1.41364 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000116549 s
+| Memory:
+| 	 python memory: 3429.06 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       106:
+----   fluid sim time 1.06000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00773501
+------ P       (min, max) (Pa) = (4.529184685e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1776,  319.42)
+| Performance:
+| 	 walltime: 106.248 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000364739 s
+| Memory:
+| 	 python memory:  3444.5 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       107:
+----   fluid sim time 1.07000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00774736
+------ P       (min, max) (Pa) = (4.529143480e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1768, 319.375)
+| Performance:
+| 	 walltime:  106.2 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000117972 s
+| Memory:
+| 	 python memory: 3455.88 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       108:
+----   fluid sim time 1.08000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00775961
+------ P       (min, max) (Pa) = (4.529102335e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.176, 319.328)
+| Performance:
+| 	 walltime: 106.096 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000108648 s
+| Memory:
+| 	 python memory: 3496.25 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       109:
+----   fluid sim time 1.09000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00777174
+------ P       (min, max) (Pa) = (4.529061252e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1752, 319.278)
+| Performance:
+| 	 walltime: 106.375 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000328969 s
+| Memory:
+| 	 python memory: 3503.94 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       110:
+----   fluid sim time 1.10000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00778376
+------ P       (min, max) (Pa) = (4.529020228e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1744, 319.226)
+******** Writing Restart File at step 110, sim time 1.100000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 110 at step 110, sim time 1.100000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.546 s
+| 	 visualization time: 1.42169 s
+| 	 garbage collection time: 0.000602659 s
+| 	 log walltime: 0.000108276 s
+| Memory:
+| 	 python memory: 3452.69 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       111:
+----   fluid sim time 1.11000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00779567
+------ P       (min, max) (Pa) = (4.528979263e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1736, 319.172)
+| Performance:
+| 	 walltime: 107.234 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000108231 s
+| Memory:
+| 	 python memory: 3499.31 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       112:
+----   fluid sim time 1.12000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00780747
+------ P       (min, max) (Pa) = (4.528938356e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1728, 319.186)
+| Performance:
+| 	 walltime: 106.866 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000336193 s
+| Memory:
+| 	 python memory: 3500.31 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       113:
+----   fluid sim time 1.13000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00781915
+------ P       (min, max) (Pa) = (4.528897507e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.172, 319.209)
+| Performance:
+| 	 walltime: 107.254 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000107527 s
+| Memory:
+| 	 python memory: 3500.31 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       114:
+----   fluid sim time 1.14000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00783072
+------ P       (min, max) (Pa) = (4.528856715e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1712,  319.23)
+| Performance:
+| 	 walltime: 106.462 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119768 s
+| Memory:
+| 	 python memory: 3502.88 Mb
+| 	 memory hwm: 4214.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       115:
+----   fluid sim time 1.15000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00784218
+------ P       (min, max) (Pa) = (4.528815980e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1704, 319.249)
+******** Writing Fluid Visualization File 115 at step 115, sim time 1.150000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.456 s
+| 	 visualization time: 1.44547 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000231866 s
+| Memory:
+| 	 python memory: 3450.06 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       116:
+----   fluid sim time 1.16000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00785352
+------ P       (min, max) (Pa) = (4.528775300e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1696, 319.266)
+| Performance:
+| 	 walltime: 106.833 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000114303 s
+| Memory:
+| 	 python memory: 3452.56 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       117:
+----   fluid sim time 1.17000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00786475
+------ P       (min, max) (Pa) = (4.528734675e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1688, 319.281)
+| Performance:
+| 	 walltime: 107.589 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000130121 s
+| Memory:
+| 	 python memory: 3458.38 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       118:
+----   fluid sim time 1.18000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00787586
+------ P       (min, max) (Pa) = (4.528694105e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.168, 319.295)
+| Performance:
+| 	 walltime: 107.759 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000334904 s
+| Memory:
+| 	 python memory: 3460.75 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       119:
+----   fluid sim time 1.19000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00788685
+------ P       (min, max) (Pa) = (4.528653589e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1672, 319.306)
+| Performance:
+| 	 walltime: 106.741 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.47453e-05 s
+| Memory:
+| 	 python memory: 3461.38 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       120:
+----   fluid sim time 1.20000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00789773
+------ P       (min, max) (Pa) = (4.528613125e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1663, 319.315)
+******** Writing Restart File at step 120, sim time 1.200000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 120 at step 120, sim time 1.200000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.89 s
+| 	 visualization time: 1.41963 s
+| 	 garbage collection time: 0.000648595 s
+| 	 log walltime: 9.77032e-05 s
+| Memory:
+| 	 python memory: 3460.38 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       121:
+----   fluid sim time 1.21000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00790849
+------ P       (min, max) (Pa) = (4.528572714e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1655, 319.322)
+| Performance:
+| 	 walltime: 106.808 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00032527 s
+| Memory:
+| 	 python memory: 3485.19 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       122:
+----   fluid sim time 1.22000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00791914
+------ P       (min, max) (Pa) = (4.528532355e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1647, 319.328)
+| Performance:
+| 	 walltime: 107.194 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00010493 s
+| Memory:
+| 	 python memory:  3505.5 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       123:
+----   fluid sim time 1.23000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00792967
+------ P       (min, max) (Pa) = (4.528492047e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1639, 319.331)
+| Performance:
+| 	 walltime: 107.489 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.98937e-05 s
+| Memory:
+| 	 python memory: 3515.69 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       124:
+----   fluid sim time 1.24000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00794009
+------ P       (min, max) (Pa) = (4.528451790e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1631, 319.332)
+| Performance:
+| 	 walltime: 107.106 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000316035 s
+| Memory:
+| 	 python memory:    3522 Mb
+| 	 memory hwm: 4224.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       125:
+----   fluid sim time 1.25000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00795039
+------ P       (min, max) (Pa) = (4.528411582e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1623, 319.332)
+******** Writing Fluid Visualization File 125 at step 125, sim time 1.250000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.977 s
+| 	 visualization time: 1.44951 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000115994 s
+| Memory:
+| 	 python memory: 3485.81 Mb
+| 	 memory hwm: 4242.44 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       126:
+----   fluid sim time 1.26000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00796057
+------ P       (min, max) (Pa) = (4.528371424e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1615,  319.33)
+| Performance:
+| 	 walltime: 106.355 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000113785 s
+| Memory:
+| 	 python memory: 3489.31 Mb
+| 	 memory hwm: 4242.44 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       127:
+----   fluid sim time 1.27000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00797064
+------ P       (min, max) (Pa) = (4.528331314e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1607, 319.325)
+| Performance:
+| 	 walltime: 106.503 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000328496 s
+| Memory:
+| 	 python memory: 3504.25 Mb
+| 	 memory hwm: 4242.44 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       128:
+----   fluid sim time 1.28000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00798060
+------ P       (min, max) (Pa) = (4.528291252e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1598, 319.319)
+| Performance:
+| 	 walltime: 107.195 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100624 s
+| Memory:
+| 	 python memory: 3509.69 Mb
+| 	 memory hwm: 4242.44 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       129:
+----   fluid sim time 1.29000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00799044
+------ P       (min, max) (Pa) = (4.528251237e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.159, 319.311)
+| Performance:
+| 	 walltime: 106.746 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000149142 s
+| Memory:
+| 	 python memory: 3509.69 Mb
+| 	 memory hwm: 4242.44 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       130:
+----   fluid sim time 1.30000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00800017
+------ P       (min, max) (Pa) = (4.528211269e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1582,  319.31)
+******** Writing Restart File at step 130, sim time 1.300000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 130 at step 130, sim time 1.300000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.18 s
+| 	 visualization time: 1.41045 s
+| 	 garbage collection time: 0.00075645 s
+| 	 log walltime: 0.000337932 s
+| Memory:
+| 	 python memory: 3473.06 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       131:
+----   fluid sim time 1.31000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00800978
+------ P       (min, max) (Pa) = (4.528171347e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1574, 319.321)
+| Performance:
+| 	 walltime: 106.609 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000113189 s
+| Memory:
+| 	 python memory: 3473.06 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       132:
+----   fluid sim time 1.32000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00801928
+------ P       (min, max) (Pa) = (4.528131471e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1566,  319.33)
+| Performance:
+| 	 walltime: 106.417 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000106208 s
+| Memory:
+| 	 python memory: 3480.75 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       133:
+----   fluid sim time 1.33000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00802867
+------ P       (min, max) (Pa) = (4.528091639e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1558, 319.338)
+| Performance:
+| 	 walltime: 107.376 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000369366 s
+| Memory:
+| 	 python memory: 3481.69 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       134:
+----   fluid sim time 1.34000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00803794
+------ P       (min, max) (Pa) = (4.528051852e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1549, 319.343)
+| Performance:
+| 	 walltime: 106.101 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.33073e-05 s
+| Memory:
+| 	 python memory:  3486.5 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       135:
+----   fluid sim time 1.35000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00804710
+------ P       (min, max) (Pa) = (4.528012108e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1541, 319.347)
+******** Writing Fluid Visualization File 135 at step 135, sim time 1.350000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.889 s
+| 	 visualization time:  1.411 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.54768e-05 s
+| Memory:
+| 	 python memory: 3464.44 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       136:
+----   fluid sim time 1.36000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00805615
+------ P       (min, max) (Pa) = (4.527972406e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1533, 319.349)
+| Performance:
+| 	 walltime: 106.586 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000270322 s
+| Memory:
+| 	 python memory: 3509.19 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       137:
+----   fluid sim time 1.37000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00806509
+------ P       (min, max) (Pa) = (4.527932748e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1525, 319.349)
+| Performance:
+| 	 walltime: 108.007 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000111453 s
+| Memory:
+| 	 python memory: 3534.31 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       138:
+----   fluid sim time 1.38000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00807392
+------ P       (min, max) (Pa) = (4.527893130e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1517, 319.348)
+| Performance:
+| 	 walltime: 106.978 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000107214 s
+| Memory:
+| 	 python memory: 3538.94 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       139:
+----   fluid sim time 1.39000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00808264
+------ P       (min, max) (Pa) = (4.527853554e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1508, 319.344)
+| Performance:
+| 	 walltime: 106.909 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000312079 s
+| Memory:
+| 	 python memory: 3541.88 Mb
+| 	 memory hwm:  4245.5 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       140:
+----   fluid sim time 1.40000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00809126
+------ P       (min, max) (Pa) = (4.527814019e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (  69.15, 319.339)
+******** Writing Restart File at step 140, sim time 1.400000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 140 at step 140, sim time 1.400000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.677 s
+| 	 visualization time: 1.43927 s
+| 	 garbage collection time: 0.000640471 s
+| 	 log walltime: 0.000115845 s
+| Memory:
+| 	 python memory:    3513 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       141:
+----   fluid sim time 1.41000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00809976
+------ P       (min, max) (Pa) = (4.527774523e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1492, 319.332)
+| Performance:
+| 	 walltime: 106.367 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000107892 s
+| Memory:
+| 	 python memory: 3541.81 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       142:
+----   fluid sim time 1.42000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00810815
+------ P       (min, max) (Pa) = (4.527735067e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1484, 319.323)
+| Performance:
+| 	 walltime: 107.275 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000323638 s
+| Memory:
+| 	 python memory: 3543.69 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       143:
+----   fluid sim time 1.43000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00811644
+------ P       (min, max) (Pa) = (4.527695649e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1475, 319.313)
+| Performance:
+| 	 walltime: 106.546 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.46335e-05 s
+| Memory:
+| 	 python memory:  3544.5 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       144:
+----   fluid sim time 1.44000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00812463
+------ P       (min, max) (Pa) = (4.527656269e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1467, 319.301)
+| Performance:
+| 	 walltime: 107.046 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.84296e-05 s
+| Memory:
+| 	 python memory:  3544.5 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       145:
+----   fluid sim time 1.45000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00813271
+------ P       (min, max) (Pa) = (4.527616927e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1459, 319.287)
+******** Writing Fluid Visualization File 145 at step 145, sim time 1.450000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.941 s
+| 	 visualization time: 1.4339 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000339113 s
+| Memory:
+| 	 python memory: 3493.12 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       146:
+----   fluid sim time 1.46000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00814068
+------ P       (min, max) (Pa) = (4.527577621e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1451, 319.272)
+| Performance:
+| 	 walltime: 107.038 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000103027 s
+| Memory:
+| 	 python memory: 3493.12 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       147:
+----   fluid sim time 1.47000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00814855
+------ P       (min, max) (Pa) = (4.527538352e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1442, 319.255)
+| Performance:
+| 	 walltime: 107.91 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000117198 s
+| Memory:
+| 	 python memory: 3497.94 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       148:
+----   fluid sim time 1.48000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00815632
+------ P       (min, max) (Pa) = (4.527499118e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1434, 319.236)
+| Performance:
+| 	 walltime: 106.976 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000342678 s
+| Memory:
+| 	 python memory: 3501.94 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       149:
+----   fluid sim time 1.49000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00816398
+------ P       (min, max) (Pa) = (4.527459920e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1426, 319.215)
+| Performance:
+| 	 walltime: 107.051 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00010369 s
+| Memory:
+| 	 python memory: 3504.56 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       150:
+----   fluid sim time 1.50000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00817154
+------ P       (min, max) (Pa) = (4.527420756e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1418, 319.193)
+******** Writing Restart File at step 150, sim time 1.500000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 150 at step 150, sim time 1.500000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.377 s
+| 	 visualization time: 1.41247 s
+| 	 garbage collection time: 0.000647627 s
+| 	 log walltime: 0.000116386 s
+| Memory:
+| 	 python memory:    3460 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       151:
+----   fluid sim time 1.51000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00817901
+------ P       (min, max) (Pa) = (4.527381625e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1409, 319.169)
+| Performance:
+| 	 walltime: 107.441 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000333369 s
+| Memory:
+| 	 python memory:    3460 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       152:
+----   fluid sim time 1.52000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00818637
+------ P       (min, max) (Pa) = (4.527342529e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1401, 319.144)
+| Performance:
+| 	 walltime: 107.116 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000124007 s
+| Memory:
+| 	 python memory: 3468.12 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       153:
+----   fluid sim time 1.53000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00819363
+------ P       (min, max) (Pa) = (4.527303465e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1393, 319.117)
+| Performance:
+| 	 walltime: 106.785 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000107691 s
+| Memory:
+| 	 python memory: 3496.56 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       154:
+----   fluid sim time 1.54000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00820079
+------ P       (min, max) (Pa) = (4.527264433e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1384, 319.089)
+| Performance:
+| 	 walltime: 106.602 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00032796 s
+| Memory:
+| 	 python memory: 3545.06 Mb
+| 	 memory hwm: 4270.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       155:
+----   fluid sim time 1.55000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00820786
+------ P       (min, max) (Pa) = (4.527225433e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1376, 319.059)
+******** Writing Fluid Visualization File 155 at step 155, sim time 1.550000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.171 s
+| 	 visualization time: 1.40873 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.58717e-05 s
+| Memory:
+| 	 python memory: 3511.12 Mb
+| 	 memory hwm: 4287.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       156:
+----   fluid sim time 1.56000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00821483
+------ P       (min, max) (Pa) = (4.527186463e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1368, 319.027)
+| Performance:
+| 	 walltime: 106.789 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119746 s
+| Memory:
+| 	 python memory: 3521.25 Mb
+| 	 memory hwm: 4287.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       157:
+----   fluid sim time 1.57000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00822170
+------ P       (min, max) (Pa) = (4.527147525e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.136, 318.994)
+| Performance:
+| 	 walltime: 106.986 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000317868 s
+| Memory:
+| 	 python memory: 3533.75 Mb
+| 	 memory hwm: 4287.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       158:
+----   fluid sim time 1.58000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00822847
+------ P       (min, max) (Pa) = (4.527108616e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1351,  318.96)
+| Performance:
+| 	 walltime: 107.118 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000114225 s
+| Memory:
+| 	 python memory: 3559.06 Mb
+| 	 memory hwm: 4287.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       159:
+----   fluid sim time 1.59000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00823516
+------ P       (min, max) (Pa) = (4.527069737e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1343, 318.924)
+| Performance:
+| 	 walltime: 107.07 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000113942 s
+| Memory:
+| 	 python memory: 3568.12 Mb
+| 	 memory hwm: 4287.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       160:
+----   fluid sim time 1.60000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00824174
+------ P       (min, max) (Pa) = (4.527030886e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1335, 318.886)
+******** Writing Restart File at step 160, sim time 1.600000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 160 at step 160, sim time 1.600000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.834 s
+| 	 visualization time: 1.41222 s
+| 	 garbage collection time: 0.00243658 s
+| 	 log walltime: 0.000330437 s
+| Memory:
+| 	 python memory: 3547.25 Mb
+| 	 memory hwm: 4294.12 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       161:
+----   fluid sim time 1.61000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00824824
+------ P       (min, max) (Pa) = (4.526992063e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1326, 318.847)
+| Performance:
+| 	 walltime: 106.768 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104867 s
+| Memory:
+| 	 python memory: 3548.94 Mb
+| 	 memory hwm: 4294.12 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       162:
+----   fluid sim time 1.62000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00825464
+------ P       (min, max) (Pa) = (4.526953269e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1318, 318.807)
+| Performance:
+| 	 walltime: 106.243 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000116874 s
+| Memory:
+| 	 python memory: 3562.62 Mb
+| 	 memory hwm: 4294.12 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       163:
+----   fluid sim time 1.63000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00826095
+------ P       (min, max) (Pa) = (4.526914501e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.131, 318.765)
+| Performance:
+| 	 walltime: 106.589 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000325236 s
+| Memory:
+| 	 python memory: 3563.31 Mb
+| 	 memory hwm: 4294.12 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       164:
+----   fluid sim time 1.64000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00826717
+------ P       (min, max) (Pa) = (4.526875760e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1301, 318.722)
+| Performance:
+| 	 walltime: 106.803 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000105232 s
+| Memory:
+| 	 python memory: 3563.31 Mb
+| 	 memory hwm: 4294.12 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       165:
+----   fluid sim time 1.65000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00827330
+------ P       (min, max) (Pa) = (4.526837045e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1293, 318.678)
+******** Writing Fluid Visualization File 165 at step 165, sim time 1.650000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.922 s
+| 	 visualization time: 1.43272 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102177 s
+| Memory:
+| 	 python memory: 3532.38 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       166:
+----   fluid sim time 1.66000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00827934
+------ P       (min, max) (Pa) = (4.526798356e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1285, 318.632)
+| Performance:
+| 	 walltime: 107.115 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000341397 s
+| Memory:
+| 	 python memory: 3532.38 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       167:
+----   fluid sim time 1.67000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00828529
+------ P       (min, max) (Pa) = (4.526759691e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1276, 318.585)
+| Performance:
+| 	 walltime: 107.371 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104316 s
+| Memory:
+| 	 python memory: 3535.94 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       168:
+----   fluid sim time 1.68000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00829115
+------ P       (min, max) (Pa) = (4.526721051e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1268, 318.537)
+| Performance:
+| 	 walltime: 106.699 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000112735 s
+| Memory:
+| 	 python memory: 3535.94 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       169:
+----   fluid sim time 1.69000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00829693
+------ P       (min, max) (Pa) = (4.526682435e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.126, 318.502)
+| Performance:
+| 	 walltime: 107.681 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000337973 s
+| Memory:
+| 	 python memory: 3538.62 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       170:
+----   fluid sim time 1.70000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00830262
+------ P       (min, max) (Pa) = (4.526643842e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1251, 318.501)
+******** Writing Restart File at step 170, sim time 1.700000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 170 at step 170, sim time 1.700000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.116 s
+| 	 visualization time: 1.42604 s
+| 	 garbage collection time: 0.000746779 s
+| 	 log walltime: 0.000107743 s
+| Memory:
+| 	 python memory: 3485.75 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       171:
+----   fluid sim time 1.71000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00830823
+------ P       (min, max) (Pa) = (4.526605272e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1243,   318.5)
+| Performance:
+| 	 walltime: 107.098 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119541 s
+| Memory:
+| 	 python memory: 3485.75 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       172:
+----   fluid sim time 1.72000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00831375
+------ P       (min, max) (Pa) = (4.526566725e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1235, 318.497)
+| Performance:
+| 	 walltime: 107.891 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000317015 s
+| Memory:
+| 	 python memory: 3490.12 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       173:
+----   fluid sim time 1.73000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00831919
+------ P       (min, max) (Pa) = (4.526528199e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1226, 318.494)
+| Performance:
+| 	 walltime: 106.803 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000125695 s
+| Memory:
+| 	 python memory: 3490.25 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       174:
+----   fluid sim time 1.74000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00832454
+------ P       (min, max) (Pa) = (4.526489694e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1218, 318.489)
+| Performance:
+| 	 walltime: 107.522 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.86321e-05 s
+| Memory:
+| 	 python memory: 3512.25 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       175:
+----   fluid sim time 1.75000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00832982
+------ P       (min, max) (Pa) = (4.526451210e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.121, 318.483)
+******** Writing Fluid Visualization File 175 at step 175, sim time 1.750000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.939 s
+| 	 visualization time: 1.44472 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000319373 s
+| Memory:
+| 	 python memory: 3472.25 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       176:
+----   fluid sim time 1.76000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00833501
+------ P       (min, max) (Pa) = (4.526412747e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1201, 318.476)
+| Performance:
+| 	 walltime: 106.755 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119139 s
+| Memory:
+| 	 python memory: 3547.31 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       177:
+----   fluid sim time 1.77000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00834012
+------ P       (min, max) (Pa) = (4.526374303e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1193, 318.467)
+| Performance:
+| 	 walltime: 107.273 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.16794e-05 s
+| Memory:
+| 	 python memory: 3547.31 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       178:
+----   fluid sim time 1.78000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00834515
+------ P       (min, max) (Pa) = (4.526335878e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1185, 318.458)
+| Performance:
+| 	 walltime: 106.467 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000345279 s
+| Memory:
+| 	 python memory:  3549.5 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       179:
+----   fluid sim time 1.79000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00835010
+------ P       (min, max) (Pa) = (4.526297473e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1176, 318.448)
+| Performance:
+| 	 walltime: 106.785 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000110257 s
+| Memory:
+| 	 python memory: 3581.75 Mb
+| 	 memory hwm: 4308.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       180:
+----   fluid sim time 1.80000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00835497
+------ P       (min, max) (Pa) = (4.526259085e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1168, 318.436)
+******** Writing Restart File at step 180, sim time 1.800000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 180 at step 180, sim time 1.800000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.559 s
+| 	 visualization time: 1.42819 s
+| 	 garbage collection time: 0.000653651 s
+| 	 log walltime: 0.000109334 s
+| Memory:
+| 	 python memory: 3555.38 Mb
+| 	 memory hwm: 4309.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       181:
+----   fluid sim time 1.81000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00835977
+------ P       (min, max) (Pa) = (4.526220715e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.116, 318.424)
+| Performance:
+| 	 walltime: 106.583 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000304289 s
+| Memory:
+| 	 python memory: 3555.38 Mb
+| 	 memory hwm: 4309.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       182:
+----   fluid sim time 1.82000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00836448
+------ P       (min, max) (Pa) = (4.526182362e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1151,  318.41)
+| Performance:
+| 	 walltime: 106.512 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000111524 s
+| Memory:
+| 	 python memory: 3582.25 Mb
+| 	 memory hwm: 4309.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       183:
+----   fluid sim time 1.83000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00836912
+------ P       (min, max) (Pa) = (4.526144026e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1143, 318.395)
+| Performance:
+| 	 walltime: 106.63 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000111423 s
+| Memory:
+| 	 python memory: 3584.94 Mb
+| 	 memory hwm: 4309.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       184:
+----   fluid sim time 1.84000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00837369
+------ P       (min, max) (Pa) = (4.526105707e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1135, 318.379)
+| Performance:
+| 	 walltime: 107.055 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00034884 s
+| Memory:
+| 	 python memory: 3599.31 Mb
+| 	 memory hwm: 4309.56 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       185:
+----   fluid sim time 1.85000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00837818
+------ P       (min, max) (Pa) = (4.526067403e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1126, 318.363)
+******** Writing Fluid Visualization File 185 at step 185, sim time 1.850000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.218 s
+| 	 visualization time: 1.45971 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.41008e-05 s
+| Memory:
+| 	 python memory: 3574.31 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       186:
+----   fluid sim time 1.86000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00838259
+------ P       (min, max) (Pa) = (4.526029114e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1118, 318.345)
+| Performance:
+| 	 walltime: 106.719 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000114933 s
+| Memory:
+| 	 python memory: 3575.38 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       187:
+----   fluid sim time 1.87000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00838694
+------ P       (min, max) (Pa) = (4.525990840e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.111, 318.326)
+| Performance:
+| 	 walltime: 106.867 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000309866 s
+| Memory:
+| 	 python memory: 3575.38 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       188:
+----   fluid sim time 1.88000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00839121
+------ P       (min, max) (Pa) = (4.525952581e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1101, 318.306)
+| Performance:
+| 	 walltime: 106.734 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000109658 s
+| Memory:
+| 	 python memory:    3578 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       189:
+----   fluid sim time 1.89000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00839540
+------ P       (min, max) (Pa) = (4.525914335e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1093, 318.285)
+| Performance:
+| 	 walltime: 106.814 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.30615e-05 s
+| Memory:
+| 	 python memory:    3578 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       190:
+----   fluid sim time 1.90000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00839953
+------ P       (min, max) (Pa) = (4.525876103e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1085, 318.263)
+******** Writing Restart File at step 190, sim time 1.900000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 190 at step 190, sim time 1.900000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.793 s
+| 	 visualization time: 1.44041 s
+| 	 garbage collection time: 0.000745542 s
+| 	 log walltime: 0.000347551 s
+| Memory:
+| 	 python memory: 3536.06 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       191:
+----   fluid sim time 1.91000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00840358
+------ P       (min, max) (Pa) = (4.525837884e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1076,  318.24)
+| Performance:
+| 	 walltime: 107.371 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000125442 s
+| Memory:
+| 	 python memory: 3536.06 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       192:
+----   fluid sim time 1.92000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00840756
+------ P       (min, max) (Pa) = (4.525799677e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1068, 318.216)
+| Performance:
+| 	 walltime: 106.992 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000102587 s
+| Memory:
+| 	 python memory: 3538.81 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       193:
+----   fluid sim time 1.93000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00841148
+------ P       (min, max) (Pa) = (4.525761482e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.106, 318.191)
+| Performance:
+| 	 walltime: 106.448 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000262219 s
+| Memory:
+| 	 python memory: 3538.81 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       194:
+----   fluid sim time 1.94000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00841532
+------ P       (min, max) (Pa) = (4.525723298e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1051, 318.165)
+| Performance:
+| 	 walltime: 106.963 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000116125 s
+| Memory:
+| 	 python memory: 3541.31 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       195:
+----   fluid sim time 1.95000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00841910
+------ P       (min, max) (Pa) = (4.525685126e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1043, 318.139)
+******** Writing Fluid Visualization File 195 at step 195, sim time 1.950000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.67 s
+| 	 visualization time: 1.44733 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.65893e-05 s
+| Memory:
+| 	 python memory: 3496.19 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       196:
+----   fluid sim time 1.96000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00842280
+------ P       (min, max) (Pa) = (4.525646964e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1035, 318.111)
+| Performance:
+| 	 walltime: 106.26 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000380132 s
+| Memory:
+| 	 python memory: 3496.19 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       197:
+----   fluid sim time 1.97000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00842644
+------ P       (min, max) (Pa) = (4.525608813e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1026, 318.082)
+| Performance:
+| 	 walltime: 106.593 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000103522 s
+| Memory:
+| 	 python memory: 3507.38 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       198:
+----   fluid sim time 1.98000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00843001
+------ P       (min, max) (Pa) = (4.525570671e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1018, 318.053)
+| Performance:
+| 	 walltime: 107.415 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000105206 s
+| Memory:
+| 	 python memory: 3508.69 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       199:
+----   fluid sim time 1.99000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00843352
+------ P       (min, max) (Pa) = (4.525532539e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1009, 318.022)
+| Performance:
+| 	 walltime: 107.333 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000324801 s
+| Memory:
+| 	 python memory: 3518.62 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       200:
+----   fluid sim time 2.00000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00843696
+------ P       (min, max) (Pa) = (4.525494415e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.1001, 317.991)
+******** Writing Restart File at step 200, sim time 2.000000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 200 at step 200, sim time 2.000000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.258 s
+| 	 visualization time: 1.44511 s
+| 	 garbage collection time: 0.000711661 s
+| 	 log walltime: 0.000101537 s
+| Memory:
+| 	 python memory: 3484.62 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       201:
+----   fluid sim time 2.01000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00844033
+------ P       (min, max) (Pa) = (4.525456300e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0993, 317.959)
+| Performance:
+| 	 walltime: 106.47 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104155 s
+| Memory:
+| 	 python memory:    3538 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       202:
+----   fluid sim time 2.02000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00844364
+------ P       (min, max) (Pa) = (4.525418193e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0984, 317.926)
+| Performance:
+| 	 walltime: 106.059 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000324588 s
+| Memory:
+| 	 python memory:    3595 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       203:
+----   fluid sim time 2.03000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00844689
+------ P       (min, max) (Pa) = (4.525380093e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0976, 317.892)
+| Performance:
+| 	 walltime: 107.811 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.83588e-05 s
+| Memory:
+| 	 python memory:    3595 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       204:
+----   fluid sim time 2.04000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00845007
+------ P       (min, max) (Pa) = (4.525342000e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0968, 317.857)
+| Performance:
+| 	 walltime: 107.357 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 7.88458e-05 s
+| Memory:
+| 	 python memory:    3595 Mb
+| 	 memory hwm: 4328.88 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       205:
+----   fluid sim time 2.05000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00845319
+------ P       (min, max) (Pa) = (4.525303914e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0959, 317.821)
+******** Writing Fluid Visualization File 205 at step 205, sim time 2.050000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.906 s
+| 	 visualization time: 1.53662 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000269726 s
+| Memory:
+| 	 python memory: 3580.75 Mb
+| 	 memory hwm: 4329.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       206:
+----   fluid sim time 2.06000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00845624
+------ P       (min, max) (Pa) = (4.525265835e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0951, 317.785)
+| Performance:
+| 	 walltime: 107.992 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100385 s
+| Memory:
+| 	 python memory: 3594.06 Mb
+| 	 memory hwm: 4329.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       207:
+----   fluid sim time 2.07000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00845924
+------ P       (min, max) (Pa) = (4.525227761e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0943, 317.748)
+| Performance:
+| 	 walltime: 106.665 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000118703 s
+| Memory:
+| 	 python memory: 3607.12 Mb
+| 	 memory hwm: 4329.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       208:
+----   fluid sim time 2.08000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00846217
+------ P       (min, max) (Pa) = (4.525189693e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0935,  317.71)
+| Performance:
+| 	 walltime: 106.917 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000328649 s
+| Memory:
+| 	 python memory: 3613.38 Mb
+| 	 memory hwm: 4329.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       209:
+----   fluid sim time 2.09000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00846504
+------ P       (min, max) (Pa) = (4.525151629e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0926, 317.671)
+| Performance:
+| 	 walltime: 106.026 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.52519e-05 s
+| Memory:
+| 	 python memory: 3621.69 Mb
+| 	 memory hwm: 4329.62 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       210:
+----   fluid sim time 2.10000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00846785
+------ P       (min, max) (Pa) = (4.525113571e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0918, 317.632)
+******** Writing Restart File at step 210, sim time 2.100000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 210 at step 210, sim time 2.100000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 109.193 s
+| 	 visualization time: 1.46718 s
+| 	 garbage collection time: 0.000644047 s
+| 	 log walltime: 8.6274e-05 s
+| Memory:
+| 	 python memory: 3578.44 Mb
+| 	 memory hwm: 4351.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       211:
+----   fluid sim time 2.11000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00847060
+------ P       (min, max) (Pa) = (4.525075516e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.091, 317.592)
+| Performance:
+| 	 walltime: 106.973 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00032834 s
+| Memory:
+| 	 python memory: 3608.81 Mb
+| 	 memory hwm: 4351.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       212:
+----   fluid sim time 2.12000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00847329
+------ P       (min, max) (Pa) = (4.525037466e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0901, 317.551)
+| Performance:
+| 	 walltime: 106.627 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100859 s
+| Memory:
+| 	 python memory: 3632.12 Mb
+| 	 memory hwm: 4351.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       213:
+----   fluid sim time 2.13000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00847592
+------ P       (min, max) (Pa) = (4.524999418e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0893,  317.51)
+| Performance:
+| 	 walltime: 106.545 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000105329 s
+| Memory:
+| 	 python memory: 3644.69 Mb
+| 	 memory hwm: 4351.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       214:
+----   fluid sim time 2.14000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00847849
+------ P       (min, max) (Pa) = (4.524961374e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0885, 317.468)
+| Performance:
+| 	 walltime: 106.955 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000322782 s
+| Memory:
+| 	 python memory:    3645 Mb
+| 	 memory hwm: 4351.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       215:
+----   fluid sim time 2.15000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00848101
+------ P       (min, max) (Pa) = (4.524923332e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0876, 317.425)
+******** Writing Fluid Visualization File 215 at step 215, sim time 2.150000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.842 s
+| 	 visualization time: 1.44587 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00010556 s
+| Memory:
+| 	 python memory: 3596.31 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       216:
+----   fluid sim time 2.16000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00848346
+------ P       (min, max) (Pa) = (4.524885293e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0868, 317.381)
+| Performance:
+| 	 walltime: 107.222 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000110194 s
+| Memory:
+| 	 python memory: 3600.31 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       217:
+----   fluid sim time 2.17000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00848586
+------ P       (min, max) (Pa) = (4.524847255e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.086, 317.337)
+| Performance:
+| 	 walltime: 106.082 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000330321 s
+| Memory:
+| 	 python memory: 3603.12 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       218:
+----   fluid sim time 2.18000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00848821
+------ P       (min, max) (Pa) = (4.524809219e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0851, 317.292)
+| Performance:
+| 	 walltime: 106.952 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.95435e-05 s
+| Memory:
+| 	 python memory: 3603.12 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       219:
+----   fluid sim time 2.19000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00849049
+------ P       (min, max) (Pa) = (4.524771184e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0843, 317.247)
+| Performance:
+| 	 walltime: 107.001 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100333 s
+| Memory:
+| 	 python memory: 3605.88 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       220:
+----   fluid sim time 2.20000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00849272
+------ P       (min, max) (Pa) = (4.524733150e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0835, 317.201)
+******** Writing Restart File at step 220, sim time 2.200000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 220 at step 220, sim time 2.200000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.072 s
+| 	 visualization time: 1.43529 s
+| 	 garbage collection time: 0.000716433 s
+| 	 log walltime: 0.000319067 s
+| Memory:
+| 	 python memory: 3569.38 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       221:
+----   fluid sim time 2.21000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00849490
+------ P       (min, max) (Pa) = (4.524695116e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0827, 317.155)
+| Performance:
+| 	 walltime: 107.141 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000103984 s
+| Memory:
+| 	 python memory: 3570.12 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       222:
+----   fluid sim time 2.22000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00849702
+------ P       (min, max) (Pa) = (4.524657082e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0818, 317.107)
+| Performance:
+| 	 walltime: 106.59 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.93958e-05 s
+| Memory:
+| 	 python memory: 3572.88 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       223:
+----   fluid sim time 2.23000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00849909
+------ P       (min, max) (Pa) = (4.524619047e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.081,  317.06)
+| Performance:
+| 	 walltime: 106.893 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.00033436 s
+| Memory:
+| 	 python memory: 3572.88 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       224:
+----   fluid sim time 2.24000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00850110
+------ P       (min, max) (Pa) = (4.524581012e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0802, 317.011)
+| Performance:
+| 	 walltime: 107.354 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000106946 s
+| Memory:
+| 	 python memory: 3576.56 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       225:
+----   fluid sim time 2.25000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00850306
+------ P       (min, max) (Pa) = (4.524542976e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0793, 316.963)
+******** Writing Fluid Visualization File 225 at step 225, sim time 2.250000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.797 s
+| 	 visualization time: 1.43201 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000109654 s
+| Memory:
+| 	 python memory:    3535 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       226:
+----   fluid sim time 2.26000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00850497
+------ P       (min, max) (Pa) = (4.524504938e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0785, 316.913)
+| Performance:
+| 	 walltime: 106.736 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000283577 s
+| Memory:
+| 	 python memory:    3535 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       227:
+----   fluid sim time 2.27000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00850682
+------ P       (min, max) (Pa) = (4.524466898e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0777, 316.864)
+| Performance:
+| 	 walltime: 106.262 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100117 s
+| Memory:
+| 	 python memory:  3538.5 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       228:
+----   fluid sim time 2.28000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00850863
+------ P       (min, max) (Pa) = (4.524428856e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0769, 316.813)
+| Performance:
+| 	 walltime: 107.373 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000257067 s
+| Memory:
+| 	 python memory:  3538.5 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       229:
+----   fluid sim time 2.29000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851038
+------ P       (min, max) (Pa) = (4.524390812e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.076, 316.763)
+| Performance:
+| 	 walltime: 106.656 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000371259 s
+| Memory:
+| 	 python memory: 3541.12 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       230:
+----   fluid sim time 2.30000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851207
+------ P       (min, max) (Pa) = (4.524352765e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0752, 316.712)
+******** Writing Restart File at step 230, sim time 2.300000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 230 at step 230, sim time 2.300000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.163 s
+| 	 visualization time: 1.47022 s
+| 	 garbage collection time: 0.000611238 s
+| 	 log walltime: 0.000105228 s
+| Memory:
+| 	 python memory:    3496 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       231:
+----   fluid sim time 2.31000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851372
+------ P       (min, max) (Pa) = (4.524314714e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0744,  316.66)
+| Performance:
+| 	 walltime: 107.052 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100233 s
+| Memory:
+| 	 python memory: 3497.81 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       232:
+----   fluid sim time 2.32000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851532
+------ P       (min, max) (Pa) = (4.524276660e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0736, 316.608)
+| Performance:
+| 	 walltime: 106.884 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000334911 s
+| Memory:
+| 	 python memory: 3497.81 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       233:
+----   fluid sim time 2.33000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851687
+------ P       (min, max) (Pa) = (4.524238602e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0727, 316.555)
+| Performance:
+| 	 walltime: 106.742 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000114139 s
+| Memory:
+| 	 python memory: 3505.44 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       234:
+----   fluid sim time 2.34000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851837
+------ P       (min, max) (Pa) = (4.524200539e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0719, 316.502)
+| Performance:
+| 	 walltime: 107.01 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000100389 s
+| Memory:
+| 	 python memory: 3505.44 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       235:
+----   fluid sim time 2.35000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00851981
+------ P       (min, max) (Pa) = (4.524162472e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0711, 316.449)
+******** Writing Fluid Visualization File 235 at step 235, sim time 2.350000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.36 s
+| 	 visualization time: 1.4223 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000337109 s
+| Memory:
+| 	 python memory:    3549 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       236:
+----   fluid sim time 2.36000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852121
+------ P       (min, max) (Pa) = (4.524124401e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0703, 316.396)
+| Performance:
+| 	 walltime: 106.621 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119716 s
+| Memory:
+| 	 python memory: 3553.12 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       237:
+----   fluid sim time 2.37000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852257
+------ P       (min, max) (Pa) = (4.524086323e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0694, 316.342)
+| Performance:
+| 	 walltime: 106.744 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 8.83117e-05 s
+| Memory:
+| 	 python memory: 3603.88 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       238:
+----   fluid sim time 2.38000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852387
+------ P       (min, max) (Pa) = (4.524048241e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0686, 316.287)
+| Performance:
+| 	 walltime: 106.395 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000341341 s
+| Memory:
+| 	 python memory: 3603.88 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       239:
+----   fluid sim time 2.39000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852512
+------ P       (min, max) (Pa) = (4.524010152e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0678, 316.232)
+| Performance:
+| 	 walltime: 107.172 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104804 s
+| Memory:
+| 	 python memory: 3623.94 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       240:
+----   fluid sim time 2.40000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852633
+------ P       (min, max) (Pa) = (4.523972058e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.067, 316.177)
+******** Writing Restart File at step 240, sim time 2.400000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 240 at step 240, sim time 2.400000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.283 s
+| 	 visualization time: 1.43699 s
+| 	 garbage collection time: 0.000700582 s
+| 	 log walltime: 0.000101812 s
+| Memory:
+| 	 python memory: 3587.88 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       241:
+----   fluid sim time 2.41000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852749
+------ P       (min, max) (Pa) = (4.523933956e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0662, 316.122)
+| Performance:
+| 	 walltime: 107.171 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000333324 s
+| Memory:
+| 	 python memory: 3640.56 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       242:
+----   fluid sim time 2.42000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852861
+------ P       (min, max) (Pa) = (4.523895848e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0653, 316.066)
+| Performance:
+| 	 walltime: 106.962 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119787 s
+| Memory:
+| 	 python memory: 3640.56 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       243:
+----   fluid sim time 2.43000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00852968
+------ P       (min, max) (Pa) = (4.523857733e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0645, 316.011)
+| Performance:
+| 	 walltime: 107.058 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 9.96478e-05 s
+| Memory:
+| 	 python memory: 3668.19 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       244:
+----   fluid sim time 2.44000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853070
+------ P       (min, max) (Pa) = (4.523819611e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0637, 315.954)
+| Performance:
+| 	 walltime: 107.717 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000329591 s
+| Memory:
+| 	 python memory: 3673.75 Mb
+| 	 memory hwm: 4368.75 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       245:
+----   fluid sim time 2.45000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853168
+------ P       (min, max) (Pa) = (4.523781481e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0629, 315.898)
+******** Writing Fluid Visualization File 245 at step 245, sim time 2.450000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 107.531 s
+| 	 visualization time: 1.48219 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000110563 s
+| Memory:
+| 	 python memory: 3674.56 Mb
+| 	 memory hwm: 4410.81 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       246:
+----   fluid sim time 2.46000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853261
+------ P       (min, max) (Pa) = (4.523743342e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0621, 315.841)
+| Performance:
+| 	 walltime: 106.827 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000119578 s
+| Memory:
+| 	 python memory: 3674.56 Mb
+| 	 memory hwm: 4410.81 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       247:
+----   fluid sim time 2.47000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853349
+------ P       (min, max) (Pa) = (4.523705196e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0612, 315.784)
+| Performance:
+| 	 walltime: 106.902 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000348803 s
+| Memory:
+| 	 python memory: 3684.44 Mb
+| 	 memory hwm: 4410.81 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       248:
+----   fluid sim time 2.48000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853434
+------ P       (min, max) (Pa) = (4.523667041e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0604, 315.755)
+| Performance:
+| 	 walltime: 106.797 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000126816 s
+| Memory:
+| 	 python memory: 3684.44 Mb
+| 	 memory hwm: 4410.81 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       249:
+----   fluid sim time 2.49000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853514
+------ P       (min, max) (Pa) = (4.523628877e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0596, 315.745)
+| Performance:
+| 	 walltime: 107.022 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000112522 s
+| Memory:
+| 	 python memory: 3688.44 Mb
+| 	 memory hwm: 4410.81 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       250:
+----   fluid sim time 2.50000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853589
+------ P       (min, max) (Pa) = (4.523590704e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0588, 315.735)
+******** Writing Restart File at step 250, sim time 2.500000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 250 at step 250, sim time 2.500000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.128 s
+| 	 visualization time: 1.4436 s
+| 	 garbage collection time: 0.000749711 s
+| 	 log walltime: 0.000337943 s
+| Memory:
+| 	 python memory: 3634.44 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       251:
+----   fluid sim time 2.51000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853660
+------ P       (min, max) (Pa) = (4.523552521e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.058, 315.724)
+| Performance:
+| 	 walltime: 106.794 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104431 s
+| Memory:
+| 	 python memory: 3634.44 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       252:
+----   fluid sim time 2.52000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853727
+------ P       (min, max) (Pa) = (4.523514329e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0572, 315.713)
+| Performance:
+| 	 walltime: 107.072 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000106134 s
+| Memory:
+| 	 python memory: 3637.06 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       253:
+----   fluid sim time 2.53000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853790
+------ P       (min, max) (Pa) = (4.523476127e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0564, 315.701)
+| Performance:
+| 	 walltime: 106.741 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000315085 s
+| Memory:
+| 	 python memory: 3641.19 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       254:
+----   fluid sim time 2.54000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853848
+------ P       (min, max) (Pa) = (4.523437914e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0555, 315.688)
+| Performance:
+| 	 walltime: 106.373 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000101168 s
+| Memory:
+| 	 python memory: 3643.88 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       255:
+----   fluid sim time 2.55000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853902
+------ P       (min, max) (Pa) = (4.523399691e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0547, 315.675)
+******** Writing Fluid Visualization File 255 at step 255, sim time 2.550000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime:  107.8 s
+| 	 visualization time: 1.45516 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000104155 s
+| Memory:
+| 	 python memory: 3604.38 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       256:
+----   fluid sim time 2.56000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853952
+------ P       (min, max) (Pa) = (4.523361457e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0539, 315.661)
+| Performance:
+| 	 walltime: 106.528 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000278905 s
+| Memory:
+| 	 python memory: 3604.38 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       257:
+----   fluid sim time 2.57000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00853998
+------ P       (min, max) (Pa) = (4.523323212e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0531, 315.647)
+| Performance:
+| 	 walltime: 107.581 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000116616 s
+| Memory:
+| 	 python memory: 3607.88 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 607.926 Mb
+
+--     step       258:
+----   fluid sim time 2.58000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854040
+------ P       (min, max) (Pa) = (4.523284956e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0523, 315.633)
+| Performance:
+| 	 walltime: 106.723 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000116616 s
+| Memory:
+| 	 python memory: 3607.88 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.494 Mb
+
+--     step       259:
+----   fluid sim time 2.59000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854078
+------ P       (min, max) (Pa) = (4.523246689e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0515, 315.618)
+| Performance:
+| 	 walltime: 106.725 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000325058 s
+| Memory:
+| 	 python memory: 3610.69 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 606.499 Mb
+
+--     step       260:
+----   fluid sim time 2.60000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854111
+------ P       (min, max) (Pa) = (4.523208409e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0507, 315.602)
+******** Writing Restart File at step 260, sim time 2.600000e-08 s ********
+******** Done Writing Restart File ********
+******** Writing Fluid Visualization File 260 at step 260, sim time 2.600000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.396 s
+| 	 visualization time: 1.43769 s
+| 	 garbage collection time: 0.00066562 s
+| 	 log walltime: 0.000103395 s
+| Memory:
+| 	 python memory: 3562.56 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       261:
+----   fluid sim time 2.61000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854141
+------ P       (min, max) (Pa) = (4.523170117e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0499, 315.586)
+| Performance:
+| 	 walltime: 106.092 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000139847 s
+| Memory:
+| 	 python memory: 3562.56 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active:  598.53 Mb
+
+--     step       262:
+----   fluid sim time 2.62000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854167
+------ P       (min, max) (Pa) = (4.523131813e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0491, 315.569)
+| Performance:
+| 	 walltime: 106.888 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000336774 s
+| Memory:
+| 	 python memory: 3565.12 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.522 Mb
+
+--     step       263:
+----   fluid sim time 2.63000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854189
+------ P       (min, max) (Pa) = (4.523093497e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0482, 315.552)
+| Performance:
+| 	 walltime: 106.963 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000170346 s
+| Memory:
+| 	 python memory: 3567.62 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       264:
+----   fluid sim time 2.64000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854206
+------ P       (min, max) (Pa) = (4.523055168e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0474, 315.535)
+| Performance:
+| 	 walltime: 107.497 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000107832 s
+| Memory:
+| 	 python memory: 3567.62 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.519 Mb
+
+--     step       265:
+----   fluid sim time 2.65000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854220
+------ P       (min, max) (Pa) = (4.523016825e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0466, 315.517)
+******** Writing Fluid Visualization File 265 at step 265, sim time 2.650000e-08 s ********
+******** Done Writing Fluid Visualization File ********
+| Performance:
+| 	 walltime: 108.759 s
+| 	 visualization time: 1.45553 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000345986 s
+| Memory:
+| 	 python memory: 3549.19 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 598.517 Mb
+
+--     step       266:
+----   fluid sim time 2.66000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854230
+------ P       (min, max) (Pa) = (4.522978470e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = (69.0458, 315.498)
+| Performance:
+| 	 walltime: 106.824 s
+| 	 visualization time:      0 s
+| 	 garbage collection time:      0 s
+| 	 log walltime: 0.000120655 s
+| Memory:
+| 	 python memory: 3549.19 Mb
+| 	 memory hwm: 4410.94 Mb
+| 	 mempool total: 2395.44 Mb
+| 	 mempool active: 617.293 Mb
+
+--     step       267:
+----   fluid sim time 2.67000000e-08
+----   dt 1.000e-10, cfl_fluid 0.00854237
+------ P       (min, max) (Pa) = (4.522940101e+03, 5.509933676e+05)
+------ T_fluid (min, max) (K)  = ( 69.045, 315.479)
+User defined signal 2
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@lassen710>
+Subject: Job 5244522: <unstart_test> in cluster <lassen> Exited
+
+Job <unstart_test> was submitted from host <lassen708> by user <lauer5> in cluster <lassen> at Thu Sep 28 20:42:32 2023
+Job was executed on host(s) <1*lassen710>, in queue <pbatch>, as user <lauer5> in cluster <lassen> at Thu Sep 28 20:51:41 2023
+                            <40*lassen37>
+</g/g20/lauer5> was used as the home directory.
+</p/gpfs1/lauer5/drivers_y3-prediction/unstart/2d_test> was used as the working directory.
+Started at Thu Sep 28 20:51:41 2023
+Terminated at Fri Sep 29 04:52:00 2023
+Results reported at Fri Sep 29 04:52:00 2023
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -nnodes 1
+#BSUB -G uiuc 
+#BSUB -J unstart_test
+##BSUB -W 00:20
+##BSUB -q pdebug
+#BSUB -W 08:00
+#BSUB -q pbatch
+#BSUB -o output.txt
+
+exec="driver.py"
+
+#rst_file="./restart_data/burner_mix-d2p2e21350n1-230000-0000.pkl"
+
+source /p/gpfs1/lauer5/drivers_y3-prediction/emirge/config/activate_env.sh
+
+#$MIRGE_MPI_EXEC -n 1 $MIRGE_PARALLEL_SPAWNER python -m mpi4py $exec --lazy -r $rst_file
+#$MIRGE_MPI_EXEC $MIRGE_PARALLEL_SPAWNER python -m mpi4py $exec # -r $rst_file
+mpirun -n 2 python -u -m mpi4py $exec -i run_params.yaml
+
+------------------------------------------------------------
+
+TERM_RUNLIMIT: job killed after reaching LSF run time limit.
+Exited with exit code 140.
+
+Resource usage summary:
+
+    CPU time :                                   11.00 sec.
+    Max Memory :                                 59 MB
+    Average Memory :                             58.99 MB
+    Total Requested Memory :                     -
+    Delta Memory :                               -
+    Max Swap :                                   1425 MB
+    Max Processes :                              4
+    Max Threads :                                27
+    Run time :                                   28819 sec.
+    Turnaround time :                            29368 sec.
+
+The output (if any) is above this job summary.
+
