@@ -1,0 +1,185 @@
+SetFactory("OpenCASCADE");
+surface_vector[] = ShapeFromFile("unstart_baseline.brep");
+
+
+// Millimeters to meters
+Mesh.ScalingFactor = 0.001;
+
+If(Exists(size))
+    basesize=size;
+Else
+    basesize=6.4;
+EndIf
+
+If(Exists(blratio))
+    boundratio=blratio;
+Else
+    boundratio=4.0;
+EndIf
+
+If(Exists(blratiocavity))
+    boundratiocavity=blratiocavity;
+Else
+    boundratiocavity=2.0;
+EndIf
+
+If(Exists(blratioinjector))
+    boundratioinjector=blratioinjector;
+Else
+    boundratioinjector=2.0;
+EndIf
+
+If(Exists(blratiosample))
+    boundratiosample=blratiosample;
+Else
+    boundratiosample=8.0;
+EndIf
+
+If(Exists(blratiosurround))
+    boundratiosurround=blratiosurround;
+Else
+    boundratiosurround=2.0;
+EndIf
+
+If(Exists(injectorfac))
+    injector_factor=injectorfac;
+Else
+    injector_factor=5.0;
+EndIf
+
+If(Exists(samplefac))
+    sample_factor=samplefac;
+Else
+    sample_factor=4.0;
+EndIf
+
+If(Exists(shearfac))
+    shear_factor=shearfac;
+Else
+    shear_factor=6.0;
+EndIf
+
+If(Exists(isofac))
+    iso_factor=isofac;
+Else
+    iso_factor=2.0;
+EndIf
+
+If(Exists(cavityfac))
+    cavity_factor=cavityfac;
+Else
+    cavity_factor=6;
+EndIf
+
+If(Exists(nozzlefac))
+    nozzle_factor=nozzlefac;
+Else
+    nozzle_factor=6;
+EndIf
+
+// horizontal injection
+//cavityAngle=45;
+//inj_h=4.;  // height of injector (bottom) from floor
+//inj_d=1.59; // diameter of injector
+//inj_l = 20; // length of injector
+
+bigsize = basesize*4;     // the biggest mesh size 
+inletsize = basesize*2;   // background mesh size upstream of the nozzle
+isosize = basesize/iso_factor;       // background mesh size in the isolator
+nozzlesize = basesize/nozzle_factor;       // background mesh size in the nozzle
+cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
+shearsize = isosize/shear_factor; // background mesh size in the shear region
+// samplesize = basesize/sample_factor;       // background mesh size in the sample
+// injectorsize = inj_d/injector_factor; // background mesh size in the injector region
+
+Printf("basesize = %f", basesize);
+Printf("inletsize = %f", inletsize);
+Printf("isosize = %f", isosize);
+Printf("nozzlesize = %f", nozzlesize);
+Printf("cavitysize = %f", cavitysize);
+Printf("shearsize = %f", shearsize);
+Printf("boundratio = %f", boundratio);
+Printf("boundratiocavity = %f", boundratiocavity);
+Printf("boundratiosurround = %f", boundratiosurround);
+
+Geometry.Tolerance = 1.e-3;
+Coherence;
+
+Curve Loop(2) = {1:14};
+
+Plane Surface(2) = {2};
+
+Physical Surface('fluid') = {-1};
+//Physical Surface('wall_insert') = {-2, -4};
+//Physical Surface('wall_surround') = {-3, -5};
+//Physical Surface('wall_insert_comb') = {-4};
+//Physical Surface('wall_surround_comb') = {-5};
+
+Physical Curve("inflow") = {12}; // inlet
+Physical Curve("outflow") = {7}; // outlet
+Physical Curve("flow") = {12, 7}; // all inflow/outflow
+Physical Curve('isothermal_wall') = {
+    1, // isolator bottom
+    2, // cavity front
+    3, // cavity bottom
+    4, // cavity slant
+    5, // combustor flat
+    6, // combustor slant
+    8, // combustor/isolator top
+    9, // diverging nozzle top
+    10, // converging nozzle curve top
+    11, // converging nozzle slant top
+    13, // converging nozzle slant bottom
+    14 // converging nozzle curve bottom
+};
+
+// Create distance field from surfaces for wall meshing, excludes cavity, injector
+Field[1] = Distance;
+Field[1].CurvesList = {
+    1, // isolator bottom
+    5, // combustor flat
+    6, // combustor slant
+    8, // combustor/isolator top
+    9, // diverging nozzle top
+    10, // converging nozzle curve top
+    11, // converging nozzle slant top
+    13, // converging nozzle slant bottom
+    14 // converging nozzle curve bottom
+};
+Field[1].Sampling = 1000;
+////
+//Create threshold field that varrries element size near boundaries
+Field[2] = Threshold;
+Field[2].InField = 1;
+Field[2].SizeMin = isosize / boundratio;
+Field[2].SizeMax = isosize;
+Field[2].DistMin = 0.02;
+Field[2].DistMax = 20;
+Field[2].StopAtDistMax = 1;
+
+// Create distance field from curves, cavity only
+Field[11] = Distance;
+Field[11].CurvesList = {
+    2, // cavity front
+    3, // cavity bottom
+    4, // cavity slant
+};
+Field[11].Sampling = 1000;
+
+//Create threshold field that varies element size near boundaries
+Field[12] = Threshold;
+Field[12].InField = 11;
+Field[12].SizeMin = cavitysize / boundratiocavity;
+Field[12].SizeMax = cavitysize;
+Field[12].DistMin = 0.02;
+Field[12].DistMax = 5;
+Field[12].StopAtDistMax = 1;
+
+Mesh.MeshSizeExtendFromBoundary = 0;
+Mesh.MeshSizeFromPoints = 0;
+Mesh.MeshSizeFromCurvature = 0;
+
+
+Mesh.Algorithm = 4;
+Mesh.OptimizeNetgen = 1;
+Mesh.Smoothing = 100;
