@@ -757,7 +757,7 @@ def main(actx_class,
 
     # use_av=1 specific parameters
     # flow stagnation temperature
-    static_temp = 2076.43
+    static_temp = 273  # 2076.43
     # steepness of the smoothed function
     theta_sc = 100
     # cutoff, smoothness below this value is ignored
