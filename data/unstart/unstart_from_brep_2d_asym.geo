@@ -84,7 +84,7 @@ EndIf
 //inj_l = 20; // length of injector
 
 bigsize = basesize*4;     // the biggest mesh size 
-inletsize = basesize*2;   // background mesh size upstream of the nozzle
+inletsize = basesize/2;   // background mesh size upstream of the nozzle
 isosize = basesize/iso_factor;       // background mesh size in the isolator
 nozzlesize = basesize/nozzle_factor;       // background mesh size in the nozzle
 cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
