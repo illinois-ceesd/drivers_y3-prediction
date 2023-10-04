@@ -1,14 +1,14 @@
 ###############
 # Time Step Settings
 ##############
-nrestart: 10
+nrestart: 100
 nhealth: 1
 nstatus: 1
 #constant_cfl: 1
 #constant_cfl: False
 #current_cfl: 0.2
 current_dt: 1e-8
-t_final: 1e-7
+t_final: 5e-8
 
 ##############
 # Viz Settings
@@ -45,6 +45,9 @@ inlet_sponge_x0: 0.030
 inlet_sponge_thickness: 0.015
 outlet_sponge_x0: 0.800
 outlet_sponge_thickness: 0.015
+
+vel_sigma: 250
+temp_sigma: 300
 
 use_av: 2 # artificial viscosity
 use_outflow_boundary: "prescribed"

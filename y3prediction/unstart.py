@@ -265,7 +265,7 @@ class InitACTII:
         # the temperature smoothed
         xc_left = zeros + self._x_cav_upstream
         xc_right = zeros + self._x_cav_downstream
-        yc_top = zeros + self._y_cav_top + self._smooth_offset
+        yc_top = zeros + self._y_cav_top + 1250/self._temp_sigma*self._smooth_offset
         yc_bottom = zeros + self._y_cav_top - 2 * self._smooth_offset
         zc_fore = 0.0175 - 0.001
         zc_aft = -0.0175 + 0.001
@@ -294,7 +294,7 @@ class InitACTII:
         # yc_bottom = zeros - 0.0283245
         # xc_bottom = zeros + 0.70163
         yc_bottom = zeros + self._y_cav_bottom  # 0.0133245
-        xc_bottom = zeros + self._x_cav_ramp  # .48521994 #0.63078
+        xc_bottom = zeros + self._x_cav_ramp  # .48521994 # 0.63078
         wall_theta = np.sqrt(2)/2.
 
         left_edge = actx.np.greater(xpos, xc_left)
@@ -327,9 +327,9 @@ class InitACTII:
 
         # smooth the temperature at the upstream corner
         xc_left = zeros + self._x_cav_upstream
-        xc_right = xc_left + self._smooth_offset  # 0.00075 #0.0015
+        xc_right = xc_left + 1200/self._temp_sigma*self._smooth_offset
         yc_bottom = zeros + self._y_cav_top
-        yc_top = yc_bottom + self._smooth_offset  # 0.00075 #0.0015
+        yc_top = yc_bottom + 1200/self._temp_sigma*self._smooth_offset
         zc_aft = zeros - 0.0175 + 0.001
         zc_fore = zeros + 0.0175 - 0.001
 
@@ -364,9 +364,9 @@ class InitACTII:
 
         # smooth the temperature at the downstream corner
         xc_right = zeros + self._x_cav_downstream
-        xc_left = xc_right - self._smooth_offset  # 0.0015
+        xc_left = xc_right - 1200/self._temp_sigma*self._smooth_offset  # 0.0015
         yc_bottom = zeros + self._y_cav_top
-        yc_top = yc_bottom + self._smooth_offset  # 0.0015
+        yc_top = yc_bottom + 1200/self._temp_sigma*self._smooth_offset  # 0.0015
         zc_aft = zeros - 0.0175 + 0.001
         zc_fore = zeros + 0.0175 - 0.001
 
