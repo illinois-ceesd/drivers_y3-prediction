@@ -30,5 +30,9 @@ integrator: euler
 #integrator: lsrk54 
 #health_pres_min: 2828
 #health_pres_max: 274259
-use_inflow_boundary: False
-use_outflow_boundary: False
+use_outflow_boundary: "prescribed"
+use_inflow_boundary: "prescribed"
+use_flow_boundary: "none"
+use_wall_boundary: "isothermal_noslip"
+use_interface_boundary: "none"
+use_injection_boundary: "isothermal_noslip"
