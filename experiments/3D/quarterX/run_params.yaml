@@ -3,7 +3,7 @@
 ##############
 mesh_filename: data/actii_3d.msh
 use_1d_part: True
-advance_time: False
+advance_time: True
 nviz: 1
 nrestart: 5000
 nhealth: 1
@@ -70,5 +70,11 @@ temp_sigma: 750
 vel_sigma_inj: 5000
 temp_sigma_inj: 5000
 sponge_sigma: 10
-sponge_x0: 0.89
-sponge_thickness: 0.04
+inj_sponge_x0: 0.64378
+
+use_outflow_boundary: "prescribed"
+use_inflow_boundary: "prescribed"
+use_flow_boundary: "none"
+use_wall_boundary: "isothermal_noslip"
+use_interface_boundary: "none"
+use_injection_boundary: "prescribed"
