@@ -79,8 +79,14 @@ if __name__ == "__main__":
         description="Y3 paraview visualization driver")
     parser.add_argument("-d", "--dump_index", type=int, dest="dump_index",
                         nargs="?", action="store", help="simulation viz dump index")
-    parser.add_argument("-p", "--viz_path", type=ascii, dest="viz_path",
-                        nargs="?", action="store", help="full path to viz data")
+    parser.add_argument("-p", "--prefix", type=int, dest="prefix",
+                        nargs="?", action="store", help="prefix for image file name")
+    parser.add_argument("-f", "--fluid_viz_file", type=ascii, dest="fluid_viz_file",
+                        nargs="?", action="store",
+                        help="full path to fluid viz file")
+    parser.add_argument("-w", "--wall_viz_file", type=ascii, dest="wall_viz_file",
+                        nargs="?", action="store",
+                        help="full path to wall viz file")
     parser.add_argument("-i", "--input_file", type=ascii, dest="input_file",
                         nargs="?", action="store", help="simulation config file")
 
@@ -91,9 +97,17 @@ if __name__ == "__main__":
         input_file = args.input_file.replace("'", "")
         print(f"Using user input from file: {input_file}")
 
-    viz_path = "viz_data"
-    if args.viz_path:
-        viz_path = args.viz_path.replace("'", "")
+    fluid_viz_file = ""
+    if args.fluid_viz_file:
+        fluid_viz_file = args.fluid_viz_file.replace("'", "")
+
+    wall_viz_file = ""
+    if args.fluid_viz_file:
+        wall_viz_file = args.wall_viz_file.replace("'", "")
+
+    prefix = "paraview"
+    if args.prefix:
+        prefix = args.prefix.replace("'", "")
 
     dump_index = 0
     if args.dump_index:
@@ -101,5 +115,6 @@ if __name__ == "__main__":
 
     print(f"Running {sys.argv[0]}\n")
 
-    main(user_input_file=input_file, viz_path=viz_path,
-         dump_index=dump_index)
+    main(user_input_file=input_file, fluid_viz_file=fluid_viz_file,
+         wall_viz_file=wall_viz_file,
+         prefix=prefix, dump_index=dump_index)
