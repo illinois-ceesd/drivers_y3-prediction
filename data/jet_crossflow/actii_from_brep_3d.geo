@@ -146,6 +146,17 @@ Field[4002].DistMin = 0.02;
 Field[4002].DistMax = 2.0;
 Field[4002].StopAtDistMax = 1;
 
+// a smaller region right at the corner
+blratiocorner = boundratioinjector*2;
+//blratiocorner = boundratioinjector;
+Field[4003] = Threshold;
+Field[4003].InField = 4001;
+Field[4003].SizeMin = injectorsize/blratiocorner;
+Field[4003].SizeMax = injectorsize/blratiocorner*(2.-1./blratiocorner);
+Field[4003].DistMin = 0.02;
+Field[4003].DistMax = 1.0;
+Field[4003].StopAtDistMax = 1;
+
 //  background mesh size in the isolator (downstream of the nozzle)
 Field[3] = Box;
 Field[3].XMin = 0.2;
@@ -196,7 +207,7 @@ Field[220].XCenter =  535;
 Field[220].YCenter = -9;
 Field[220].ZCenter = 0.;
 Field[220].Radius = 5;
-Field[220].VIn = isosize/blratio/4.;
+Field[220].VIn = isosize/blratio/3.;
 //Field[218].VIn = injectorsize + 0.5*(isosize/blratio - injectorsize);
 Field[220].VOut = bigsize;
 
@@ -222,7 +233,7 @@ Field[119].VOut = bigsize;
 Field[100] = Min;
 Field[100].FieldsList = {
 2 ,3002, 
-4002, 
+4002, 4003,
 14, 3, 217, 218, 219, 220, 119
     };
 Background Field = 100;
