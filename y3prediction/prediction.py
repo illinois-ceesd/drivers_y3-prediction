@@ -3153,7 +3153,8 @@ def main(actx_class,
         dv = fluid_state.dv
 
         status_msg = (f"----   dt {dt:1.3e},"
-                      f" cfl_fluid {cfl_fluid:1.8f}")
+                      f" cfl_fluid_inv {cfl_fluid[0]:1.8f},"
+                      f" cfl_fluid_visc {cfl_fluid[1]:1.8f}")
 
         pmin = vol_min(dd_vol_fluid, dv.pressure)
         pmax = vol_max(dd_vol_fluid, dv.pressure)
@@ -3362,8 +3363,15 @@ def main(actx_class,
         # basic viz quantities, things here are difficult (or impossible) to compute
         # in post-processing
         fluid_viz_fields = [("cv", cv),
-                            ("dv", dv),
-                            ("dt" if constant_cfl else "cfl", ts_field_fluid)]
+                            ("dv", dv)]
+        if constant_cfl:
+            fluid_viz_ext = [("dt_inv", ts_field_fluid[0]),
+                             ("dt_visc", ts_field_fluid[1])]
+        else:
+            fluid_viz_ext = [("cfl_inv", ts_field_fluid[0]),
+                             ("cfl_visc", ts_field_fluid[1])]
+
+        fluid_viz_fields.extend(fluid_viz_ext)
 
         if use_wall:
             wall_kappa = wdv.thermal_conductivity
@@ -3718,24 +3726,29 @@ def main(actx_class,
 
         return health_error
 
+    def my_get_inviscid_timestep(dcoll, fluid_state):
+
+        return (char_length_fluid/fluid_state.wavespeed)
+
     def my_get_viscous_timestep(dcoll, fluid_state):
 
         nu = 0
         d_alpha_max = 0
+        cv = fluid_state.cv
+        dv = fluid_state.dv
 
         if fluid_state.is_viscous:
             from mirgecom.viscous import get_local_max_species_diffusivity
             nu = fluid_state.viscosity/fluid_state.mass_density
+            kappa = (fluid_state.thermal_conductivity/cv.mass /
+                     eos.heat_capacity_cp(cv, dv.temperature))
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
                     fluid_state.species_diffusivity
                 )
 
-        return (
-            char_length_fluid / (fluid_state.wavespeed
-            + ((nu + d_alpha_max) / char_length_fluid))
-        )
+        return (char_length_fluid**2 / (nu + kappa + d_alpha_max))
 
     if use_wall:
         def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
@@ -3791,10 +3804,17 @@ def main(actx_class,
                     dcoll, fluid_dd, ts_field, initial=np.inf))[()]
         else:
             from grudge.op import nodal_max
-            ts_field = mydt/my_get_viscous_timestep(
+            ts_field_inv = mydt/my_get_inviscid_timestep(
                 dcoll=dcoll, fluid_state=fluid_state)
-            cfl = fluid_state.array_context.to_numpy(nodal_max(
-                    dcoll, fluid_dd, ts_field, initial=0.))[()]
+            ts_field_visc = mydt/my_get_viscous_timestep(
+                dcoll=dcoll, fluid_state=fluid_state)
+            cfl_inv = fluid_state.array_context.to_numpy(nodal_max(
+                dcoll, fluid_dd, ts_field_inv, initial=0.))[()]
+            cfl_visc = fluid_state.array_context.to_numpy(nodal_max(
+                dcoll, fluid_dd, ts_field_visc, initial=0.))[()]
+
+            ts_field = make_obj_array([ts_field_inv, ts_field_visc])
+            cfl = make_obj_array([cfl_inv, cfl_visc])
 
         return ts_field, cfl, mydt
 
