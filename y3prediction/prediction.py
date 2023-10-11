@@ -2976,7 +2976,7 @@ def main(actx_class,
                            amplitude=sponge_amp,
                            xmax=0.66, ymax=-0.01)
 
-        if use_upstream_injection:
+        #if use_upstream_injection:
             sponge_init_upstream_injection =\
                 InitSponge(x0=upstream_inj_sponge_y0,
                            thickness=inj_sponge_thickness,
@@ -2990,7 +2990,7 @@ def main(actx_class,
             if use_injection:
                 sponge_field = sponge_init_injection(
                     sponge_field=sponge_field, x_vec=x_vec)
-            if use_upstream_injection:
+            #if use_upstream_injection:
                 sponge_field = sponge_init_upstream_injection(
                     sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
