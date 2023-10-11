@@ -3372,12 +3372,8 @@ def main(actx_class,
         # in post-processing
         fluid_viz_fields = [("cv", cv),
                             ("dv", dv)]
-        if constant_cfl:
-            fluid_viz_ext = [("dt_inv", ts_field_fluid[0]),
-                             ("dt_visc", ts_field_fluid[1])]
-        else:
-            fluid_viz_ext = [("cfl_inv", ts_field_fluid[0]),
-                             ("cfl_visc", ts_field_fluid[1])]
+        fluid_viz_ext = [("cfl_inv", ts_field_fluid[0]),
+                         ("cfl_visc", ts_field_fluid[1])]
 
         fluid_viz_fields.extend(fluid_viz_ext)
 
@@ -3841,6 +3837,7 @@ def main(actx_class,
         cfl_visc = current_cfl_visc
         if constant_cfl:
             from grudge.op import nodal_min
+            # maximum timestep at each point
             ts_field_inv = cfl_inv*my_get_inviscid_timestep(fluid_state)
             ts_field_visc = cfl_visc*my_get_viscous_timestep(fluid_state)
             mydt_inv = actx.to_numpy(nodal_min(
@@ -3850,7 +3847,8 @@ def main(actx_class,
 
         else:
             from grudge.op import nodal_max
-            ts_field_inv = cfl_inv*my_get_inviscid_timestep(fluid_state)
+            # cfl at each point
+            ts_field_inv = mydt_inv*my_get_inviscid_timestep(fluid_state)
             ts_field_visc = mydt_visc/my_get_viscous_timestep(fluid_state)
             cfl_inv = fluid_state.array_context.to_numpy(nodal_max(
                 dcoll, dd_vol_fluid, ts_field_inv, initial=0.))[()]
@@ -4009,11 +4007,12 @@ def main(actx_class,
                 # update our I/O quantities
                 cfl_fluid[0] = dt*cfl_fluid[0]/dt_fluid[0]
                 cfl_fluid[1] = dt*cfl_fluid[1]/dt_fluid[1]
-                ts_field_fluid[0] = dt*ts_field_fluid[0]/dt_fluid[0]
-                ts_field_fluid[1] = dt*ts_field_fluid[1]/dt_fluid[1]
+                # turn ts_field back into cfl
+                ts_field_fluid[0] = current_cfl*dt/ts_field_fluid[0]
+                ts_field_fluid[1] = current_cfl_visc*dt/ts_field_fluid[1]
                 if use_wall:
                     cfl_wall = dt*cfl_wall/dt_wall
-                    ts_field_wall = dt*ts_field_wall/dt_wall
+                    ts_field_wall = current_cfl_visc*dt/ts_field_wall
 
             if viz_interval_type == 0:
                 do_viz = check_step(step=step, interval=nviz)
