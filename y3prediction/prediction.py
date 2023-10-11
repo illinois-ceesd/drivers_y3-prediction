@@ -3553,14 +3553,12 @@ def main(actx_class,
 
         if viz_interval_type > 0:
             nviz = num_viz_dumps + first_viz_number
+        else:
+            nviz = step
 
         if rank == 0:
             print(f"******** Writing Restart File at step {step}, "
                   f"sim time {t:1.6e} s ********")
-
-            print(f"last_viz_interval {nviz}")
-            bbb = first_viz_time + t_viz_interval*num_viz_dumps
-            print(f"last_viz_time {bbb}")
 
         restart_fname = restart_pattern.format(cname=casename, step=step, rank=rank)
 

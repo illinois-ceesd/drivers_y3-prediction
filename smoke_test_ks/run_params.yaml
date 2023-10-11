@@ -6,16 +6,17 @@ nviz: 5
 nrestart: 10
 nhealth: 1
 nstatus: 1
-viz_level: 2
-viz_interval_type: 0
-#viz_interval_type: 1
+viz_level: 1
+#viz_interval_type: 0
+viz_interval_type: 1
 #viz_interval_type: 2
-t_viz_interval: 1.e-9
-constant_cfl: 0
-#constant_cfl: 1
-current_cfl: 0.05
+t_viz_interval: 5.e-8
+#constant_cfl: 0
+constant_cfl: 1
+current_cfl: 0.25
+current_cfl_visc: 0.1
 current_dt: 1.0e-9
-t_final: 2.e-8
+t_final: 3.e-7
 
 ##############
 # wall model
@@ -36,9 +37,6 @@ smoothness_alpha: 1.e-12
 smoothness_tau: 1.e-12
 use_av: 2
 #use_av: 0
-alpha_sc: 0.01
-s0_sc: -5.0
-kappa_sc: 0.5
 av2_mu0: 0.1
 av2_beta0: 6.0
 av2_kappa0: 1.0
