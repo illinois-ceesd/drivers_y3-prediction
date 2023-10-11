@@ -724,6 +724,18 @@ def main(actx_class,
     spark_init_loc_x = configurate("ignition_init_loc_x", input_data, 0.677)
     spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
 
+    # initialize the momentum impulse
+    impulse_init_loc_z = 0.035 / 2.
+    use_impulse = configurate("use_impulse", input_data, False)
+    impulse_init_time = configurate("impulse_init_time", input_data, 999999999.)
+    impulse_strength = configurate("impulse_strength", input_data, 2.e7)
+    # impulse_duration = configurate("impulse_duration", input_data, 1.e-8)
+    impulse_diameter = configurate("impulse_diameter", input_data, 0.0025)
+    impulse_init_loc_x = configurate("impulse_init_loc_x", input_data, 0.677)
+    impulse_init_loc_y = configurate("impulse_init_loc_y", input_data, -0.021)
+    impulse_init_time_width = configurate("impulse_init_time_width",
+                                                            input_data, 1.e-5)
+
     # initialization for the sponge
     inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
     inlet_sponge_thickness = configurate("inlet_sponge_thickness", input_data, 0.015)
@@ -896,6 +908,20 @@ def main(actx_class,
         elif use_ignition == 2:
             print("heat source ignition")
         print("#### Ignition control parameters ####\n")
+
+    impulse_center = np.zeros(shape=(dim,))
+    impulse_center[0] = impulse_init_loc_x
+    impulse_center[1] = impulse_init_loc_y
+    if dim == 3:
+        impulse_center[2] = impulse_init_loc_z
+    if rank == 0 and use_impulse > 0:
+        print("\n#### Impulse control parameters ####")
+        print(f"impulse center ({impulse_center[0]},{impulse_center[1]})")
+        print(f"impulse FWHM {impulse_diameter}")
+        print(f"impulse strength {impulse_strength}")
+        print(f"impulse time {impulse_init_time}")
+        # print(f"ignition duration {impulse_duration}")
+        print("#### Impulse control parameters ####\n")
 
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
@@ -2957,6 +2983,28 @@ def main(actx_class,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
+    ####################
+    # Momentum Sources #
+    ####################
+
+    # if you divide by 2.355, 50% of the spark is within this diameter
+    # if you divide by 6, 99% of the energy is deposited in this time
+    # spark_diameter /= 2.355
+    impulse_diameter /= 6.0697
+    #impulse_duration /= 6.0697
+
+    # tanh application in time from 0 -> 1
+    def impulse_time_func(t, width=impulse_init_time_width):
+        tanhterm = (actx.np.tanh((t-impulse_init_time)/width)+1) / 2
+        return tanhterm
+
+    if use_impulse:
+        from y3prediction.utils import MomentumSource
+        impulse_source = MomentumSource(dim=dim, center=impulse_center,
+                                     amplitude=impulse_strength,
+                                     amplitude_func=impulse_time_func,
+                                     width=impulse_diameter)
+
     if rank == 0:
         logger.info("Sponges processsing")
     ##################
@@ -4164,6 +4212,11 @@ def main(actx_class,
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
                 ignition_source(x_vec=fluid_nodes, state=fluid_state,
+                                eos=gas_model.eos, time=t)/current_dt
+
+        if use_impulse:
+            fluid_rhs = fluid_rhs + \
+                impulse_source(x_vec=fluid_nodes, state=fluid_state,
                                 eos=gas_model.eos, time=t)/current_dt
 
         av_smu_rhs = actx.np.zeros_like(cv.mass)

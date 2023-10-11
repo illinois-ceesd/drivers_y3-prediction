@@ -370,3 +370,97 @@ class InitSponge:
                                      sponge_field)
 
         return sponge_field
+
+
+class MomentumSource:
+    r"""Add x - momentum to the flow.
+
+    Momentum is added to the system as a gaussian of the form:
+
+    .. math::
+
+        e &= e + e_{a}\exp^{(1-r^{2})}\\
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+
+    def __init__(self, *, dim, center=None, width=1.0,
+                 amplitude=0., amplitude_func=None):
+        r"""Initialize the momentum parameters.
+
+        Parameters
+        ----------
+        center: numpy.ndarray
+            center of source
+        amplitude: float
+            source strength modifier
+        amplitude_fun: function
+            variation of amplitude with time
+        """
+        if center is None:
+            center = np.zeros(shape=(dim,))
+        self._center = center
+        self._dim = dim
+        self._amplitude = amplitude
+        self._width = width
+        self._amplitude_func = amplitude_func
+
+    def __call__(self, x_vec, state, eos, time, **kwargs):
+        """
+        Create the momentum source at time *t* and location *x_vec*.
+
+        the source at time *t* is created by evaluating the gaussian
+        with time-dependent amplitude at *t*.
+
+        Parameters
+        ----------
+        cv: :class:`mirgecom.fluid.ConservedVars`
+            Fluid conserved quantities
+        time: float
+            Current time at which the solution is desired
+        x_vec: numpy.ndarray
+            Nodal coordinates
+        """
+        from pytools.obj_array import make_obj_array
+        from mirgecom.fluid import make_conserved
+        t = time
+        if self._amplitude_func is not None:
+            amplitude = self._amplitude*self._amplitude_func(t)
+        else:
+            amplitude = self._amplitude
+
+        loc = self._center
+
+        # coordinates relative to lump center
+        rel_center = make_obj_array(
+            [x_vec[i] - loc[i] for i in range(self._dim)]
+        )
+        actx = x_vec[0].array_context
+        r = actx.np.sqrt(np.dot(rel_center, rel_center))
+        expterm = amplitude * actx.np.exp(-(r**2)/(2*self._width*self._width))
+        #print(f'exp term: {actx.np.max(expterm)}')
+
+        #v_min = 10
+
+        velocity_source = np.zeros(self._dim, dtype=object)
+
+        #velocity_source[0] = actx.np.where(
+        #    actx.np.greater(state.velocity[0], v_min),
+        #    velocity_source[0] + expterm,
+        #    velocity_source[0])
+
+        velocity_source[0] = velocity_source[0] + expterm
+
+        momentum_source = velocity_source * state.mass_density
+
+        energy_source = (0.5 * np.dot(velocity_source, velocity_source)
+                                        * state.mass_density)
+
+        mass = 0 * state.mass_density
+        species_mass = 0 * state.species_mass_fractions
+
+        return make_conserved(dim=self._dim, mass=mass,
+                              energy=energy_source,
+                              momentum=momentum_source,
+                              species_mass=species_mass)
