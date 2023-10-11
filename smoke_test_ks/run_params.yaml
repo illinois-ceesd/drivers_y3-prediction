@@ -83,9 +83,13 @@ vel_sigma_inj: 5000
 temp_sigma_inj: 5000
 use_injection: True
 use_upstream_injection: True
+#total_pres_inj_upstream: 10000
+#total_temp_inj_upstream: 500
+#total_pres_inj: 20000
+#total_temp_inj: 350
 total_pres_inj_upstream: 10000
-total_temp_inj_upstream: 500
-total_pres_inj: 20000
+total_temp_inj_upstream: 300
+total_pres_inj: 15000
 total_temp_inj: 350
 
 #####################
