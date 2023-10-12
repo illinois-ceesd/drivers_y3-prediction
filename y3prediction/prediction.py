@@ -1578,11 +1578,23 @@ def main(actx_class,
 
     if restart_filename:  # read the grid from restart data
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
-
-        from mirgecom.restart import read_restart_data
-
+        print(f"{rank=}, {restart_filename=}")
+        from mirgecom.restart import (
+            read_restart_data,
+            _get_item_structure_and_size
+        )
+        from pprint import pprint
+        from meshmode.dof_array import array_context_for_pickling
         with rst_read_timer.get_sub_timer():
             restart_data = read_restart_data(actx, restart_filename)
+
+        for rnk in range(nparts):
+            if rnk == rank:
+                print(f"{rank=} Restart data structure:")
+                with array_context_for_pickling(actx):
+                    rst_structure = _get_item_structure_and_size(restart_data)
+                    pprint(rst_structure)
+            comm.Barrier()
 
         current_step = restart_data["step"]
         first_step = current_step
@@ -1594,7 +1606,7 @@ def main(actx_class,
         volume_to_local_mesh_data = restart_data["volume_to_local_mesh_data"]
         global_nelements = restart_data["global_nelements"]
         restart_order = int(restart_data["order"])
-
+        print(f"{rank=}, {global_nelements=}")
         restart_nspecies = restart_data["nspecies"]
         #assert restart_data["nparts"] == nparts
 
@@ -1741,6 +1753,8 @@ def main(actx_class,
     if use_wall:
         local_nelements_wall = volume_to_local_mesh_data["wall"][0].nelements
     local_nelements = local_nelements_fluid + local_nelements_wall
+    print(f"{rank=},{local_nelements=},{local_nelements_fluid=}"
+          f",{local_nelements_wall=}")
     sim_info["nel_fluid"] = local_nelements_fluid
     sim_info["nel_wall"] = local_nelements_wall
     sim_info["nel_global"] = global_nelements
@@ -3535,7 +3549,7 @@ def main(actx_class,
                 "order": order,
                 "last_viz_interval": last_viz_interval,
                 "global_nelements": global_nelements,
-                "num_parts": nparts
+                "num_parts3": nparts
             }
 
             if use_wall:
@@ -4313,7 +4327,6 @@ def main(actx_class,
     current_t_wall = (
         t_wall_start + (current_step - first_step)*current_dt*wall_time_scale
     )
-
 
     if use_wall:
         current_wv = current_stepper_state.wv
