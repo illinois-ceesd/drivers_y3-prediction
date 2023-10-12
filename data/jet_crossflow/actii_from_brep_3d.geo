@@ -186,8 +186,8 @@ Field[218].XCenter =  590;
 Field[218].YCenter = -9;
 Field[218].ZCenter = 0.;
 Field[218].Radius = 6;
-Field[218].VIn = isosize/blratio/2.;
-//Field[218].VIn = injectorsize + 0.5*(isosize/blratio - injectorsize);
+Field[218].VIn = isosize/boundratio/2.;
+//Field[218].VIn = injectorsize + 0.5*(isosize/boundratio - injectorsize);
 Field[218].VOut = bigsize;
 
 // background mesh size between upstream injection and cavity
@@ -197,7 +197,7 @@ Field[219].XCenter =  590;
 Field[219].YCenter = -9;
 Field[219].ZCenter = 0.;
 Field[219].Radius = 9;
-Field[219].VIn = isosize/blratio;
+Field[219].VIn = isosize/boundratio;
 Field[219].VOut = bigsize;
 
 // background mesh size between upstream injection and cavity
@@ -207,8 +207,8 @@ Field[220].XCenter =  535;
 Field[220].YCenter = -9;
 Field[220].ZCenter = 0.;
 Field[220].Radius = 5;
-Field[220].VIn = isosize/blratio/3.;
-//Field[218].VIn = injectorsize + 0.5*(isosize/blratio - injectorsize);
+Field[220].VIn = isosize/boundratio/3.;
+//Field[218].VIn = injectorsize + 0.5*(isosize/boundratio - injectorsize);
 Field[220].VOut = bigsize;
 
 // background mesh size in the isolator-injector/cavity/combustor region
