@@ -13,7 +13,7 @@ t_final: 3e-2
 ##############
 # Viz Settings
 #############
-nviz: 1000 
+nviz: 1 
 viz_level: 2
 viz_interval_type: 0
 #############
@@ -43,9 +43,9 @@ use_injection: False
 use_sponge: True
 inlet_sponge_x0: 0.030
 inlet_sponge_thickness: 0.015
-outlet_sponge_x0: 0.800
-outlet_sponge_thickness: 0.015
-
+outlet_sponge_x0: 0.795
+outlet_sponge_thickness: 0.02
+sponge_sigma: 1000
 vel_sigma: 250
 temp_sigma: 300
 
@@ -58,7 +58,7 @@ use_injection_boundary: "none"
 use_interface_boundary: "none"
 total_pres_inflow: 551581  # Pa
 total_temp_inflow: 273  # K
-outflow_pressure: 10000   # 98595.03  # Pa
+outflow_pressure: 4.25e+3  # 98595.03  # Pa
 
 ##########
 # Mesh
@@ -68,7 +68,7 @@ mesh_filename: "data/unstart_2d_asym.msh"
 ##################
 # Impulse Source
 ##################
-use_impulse: True 
+use_impulse: False 
 impulse_init_time: 0.4e-2 
 impulse_strength: -2.15e7 
 impulse_diameter: 0.015
