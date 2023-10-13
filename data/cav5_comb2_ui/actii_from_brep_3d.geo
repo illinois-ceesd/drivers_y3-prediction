@@ -128,7 +128,8 @@ Physical Volume('wall_surround') = {2};
 
 Physical Surface("inflow") = {36}; // inlet
 Physical Surface("outflow") = {29}; // outlet
-Physical Surface("injection") = {38, 19}; // injection
+Physical Surface("injection") = {38}; // injection
+Physical Surface("upstream_injection") = {19}; // injection
 Physical Surface("flow") = {36, 29, 38, 19}; // injection
 Physical Surface('isothermal_wall') = {
     22, // fore wall
