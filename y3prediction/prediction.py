@@ -4217,7 +4217,7 @@ def main(actx_class,
         if use_impulse:
             fluid_rhs = fluid_rhs + \
                 impulse_source(x_vec=fluid_nodes, state=fluid_state,
-                                eos=gas_model.eos, time=t) * current_dt
+                                eos=gas_model.eos, time=t)  # * current_dt
 
         av_smu_rhs = actx.np.zeros_like(cv.mass)
         av_sbeta_rhs = actx.np.zeros_like(cv.mass)

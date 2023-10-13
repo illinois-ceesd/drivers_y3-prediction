@@ -454,8 +454,9 @@ class MomentumSource:
 
         momentum_source = velocity_source * state.mass_density
 
-        energy_source = (0.5 * np.dot(velocity_source, velocity_source)
-                                        * state.mass_density)
+        #energy_source = (-0.5 * np.dot(velocity_source, velocity_source)
+        #                                * state.mass_density)
+        energy_source = 0 * state.energy_density
 
         mass = 0 * state.mass_density
         species_mass = 0 * state.species_mass_fractions
