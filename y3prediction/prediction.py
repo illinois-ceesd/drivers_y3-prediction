@@ -25,6 +25,8 @@ THE SOFTWARE.
 """
 import logging
 import sys
+import pickle
+import os
 import numpy as np
 import numpy.linalg as la  # noqa
 import pyopencl.array as cla  # noqa
@@ -429,7 +431,6 @@ def main(actx_class,
     logname = log_path + "/" + casename + ".sqlite"
 
     if rank == 0:
-        import os
         log_dir = os.path.dirname(logname)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -516,6 +517,8 @@ def main(actx_class,
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
+    mesh_partition_prefix = configurate("mesh_partition_prefix",
+                                        input_data, "actii_2d")
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, True)
 
@@ -1685,15 +1688,29 @@ def main(actx_class,
                         "wall_interface")
                 return mesh, tag_to_elements, volume_to_tags
 
-        def my_partitioner(mesh, tag_to_elements, num_ranks):
-            from mirgecom.simutil import geometric_mesh_partitioner
-            return geometric_mesh_partitioner(
-                mesh, num_ranks, auto_balance=True, debug=False)
+            # use a pre-partitioned mesh
+            if os.path.isdir(mesh_filename):
+                pkl_filename = (mesh_filename + "/" + mesh_partition_prefix
+                                + f"_mesh_np{nparts}_rank{rank}.pkl")
+                if rank == 0:
+                    print("Reading mesh from pkl files in directory"
+                          f" {mesh_filename}.")
+                if not os.path.exists(pkl_filename):
+                    raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
+                                       " not found.")
+                with open(pkl_filename, "rb") as pkl_file:
+                    global_nelements, volume_to_local_mesh_data = \
+                        pickle.load(pkl_file)
 
-        part_func = my_partitioner if use_1d_part else None
+            else:
+                def my_partitioner(mesh, tag_to_elements, num_ranks):
+                    from mirgecom.simutil import geometric_mesh_partitioner
+                    return geometric_mesh_partitioner(
+                        mesh, num_ranks, auto_balance=True, debug=False)
 
-        volume_to_local_mesh_data, global_nelements = distribute_mesh(
-            comm, get_mesh_data, partition_generator_func=part_func)
+                part_func = my_partitioner if use_1d_part else None
+                volume_to_local_mesh_data, global_nelements = distribute_mesh(
+                    comm, get_mesh_data, partition_generator_func=part_func)
 
     local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
     if use_wall:
