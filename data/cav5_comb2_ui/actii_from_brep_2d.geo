@@ -128,7 +128,8 @@ Physical Surface('wall_surround') = {-3};
 
 Physical Curve("inflow") = {33}; // inlet
 Physical Curve("outflow") = {28}; // outlet
-Physical Curve("injection") = {19, 39}; // injection
+Physical Curve("injection") = {19}; // injection
+Physical Curve("upstream_injection") = {39}; // injection
 Physical Curve("flow") = {33, 28, 19, 39}; // all inflow/outflow
 Physical Curve("isothermal_wall") = {
 26, 27, 29:32, 34:38, 22:20, 13:18

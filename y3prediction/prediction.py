@@ -725,6 +725,7 @@ def main(actx_class,
     spark_diameter = configurate("ignition_diameter", input_data, 0.0025)
     spark_init_loc_x = configurate("ignition_init_loc_x", input_data, 0.677)
     spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
+    spark_init_loc_z = configurate("ignition_init_loc_z", input_data, 0.0)
 
     # initialization for the sponge
     inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
@@ -1732,10 +1733,12 @@ def main(actx_class,
             raise RuntimeError(error_message)
 
         target_nspecies = target_data["nspecies"]
+        """
         if target_nspecies != nspecies:
             error_message = \
                 "Incorrect number of species in target: {}".format(target_nspecies)
             raise RuntimeError(error_message)
+        """
 
         target_nelements = target_data["global_nelements"]
         if target_nelements != global_nelements:
@@ -2843,6 +2846,23 @@ def main(actx_class,
 
         bndry_config["outflow"] = "prescribed_outflow"
         bndry_mapping["prescribed_outflow"] = prescribed_outflow_boundary
+
+    if bndry_config["upstream_injection"] == "prescribed":
+        upstream_injection_ref_state = \
+            get_target_state_on_boundary("upstream_injection")
+
+        upstream_injection_ref_state = force_evaluation(
+            actx, upstream_injection_ref_state)
+
+        def _target_upstream_injection_state_func(**kwargs):
+            return upstream_injection_ref_state
+
+        prescribed_upstream_injection_boundary = PrescribedFluidBoundary(
+            boundary_state_func=_target_upstream_injection_state_func)
+
+        bndry_config["upstream_injection"] = "prescribed_upstream_injection"
+        bndry_mapping["prescribed_upstream_injection"] = \
+            prescribed_upstream_injection_boundary
 
     if bndry_config["injection"] == "prescribed":
         injection_ref_state = \

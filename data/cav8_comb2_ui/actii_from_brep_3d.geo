@@ -313,8 +313,7 @@ Field[4002].DistMax = 2.0;
 Field[4002].StopAtDistMax = 1;
 
 // a smaller region right at the corner
-blratiocorner = boundratioinjector*2;
-//blratiocorner = boundratioinjector;
+blratiocorner = boundratioinjector;
 Field[4003] = Threshold;
 Field[4003].InField = 4001;
 Field[4003].SizeMin = injectorsize/blratiocorner;
@@ -452,8 +451,8 @@ Field[218].XAxis = 65;
 Field[218].XCenter =  590;
 Field[218].YCenter = -9;
 Field[218].ZCenter = 0.;
-Field[218].Radius = 6;
-Field[218].VIn = isosize/boundratio/2;
+Field[218].Radius = 5;
+Field[218].VIn = isosize/boundratio/1.5;
 Field[218].VOut = bigsize;
 
 // background mesh size between upstream injection and cavity
@@ -473,7 +472,7 @@ Field[220].XCenter =  535;
 Field[220].YCenter = -9;
 Field[220].ZCenter = 0.;
 Field[220].Radius = 5;
-Field[220].VIn = isosize/boundratio/3.;
+Field[220].VIn = isosize/boundratio/2.;
 //Field[218].VIn = injectorsize + 0.5*(isosize/boundratio - injectorsize);
 Field[220].VOut = bigsize;
 
