@@ -388,7 +388,7 @@ class InitACTII:
         #xc_left = zeros + 0.60628 + 0.0010
         #xc_right = zeros + 0.63578 - 0.0015
         xc_left = zeros + 0.60628
-        xc_right = zeros + 0.63578
+        xc_right = zeros + 0.63878
         yc_top = zeros - 0.006
         yc_bottom = zeros - 0.01
         zc_fore = 0.0175 - 0.001
@@ -410,7 +410,7 @@ class InitACTII:
         # smooth the temperature in the cavity region, this helps along the wall
         # initially in pressure/temperature equilibrium with the exterior flow
         xc_left = zeros + 0.60627
-        xc_right = zeros + 0.65088
+        xc_right = zeros + 0.65388
         #xc_left = zeros + 0.65163 - 0.000001
         #xc_right = zeros + 0.742 + 0.000001
         #xc_left = zeros + 0.60628 + 0.0004
@@ -421,7 +421,7 @@ class InitACTII:
             yc_top = zeros - 0.0099
         #yc_bottom = zeros - 0.0283245
         #xc_bottom = zeros + 0.70163
-        yc_bottom = zeros - 0.0133245
+        yc_bottom = zeros - 0.0163245
         xc_bottom = zeros + 0.63078
         wall_theta = np.sqrt(2)/2.
 
@@ -491,7 +491,7 @@ class InitACTII:
                                            smooth_temperature)
 
         # smooth the temperature at the downstream corner
-        xc_right = zeros + 0.63578
+        xc_right = zeros + 0.63878
         xc_left = xc_right - 0.0015
         yc_bottom = zeros - 0.0083245
         yc_top = yc_bottom + 0.0015
@@ -572,12 +572,12 @@ class InitACTII:
         # zero out the velocity in the cavity region, let the flow develop naturally
         #xc_left = zeros + 0.60627
         xc_left = zeros + 0.50
-        xc_right = zeros + 0.65088
+        xc_right = zeros + 0.65388
         yc_top = zeros - 0.0083245
         if self._vel_sigma <= 0:
             yc_top = zeros - 0.0099
         yc_bottom = zeros - 0.0133245
-        xc_bottom = zeros + 0.63078
+        xc_bottom = zeros + 0.63378
 
         left_edge = actx.np.greater(xpos, xc_left)
         right_edge = actx.np.less(xpos, xc_right)
@@ -593,7 +593,7 @@ class InitACTII:
         if self._vel_sigma <= 0:
 
             xc_left = zeros + 0.606 - 0.000001
-            xc_right = zeros + 0.636 + 0.000001
+            xc_right = zeros + 0.639 + 0.000001
             yc_top = zeros
             #yc_bottom = zeros - 0.0083246
             yc_bottom = zeros - 0.0099
@@ -614,7 +614,7 @@ class InitACTII:
                                             velocity[i])
 
             xc_left = zeros + 0.606 - 0.000001
-            xc_right = zeros + 0.636 + 0.000001
+            xc_right = zeros + 0.639 + 0.000001
             yc_top = zeros - 0.0083246
             yc_bottom = zeros - 0.0099
 
@@ -685,6 +685,7 @@ class InitACTII:
 
         temperature = fluid_state.temperature
         pressure = fluid_state.pressure
+        velocity = fluid_state.velocity
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
@@ -692,10 +693,10 @@ class InitACTII:
         # even with the bottom corner
         #inj_left = 0.632
         # even with the top corner
-        inj_left = 0.6337
+        inj_left = 0.6357
         inj_right = 0.651
-        inj_top = -0.0105
-        inj_bottom = -0.01213
+        inj_top = -0.0125
+        inj_bottom = -0.01413
         inj_fore = 1.59e-3
         inj_aft = -1.59e-3
         xc_left = zeros + inj_left
@@ -705,7 +706,7 @@ class InitACTII:
         zc_fore = zeros + inj_fore
         zc_aft = zeros + inj_aft
 
-        yc_center = zeros - 0.01212 + 1.59e-3/2.
+        yc_center = zeros - 0.01412 + 1.59e-3/2.
         zc_center = zeros
         inj_radius = 1.59e-3/2.
 
@@ -780,7 +781,10 @@ class InitACTII:
 
         inj_velocity[0] = -inj_mach*eos.sound_speed(inj_cv, inj_temperature)
 
-        # relax the pressure at the cavity/injector interface
+        # relax the velocity, temperature, and pressure at the injector interface
+        for i in range(self._dim):
+            inj_velocity[i] = velocity[i] + \
+                (inj_velocity[i] - velocity[i])*inj_weight
         inj_pressure = pressure + (inj_pressure - pressure)*inj_weight
         inj_temperature = (temperature +
             (inj_temperature - temperature)*inj_weight)
@@ -876,6 +880,7 @@ class InitACTII:
 
         temperature = fluid_state.temperature
         pressure = fluid_state.pressure
+        velocity = fluid_state.velocity
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
@@ -968,12 +973,13 @@ class InitACTII:
 
         inj_velocity[1] = inj_mach*eos.sound_speed(inj_cv, inj_temperature)
 
-        # relax the pressure at the cavity/injector interface
+        # relax the velocity, temperature, and pressure at the injector interface
+        for i in range(self._dim):
+            inj_velocity[i] = velocity[i] + \
+                (inj_velocity[i] - velocity[i])*inj_weight
         inj_pressure = pressure + (inj_pressure - pressure)*inj_weight
         inj_temperature = (temperature +
             (inj_temperature - temperature)*inj_weight)
-        inj_temperature = (self._temp_wall +
-            (inj_temperature - self._temp_wall)*inj_weight)
 
         # we need to calculate the velocity from a prescribed mass flow rate
         # this will need to take into account the velocity relaxation at the

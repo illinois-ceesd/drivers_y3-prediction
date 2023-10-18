@@ -123,7 +123,6 @@ from y3prediction.wall import (
     WallModel,
 )
 from y3prediction.uiuc_sharp import Thermochemistry
-from y3prediction.actii_y3 import InitACTII
 from y3prediction.shock1d import PlanarDiscontinuityMulti
 
 from dataclasses import dataclass
@@ -660,6 +659,7 @@ def main(actx_class,
 
     # initialization configuration
     init_case = configurate("init_case", input_data, "y3prediction")
+    actii_init_case = configurate("actii_init_case", input_data, "cav5")
 
     # Shock 1D flow properties
     pres_bkrnd = configurate("pres_bkrnd", input_data, 100.)
@@ -1565,6 +1565,11 @@ def main(actx_class,
 
         inj_ymin = -0.0243245
         inj_ymax = -0.0227345
+
+        if actii_init_case == "cav8":
+            from y3prediction.actii_y3_cav8 import InitACTII
+        else:
+            from y3prediction.actii_y3_cav5 import InitACTII
 
         bulk_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
