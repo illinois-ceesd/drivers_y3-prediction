@@ -190,7 +190,8 @@ class PlanarDiscontinuityMulti:
 
 
 def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
-             transfinite=False, use_wall=True):
+             transfinite=False, use_wall=True, use_quads=False,
+             use_gmsh=True):
     """Generate a grid using `gmsh`."""
 
     height = 0.02
@@ -220,48 +221,48 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     top_wall[0] = top_interface[0] + wall_length*np.cos(theta)
     top_wall[1] = top_interface[1] + wall_length*np.sin(theta)
 
-    from meshmode.mesh.io import (
-        generate_gmsh,
-        ScriptSource
-    )
+    if use_gmsh:
+        from meshmode.mesh.io import (
+            generate_gmsh,
+            ScriptSource
+        )
 
-    # for 2D, the line segments/surfaces need to be specified clockwise to
-    # get the correct facing (right-handed) surface normals
-    my_string = (f"""
-        Point(1) = {{ {bottom_inflow[0]},  {bottom_inflow[1]}, 0, {size}}};
-        Point(2) = {{ {bottom_interface[0]}, {bottom_interface[1]}, 0, {size}}};
-        Point(3) = {{ {top_interface[0]}, {top_interface[1]}, 0, {size}}};
-        Point(4) = {{ {top_inflow[0]},  {top_inflow[1]}, 0, {size}}};
-        Point(5) = {{ {bottom_wall[0]},  {bottom_wall[1]}, 0, {size}}};
-        Point(6) = {{ {top_wall[0]},  {top_wall[1]}, 0, {size}}};
-        Line(1) = {{1, 2}};
-        Line(2) = {{2, 3}};
-        Line(3) = {{3, 4}};
-        Line(4) = {{4, 1}};
-        Line(5) = {{3, 6}};
-        Line(6) = {{2, 5}};
-        Line(7) = {{5, 6}};
-        Line Loop(1) = {{-4, -3, -2, -1}};
-        Line Loop(2) = {{2, 5, -7, -6}};
-        Plane Surface(1) = {{1}};
-        Plane Surface(2) = {{2}};
-        Physical Surface('fluid') = {{1}};
-        Physical Surface('wall_insert') = {{2}};
-        Physical Curve('inflow') = {{4}};
-        Physical Curve('outflow') = {{2}};
-        Physical Curve('flow') = {{2, 4}};
-        Physical Curve('isothermal_wall') = {{1,3}};
-        Physical Curve('periodic_y_top') = {{3}};
-        Physical Curve('periodic_y_bottom') = {{1}};
-        Physical Curve('wall_interface') = {{2}};
-        Physical Curve('wall_farfield') = {{5, 6, 7}};
-        Physical Curve('solid_wall_top') = {{5}};
-        Physical Curve('solid_wall_bottom') = {{6}};
-        Physical Curve('solid_wall_end') = {{7}};
-        """)
+        # for 2D, the line segments/surfaces need to be specified clockwise to
+        # get the correct facing (right-handed) surface normals
+        my_string = (f"""
+            Point(1) = {{ {bottom_inflow[0]},  {bottom_inflow[1]}, 0, {size}}};
+            Point(2) = {{ {bottom_interface[0]}, {bottom_interface[1]}, 0, {size}}};
+            Point(3) = {{ {top_interface[0]}, {top_interface[1]}, 0, {size}}};
+            Point(4) = {{ {top_inflow[0]},  {top_inflow[1]}, 0, {size}}};
+            Point(5) = {{ {bottom_wall[0]},  {bottom_wall[1]}, 0, {size}}};
+            Point(6) = {{ {top_wall[0]},  {top_wall[1]}, 0, {size}}};
+            Line(1) = {{1, 2}};
+            Line(2) = {{2, 3}};
+            Line(3) = {{3, 4}};
+            Line(4) = {{4, 1}};
+            Line(5) = {{3, 6}};
+            Line(6) = {{2, 5}};
+            Line(7) = {{5, 6}};
+            Line Loop(1) = {{-4, -3, -2, -1}};
+            Line Loop(2) = {{2, 5, -7, -6}};
+            Plane Surface(1) = {{1}};
+            Plane Surface(2) = {{2}};
+            Physical Surface('fluid') = {{1}};
+            Physical Surface('wall_insert') = {{2}};
+            Physical Curve('inflow') = {{4}};
+            Physical Curve('outflow') = {{2}};
+            Physical Curve('flow') = {{2, 4}};
+            Physical Curve('isothermal_wall') = {{1,3}};
+            Physical Curve('periodic_y_top') = {{3}};
+            Physical Curve('periodic_y_bottom') = {{1}};
+            Physical Curve('wall_interface') = {{2}};
+            Physical Curve('wall_farfield') = {{5, 6, 7}};
+            Physical Curve('solid_wall_top') = {{5}};
+            Physical Curve('solid_wall_bottom') = {{6}};
+            Physical Curve('solid_wall_end') = {{7}};
+            """)
 
-    if transfinite:
-        if use_wall:
+        if transfinite:
             my_string += (f"""
                 Transfinite Curve {{1, 3}} = {0.1} / {size};
                 Transfinite Curve {{5, 6}} = {0.02} / {size};
@@ -278,9 +279,46 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             """)
         else:
             my_string += (f"""
-                Transfinite Curve {{1, 3}} = {0.1}/{size};
-                Transfinite Curve {{-2, 4}} = {0.02}/{size} Using Bump 1/{bl_ratio};
-                Transfinite Surface {{1, 2}} Right;
+                // Create distance field from curves, excludes cavity
+                Field[1] = Distance;
+                Field[1].CurvesList = {{1,3}};
+                Field[1].NumPointsPerCurve = 100000;
+
+                //Create threshold field that varrries element size near boundaries
+                Field[2] = Threshold;
+                Field[2].InField = 1;
+                Field[2].SizeMin = {size} / {bl_ratio};
+                Field[2].SizeMax = {size};
+                Field[2].DistMin = 0.0002;
+                Field[2].DistMax = 0.005;
+                Field[2].StopAtDistMax = 1;
+
+                //  background mesh size
+                Field[3] = Box;
+                Field[3].XMin = 0.;
+                Field[3].XMax = 1.0;
+                Field[3].YMin = -1.0;
+                Field[3].YMax = 1.0;
+                Field[3].VIn = {size};
+
+                // Create distance field from curves, excludes cavity
+                Field[4] = Distance;
+                Field[4].CurvesList = {{2}};
+                Field[4].NumPointsPerCurve = 100000;
+
+                //Create threshold field that varrries element size near boundaries
+                Field[5] = Threshold;
+                Field[5].InField = 4;
+                Field[5].SizeMin = {size} / {interface_ratio};
+                Field[5].SizeMax = {size};
+                Field[5].DistMin = 0.0002;
+                Field[5].DistMax = 0.005;
+                Field[5].StopAtDistMax = 1;
+
+                // take the minimum of all defined meshing fields
+                Field[100] = Min;
+                Field[100].FieldsList = {{2, 3, 5}};
+                Background Field = 100;
 
                 Mesh.MeshSizeExtendFromBoundary = 0;
                 Mesh.MeshSizeFromPoints = 0;
@@ -288,61 +326,62 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
                 Mesh.Algorithm = 5;
                 Mesh.OptimizeNetgen = 1;
-                Mesh.Smoothing = 0;
+                Mesh.Smoothing = 100;
             """)
+
+        if use_quads:
+            my_string += ("""
+                // Convert the triangles back to quads
+                Mesh.Algorithm = 8;
+                Mesh.RecombinationAlgorithm = 2;
+                Mesh.RecombineAll = 1;
+                Recombine Surface {1, 2};
+            """)
+
+        print(my_string)
+        return partial(generate_gmsh, ScriptSource(my_string, "geo"),
+                                force_ambient_dim=2, dimensions=2, target_unit="M",
+                                return_tag_to_elements_map=True)
+
     else:
-        my_string += (f"""
-            // Create distance field from curves, excludes cavity
-            Field[1] = Distance;
-            Field[1].CurvesList = {{1,3}};
-            Field[1].NumPointsPerCurve = 100000;
+        from meshmode.mesh.generation import generate_regular_rect_mesh
 
-            //Create threshold field that varrries element size near boundaries
-            Field[2] = Threshold;
-            Field[2].InField = 1;
-            Field[2].SizeMin = {size} / {bl_ratio};
-            Field[2].SizeMax = {size};
-            Field[2].DistMin = 0.0002;
-            Field[2].DistMax = 0.005;
-            Field[2].StopAtDistMax = 1;
+        # this only works for non-slanty meshes
+        def get_meshmode_mesh(a, b, nelements_per_axis):
 
-            //  background mesh size
-            Field[3] = Box;
-            Field[3].XMin = 0.;
-            Field[3].XMax = 1.0;
-            Field[3].YMin = -1.0;
-            Field[3].YMax = 1.0;
-            Field[3].VIn = {size};
+            if use_quads:
+                from meshmode.mesh import TensorProductElementGroup
+                group_cls = TensorProductElementGroup
+            else:
+                group_cls = None
 
-            // Create distance field from curves, excludes cavity
-            Field[4] = Distance;
-            Field[4].CurvesList = {{2}};
-            Field[4].NumPointsPerCurve = 100000;
+            mesh = generate_regular_rect_mesh(
+                a=a, b=b, nelements_per_axis=nelements_per_axis,
+                group_cls=group_cls,
+                boundary_tag_to_face={
+                    "inflow": ["-x"],
+                    "outflow": ["+x"],
+                    "flow": ["-x", "+x"],
+                    "isothermal_wall": ["-y", "+y"],
+                    "periodic_y_top": ["+y"],
+                    "periodic_y_bottom": ["-y"],
+                    "wall_farfield": ["+x"],
+                    "solid_wall_top": ["+y"],
+                    "solid_wall_bottom": ["-y"],
+                    "solid_wall_end": ["+x"]
+                })
 
-            //Create threshold field that varrries element size near boundaries
-            Field[5] = Threshold;
-            Field[5].InField = 4;
-            Field[5].SizeMin = {size} / {interface_ratio};
-            Field[5].SizeMax = {size};
-            Field[5].DistMin = 0.0002;
-            Field[5].DistMax = 0.005;
-            Field[5].StopAtDistMax = 1;
+            mgrp = mesh.groups[0]
+            x = mgrp.nodes[0, :, :]
+            x_avg = np.sum(x, axis=1)/x.shape[1]
+            tag_to_elements = {
+                "fluid": np.where(x_avg < fluid_length)[0],
+                "wall": np.where(x_avg > fluid_length)[0]}
 
-            // take the minimum of all defined meshing fields
-            Field[100] = Min;
-            Field[100].FieldsList = {{2, 3, 5}};
-            Background Field = 100;
+            return mesh, tag_to_elements
 
-            Mesh.MeshSizeExtendFromBoundary = 0;
-            Mesh.MeshSizeFromPoints = 0;
-            Mesh.MeshSizeFromCurvature = 0;
-
-            Mesh.Algorithm = 5;
-            Mesh.OptimizeNetgen = 1;
-            Mesh.Smoothing = 100;
-        """)
-
-    #print(my_string)
-    return partial(generate_gmsh, ScriptSource(my_string, "geo"),
-                            force_ambient_dim=2, dimensions=2, target_unit="M",
-                            return_tag_to_elements_map=True)
+        return partial(get_meshmode_mesh,
+                       a=(bottom_inflow[0], bottom_inflow[1]),
+                       b=(top_wall[0], top_wall[1]),
+                       nelements_per_axis=(int((fluid_length + wall_length)/size),
+                                           int(height/size)))

@@ -438,16 +438,23 @@ def main(actx_class,
     logmgr = initialize_logmgr(True,
         filename=logname, mode="wu", mpi_comm=comm)
 
-    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
-    actx = initialize_actx(actx_class, comm)
-    queue = getattr(actx, "queue", None)
-    use_profiling = actx_class_is_profiling(actx_class)
-    alloc = getattr(actx, "allocator", None)
-
     # set up driver parameters
     from mirgecom.simutil import configurate
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
+
+    use_gmsh = configurate("use_gmsh", input_data, True)
+    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
+    use_tensor_product_elements = configurate("use_tensor_product_elements",
+                                              input_data, False)
+    if use_tensor_product_elements:
+        from grudge.array_context import TensorProductMPIFusionContractorArrayContext
+        actx = initialize_actx(TensorProductMPIFusionContractorArrayContext, comm)
+    else:
+        actx = initialize_actx(actx_class, comm)
+    queue = getattr(actx, "queue", None)
+    use_profiling = actx_class_is_profiling(actx_class)
+    alloc = getattr(actx, "allocator", None)
 
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
@@ -672,7 +679,7 @@ def main(actx_class,
     mesh_size = configurate("mesh_size", input_data, 0.001)
     bl_ratio = configurate("bl_ratio", input_data, 3)
     interface_ratio = configurate("interface_ratio", input_data, 2)
-    transfinite = configurate("transfinit", input_data, False)
+    transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
     # ACTII flow properties
@@ -1634,7 +1641,8 @@ def main(actx_class,
                 mesh, tag_to_elements = get_mesh(
                     dim=dim, angle=mesh_angle, size=mesh_size,
                     bl_ratio=bl_ratio, interface_ratio=interface_ratio,
-                    transfinite=transfinite, use_wall=use_wall)()
+                    transfinite=transfinite, use_wall=use_wall,
+                    use_quads=use_tensor_product_elements, use_gmsh=use_gmsh)()
 
                 volume_to_tags = {"fluid": ["fluid"]}
                 if use_wall:
@@ -1694,29 +1702,29 @@ def main(actx_class,
                         "wall_interface")
                 return mesh, tag_to_elements, volume_to_tags
 
-            # use a pre-partitioned mesh
-            if os.path.isdir(mesh_filename):
-                pkl_filename = (mesh_filename + "/" + mesh_partition_prefix
-                                + f"_mesh_np{nparts}_rank{rank}.pkl")
-                if rank == 0:
-                    print("Reading mesh from pkl files in directory"
-                          f" {mesh_filename}.")
-                if not os.path.exists(pkl_filename):
-                    raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
-                                       " not found.")
-                with open(pkl_filename, "rb") as pkl_file:
-                    global_nelements, volume_to_local_mesh_data = \
-                        pickle.load(pkl_file)
+        # use a pre-partitioned mesh
+        if os.path.isdir(mesh_filename):
+            pkl_filename = (mesh_filename + "/" + mesh_partition_prefix
+                            + f"_mesh_np{nparts}_rank{rank}.pkl")
+            if rank == 0:
+                print("Reading mesh from pkl files in directory"
+                      f" {mesh_filename}.")
+            if not os.path.exists(pkl_filename):
+                raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
+                                   " not found.")
+            with open(pkl_filename, "rb") as pkl_file:
+                global_nelements, volume_to_local_mesh_data = \
+                    pickle.load(pkl_file)
 
-            else:
-                def my_partitioner(mesh, tag_to_elements, num_ranks):
-                    from mirgecom.simutil import geometric_mesh_partitioner
-                    return geometric_mesh_partitioner(
-                        mesh, num_ranks, auto_balance=True, debug=False)
+        else:
+            def my_partitioner(mesh, tag_to_elements, num_ranks):
+                from mirgecom.simutil import geometric_mesh_partitioner
+                return geometric_mesh_partitioner(
+                    mesh, num_ranks, auto_balance=True, debug=False)
 
-                part_func = my_partitioner if use_1d_part else None
-                volume_to_local_mesh_data, global_nelements = distribute_mesh(
-                    comm, get_mesh_data, partition_generator_func=part_func)
+            part_func = my_partitioner if use_1d_part else None
+            volume_to_local_mesh_data, global_nelements = distribute_mesh(
+                comm, get_mesh_data, partition_generator_func=part_func)
 
     local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
     if use_wall:
@@ -1766,7 +1774,8 @@ def main(actx_class,
             vol: mesh
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
         order=order,
-        quadrature_order=quadrature_order)
+        quadrature_order=quadrature_order,
+        use_tensor_product_elements=use_tensor_product_elements)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -1866,9 +1875,12 @@ def main(actx_class,
 
         wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
+    """
     from grudge.dt_utils import characteristic_lengthscales
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
+        """
+    char_length_fluid = 0.001
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
@@ -1879,8 +1891,11 @@ def main(actx_class,
 
     if use_wall:
         xpos_wall = wall_nodes[0]
+        """
         char_length_wall = force_evaluation(actx,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
+            """
+        char_length_wall = 0.0001
         xpos_wall = wall_nodes[0]
         char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
         """
@@ -1916,7 +1931,7 @@ def main(actx_class,
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
-            href_fluid,
+            href_fluid, char_length_fluid,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
             comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
 
@@ -2290,6 +2305,7 @@ def main(actx_class,
                 kappa=wdv.thermal_conductivity,
                 boundaries=updated_wall_boundaries,
                 u=wdv.temperature,
+                lengthscales=char_length_wall,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
@@ -3303,6 +3319,7 @@ def main(actx_class,
             kappa=wdv.thermal_conductivity,
             boundaries=updated_wall_boundaries,
             u=wdv.temperature,
+            lengthscales=char_length_wall,
             quadrature_tag=quadrature_tag,
             dd=dd_vol_wall,
             grad_u=grad_wall_t,
@@ -4191,6 +4208,7 @@ def main(actx_class,
                 kappa=wdv.thermal_conductivity,
                 boundaries=updated_wall_boundaries,
                 u=wdv.temperature,
+                lengthscales=char_length_wall,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
@@ -4234,6 +4252,7 @@ def main(actx_class,
             av_smu_rhs = (
                 diffusion_operator(
                     dcoll, epsilon_diff, fluid_av_boundaries, av_smu,
+                    lengthscales=char_length_fluid,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_MuDiffFluidCommTag
                 ) + 1/tau * (smoothness_mu - av_smu)
@@ -4243,6 +4262,7 @@ def main(actx_class,
                 av_sbeta_rhs = (
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_sbeta,
+                        lengthscales=char_length_fluid,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                         comm_tag=_BetaDiffFluidCommTag
                     ) + 1/tau * (smoothness_beta - av_sbeta)
@@ -4251,6 +4271,7 @@ def main(actx_class,
                 av_skappa_rhs = (
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_skappa,
+                        lengthscales=char_length_fluid,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                         comm_tag=_KappaDiffFluidCommTag
                     ) + 1/tau * (smoothness_kappa - av_skappa)
@@ -4297,6 +4318,7 @@ def main(actx_class,
                 wall_ox_mass_rhs = diffusion_operator(
                     dcoll, wall_model.oxygen_diffusivity,
                     wall_ox_boundaries, wv.ox_mass,
+                    lengthscales=char_length_wall,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
                     comm_tag=_WallOxDiffCommTag)
@@ -4324,6 +4346,7 @@ def main(actx_class,
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
                     dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
+                    lengthscales=char_length_wall,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
