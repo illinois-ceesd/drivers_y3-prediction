@@ -3614,8 +3614,12 @@ def main(actx_class,
             cell_Re = (cv.mass*cv.speed*char_length_fluid /
                 fluid_state.viscosity)
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
-            alpha_heat = fluid_state.thermal_conductivity/cp/fluid_state.viscosity
-            cell_Pe_heat = char_length_fluid*cv.speed/alpha_heat
+            alpha_heat = fluid_state.thermal_conductivity/cp/cv.mass
+            nu = fluid_state.viscosity/fluid_state.mass_density
+
+            cell_Pe_momentum = char_length_fluid*fluid_state.wavespeed/nu
+
+            cell_Pe_thermal = char_length_fluid*fluid_state.wavespeed/alpha_heat
 
             from mirgecom.viscous import get_local_max_species_diffusivity
             d_alpha_max = \
@@ -3624,17 +3628,17 @@ def main(actx_class,
                     fluid_state.species_diffusivity
                 )
 
-            cell_Pe_mass = char_length_fluid*cv.speed/d_alpha_max
+            cell_Pe_diffusion = char_length_fluid*fluid_state.wavespeed/d_alpha_max
 
             # these are useful if our transport properties
             # are not constant on the mesh
             # prandtl
             # schmidt_number
             # damkohler_number
-
             viz_ext = [("Re", cell_Re),
-                       ("Pe_mass", cell_Pe_mass),
-                       ("Pe_heat", cell_Pe_heat)]
+                       ("Pe_momentum", cell_Pe_momentum),
+                       ("Pe_thermal", cell_Pe_thermal),
+                       ("Pe_diffusion", cell_Pe_diffusion)]
             fluid_viz_fields.extend(viz_ext)
             viz_ext = [("char_length_fluid", char_length_fluid),
                        ("char_length_fluid_smooth", smoothed_char_length_fluid),
@@ -3642,18 +3646,15 @@ def main(actx_class,
             fluid_viz_fields.extend(viz_ext)
 
             cfl_fluid_inv = char_length_fluid / (fluid_state.wavespeed)
-            nu = fluid_state.viscosity/fluid_state.mass_density
             cfl_fluid_visc = char_length_fluid**2 / nu
-            #cfl_fluid_spec_diff
-            fluid_diffusivity = (fluid_state.thermal_conductivity/cv.mass /
-                                 eos.heat_capacity_cp(cv, dv.temperature))
-            cfl_fluid_heat_diff = (char_length_fluid**2/fluid_diffusivity)
+            cfl_fluid_spec_diff = char_length_fluid**2 / d_alpha_max
+            cfl_fluid_heat_diff = (char_length_fluid**2 / alpha_heat)
 
             viz_ext = [
                        ("cfl_fluid_inv", current_dt/cfl_fluid_inv),
                        ("cfl_fluid_visc", current_dt/cfl_fluid_visc),
-                       #("cfl_fluid_spec_diff", cfl_fluid_spec_diff),
-                       ("cfl_fluid_heat_diff", current_dt/cfl_fluid_heat_diff)]
+                       ("cfl_fluid_heat_diff", current_dt/cfl_fluid_heat_diff),
+                       ("cfl_fluid_spec_diff", current_dt/cfl_fluid_spec_diff)]
             fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
