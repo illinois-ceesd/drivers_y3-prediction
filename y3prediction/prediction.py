@@ -1211,8 +1211,6 @@ def main(actx_class,
         fuel_location[0] = fuel_loc_x
 
         # parameters to adjust the shape of the initialization
-        vel_sigma = 1000
-        temp_sigma = 1250
         temp_wall = 300
 
         # normal shock properties
@@ -1680,7 +1678,7 @@ def main(actx_class,
 
                     mesh = glue_mesh_boundaries(mesh, bdry_pair_mappings_and_tols)
                     """
-
+                print(f"{mesh=}")
                 return mesh, tag_to_elements, volume_to_tags
         elif init_case == "y3prediction":
             if rank == 0:
@@ -1880,7 +1878,7 @@ def main(actx_class,
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
         """
-    char_length_fluid = 0.001
+    char_length_fluid = 1.e-4
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]

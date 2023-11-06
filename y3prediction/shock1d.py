@@ -338,7 +338,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 Recombine Surface {1, 2};
             """)
 
-        print(my_string)
+        #print(my_string)
         return partial(generate_gmsh, ScriptSource(my_string, "geo"),
                                 force_ambient_dim=2, dimensions=2, target_unit="M",
                                 return_tag_to_elements_map=True)
