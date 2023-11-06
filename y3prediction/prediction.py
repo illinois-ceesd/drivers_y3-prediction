@@ -1255,6 +1255,8 @@ def main(actx_class,
         y_fuel[i_c2h4] = mf_c2h4
         y_fuel[i_h2] = mf_h2
 
+        print(f"{y_fuel=}")
+
     # select the initialization case
     if init_case == "shock1d":
 
@@ -3437,6 +3439,11 @@ def main(actx_class,
 
         wv = wv + 0.*wall_rhs
 
+        av_smu = actx.zeros_like(cv.mass)
+        av_sbeta = actx.zeros_like(cv.mass)
+        av_skappa = actx.zeros_like(cv.mass)
+        av_sd = actx.zeros_like(cv.mass)
+
         # now compute the smoothness part
         if use_av == 1:
             av_smu = compute_smoothness(cv, dv, grad_fluid_cv)
@@ -3504,13 +3511,10 @@ def main(actx_class,
         grad_y = species_mass_fraction_gradient(cv, grad_fluid_cv)
 
         local_fluid_viz_fields = {}
-        if use_av > 0:
-            local_fluid_viz_fields["smoothness_mu"] = [av_smu]
-        if use_av > 1:
-            local_fluid_viz_fields["smoothness_beta"] = [av_sbeta]
-            local_fluid_viz_fields["smoothness_kappa"] = [av_skappa]
-        if use_av > 2:
-            local_fluid_viz_fields["smoothness_d"] = [av_sd]
+        local_fluid_viz_fields["smoothness_mu"] = [av_smu]
+        local_fluid_viz_fields["smoothness_beta"] = [av_sbeta]
+        local_fluid_viz_fields["smoothness_kappa"] = [av_skappa]
+        local_fluid_viz_fields["smoothness_d"] = [av_sd]
 
         return make_obj_array([av_smu, av_sbeta, av_skappa, av_sd,
                                grad_v, grad_y, grad_fluid_t, cv])
@@ -3681,7 +3685,7 @@ def main(actx_class,
             grad_fluid_t = viz_stuff[6]
 
             if use_wall:
-                grad_wall_t = viz_stuff[6]
+                grad_wall_t = viz_stuff[7]
 
             viz_ext = [("smoothness_mu", av_smu),
                        ("smoothness_beta", av_sbeta),
