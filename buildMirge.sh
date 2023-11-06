@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # default branch for building mirgecom for this driver
-mirge_branch="production"
-#mirge_branch="wall_model_exposed_gradients"
-#mirge_branch="production-generalize-coupling-mja"
+mirge_branch="add_av_diff"
 # conda environment name
 conda_env="mirgeDriver.Y3prediction"
 
