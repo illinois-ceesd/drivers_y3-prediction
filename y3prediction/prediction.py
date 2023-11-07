@@ -122,7 +122,6 @@ from y3prediction.wall import (
     WallVars,
     WallModel,
 )
-from y3prediction.uiuc_sharp import Thermochemistry
 from y3prediction.shock1d import PlanarDiscontinuityMulti
 
 from dataclasses import dataclass
@@ -1144,6 +1143,14 @@ def main(actx_class,
             av_mu=av2_mu0, av_beta=av2_beta0, av_kappa=av2_kappa0,
             av_prandtl=av2_prandtl0)
 
+    pyro_mech = configurate("pyro_mech", input_data, "uiuc_sharp")
+    pyro_mech_name = f"y3prediction.pyro_mechs.{pyro_mech}"
+
+    import importlib
+    pyromechlib = importlib.import_module(pyro_mech_name)
+
+    #from y3prediction.uiuc_sharp import Thermochemistry
+
     chem_source_tol = 1.e-10
     # make the eos
     if eos_type == 0:
@@ -1153,13 +1160,13 @@ def main(actx_class,
     else:
         from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
         pyro_mech = get_pyrometheus_wrapper_class(
-            pyro_class=Thermochemistry, temperature_niter=pyro_temp_iter,
+            pyro_class=pyromechlib.Thermochemistry, temperature_niter=pyro_temp_iter,
             zero_level=chem_source_tol)(actx.np)
         eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
         # seperate gas model for initialization,
         # just to make sure we get converged temperature
         pyro_mech_init = get_pyrometheus_wrapper_class(
-            pyro_class=Thermochemistry, temperature_niter=5,
+            pyro_class=pyromechlib.Thermochemistry, temperature_niter=5,
             zero_level=chem_source_tol)(actx.np)
         eos_init = PyrometheusMixture(pyro_mech_init,
                                       temperature_guess=init_temperature)
