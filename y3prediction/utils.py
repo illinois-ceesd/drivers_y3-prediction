@@ -405,6 +405,7 @@ class MomentumSource:
         self._amplitude = amplitude
         self._width = width
         self._amplitude_func = amplitude_func
+        self.expterm = 0
 
     def __call__(self, x_vec, state, eos, time, **kwargs):
         """
@@ -439,29 +440,144 @@ class MomentumSource:
         actx = x_vec[0].array_context
         r = actx.np.sqrt(np.dot(rel_center, rel_center))
         expterm = amplitude * actx.np.exp(-(r**2)/(2*self._width*self._width))
-        #print(f'exp term: {actx.np.max(expterm)}')
-
-        #v_min = 10
+        self.expterm = expterm
 
         velocity_source = np.zeros(self._dim, dtype=object)
-
-        #velocity_source[0] = actx.np.where(
-        #    actx.np.greater(state.velocity[0], v_min),
-        #    velocity_source[0] + expterm,
-        #    velocity_source[0])
-
         velocity_source[0] = velocity_source[0] + expterm
-
         momentum_source = velocity_source * state.mass_density
 
-        #energy_source = (-0.5 * np.dot(velocity_source, velocity_source)
-        #                                * state.mass_density)
         energy_source = 0 * state.energy_density
-
         mass = 0 * state.mass_density
         species_mass = 0 * state.species_mass_fractions
 
         return make_conserved(dim=self._dim, mass=mass,
+                              energy=energy_source,
+                              momentum=momentum_source,
+                              species_mass=species_mass)
+
+
+class NormalShockSource:
+    r"""Add an artificial normal shock into the flow.
+
+    Momentum is added to the system as a gaussian of the form:
+
+    .. math::
+
+        e &= e + e_{a}\exp^{(1-r^{2})}\\
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+
+    def __init__(self, *, dim, center=None, width=1.0,
+                 amplitude_func=None,
+                 T1=87, T2=100, P1=1000, P2=10000):
+        r"""Initialize the momentum parameters.
+
+        Parameters
+        ----------
+        center: numpy.ndarray
+            center of source
+        amplitude: float
+            source strength modifier
+        amplitude_fun: function
+            variation of amplitude with time
+        """
+        if center is None:
+            center = np.zeros(shape=(dim,))
+        self._center = center
+        self._dim = dim
+        #self._amplitude = amplitude
+        self._width = width
+        self._tot_width = self._width * 6.0697
+        self._amplitude_func = amplitude_func
+        self.expterm = 0
+        self.T2 = T2
+        self.T1 = T1
+        self.P2 = P2
+        self.P1 = P1
+        self._pi = 3.14159
+
+    def __call__(self, x_vec, state, eos, time, **kwargs):
+        """
+        Create the momentum source at time *t* and location *x_vec*.
+
+        the source at time *t* is created by evaluating the gaussian
+        with time-dependent amplitude at *t*.
+
+        Parameters
+        ----------
+        cv: :class:`mirgecom.fluid.ConservedVars`
+            Fluid conserved quantities
+        time: float
+            Current time at which the solution is desired
+        x_vec: numpy.ndarray
+            Nodal coordinates
+        """
+        from pytools.obj_array import make_obj_array
+        from mirgecom.fluid import make_conserved
+        t = time
+
+        loc = self._center
+
+        # coordinates relative to lump center
+        rel_center = make_obj_array(
+            [x_vec[i] - loc[i] for i in range(self._dim)]
+        )
+        actx = x_vec[0].array_context
+        r = actx.np.sqrt(np.dot(rel_center, rel_center))
+
+        # set the target state for this time step depending on the amplitude function
+        # varies between X1 and X2
+        if self._amplitude_func is not None:
+            P_targ = (self.P2 - self.P1) * self._amplitude_func(t) + self.P1
+            T_targ = (self.T2 - self.T1) * self._amplitude_func(t) + self.T1
+        else:
+            P_targ = self.P2
+            T_targ = self.T2
+
+        # set the necessary change to reach the target temperature
+        delta_P = P_targ - state.pressure
+        delta_T = T_targ - state.temperature
+
+        expterm_pressure = (delta_P * actx.np.exp(-(r ** 2) /
+                                                (2 * self._width * self._width)))
+        expterm_temperature = (delta_T * actx.np.exp(-(r ** 2) /
+                                                    (2 * self._width * self._width)))
+
+        # increase temperature
+        #T_targ = 0
+        temperature = actx.np.where(
+            actx.np.greater(state.temperature, T_targ),
+            state.temperature,
+            state.temperature + expterm_temperature)
+
+        # increase pressure
+        pressure = actx.np.where(
+            actx.np.greater(state.pressure, P_targ),
+            state.pressure,
+            state.pressure + expterm_pressure)
+
+        y = state.species_mass_fractions
+
+        # get density with new pressure and temperature
+        new_mass = eos.get_density(pressure=pressure, temperature=temperature,
+                                   species_mass_fractions=y)
+
+        # calculate source required to match new density
+        mass_source = new_mass - state.mass_density
+
+        # no momentum change
+        momentum_source = 0 * state.velocity
+
+        # add energy for the increase in temperature
+        energy_source = (eos.heat_capacity_cv(state, state.temperature)
+                            * (temperature - state.temperature))
+
+        # no mass fraction changes
+        species_mass = 0 * state.species_mass_fractions
+
+        return make_conserved(dim=self._dim, mass=mass_source,
                               energy=energy_source,
                               momentum=momentum_source,
                               species_mass=species_mass)

@@ -736,6 +736,20 @@ def main(actx_class,
     impulse_init_time_width = configurate("impulse_init_time_width",
                                                             input_data, 1.e-5)
 
+    # initialize the shock source
+    # impulse_init_loc_z = 0.035 / 2.
+    use_shock = configurate("use_shock", input_data, False)
+    shock_init_time = configurate("shock_init_time", input_data, 999999999.)
+    shock_diameter = configurate("shock_diameter", input_data, 0.0025)
+    shock_init_loc_x = configurate("shock_init_loc_x", input_data, 0.677)
+    shock_init_loc_y = configurate("shock_init_loc_y", input_data, -0.021)
+    shock_init_time_width = configurate("shock_init_time_width",
+                                          input_data, 1.e-5)
+    shock_T1 = configurate("shock_T1", input_data, 87)
+    shock_P1 = configurate("shock_P1", input_data, 10000)
+    shock_T2 = configurate("shock_T2", input_data, 224.28)
+    shock_P2 = configurate("shock_P2", input_data, 103333.3)
+
     # initialization for the sponge
     inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
     inlet_sponge_thickness = configurate("inlet_sponge_thickness", input_data, 0.015)
@@ -922,6 +936,19 @@ def main(actx_class,
         print(f"impulse time {impulse_init_time}")
         # print(f"ignition duration {impulse_duration}")
         print("#### Impulse control parameters ####\n")
+
+    shock_center = np.zeros(shape=(dim,))
+    shock_center[0] = shock_init_loc_x
+    shock_center[1] = shock_init_loc_y
+    #if dim == 3:
+    #    impulse_center[2] = impulse_init_loc_z
+    if rank == 0 and use_impulse > 0:
+        print("\n#### Shock control parameters ####")
+        print(f"shock center ({shock_center[0]},{shock_center[1]})")
+        print(f"shock FWHM {shock_diameter}")
+        print(f"impulse time {shock_init_time}")
+        # print(f"ignition duration {impulse_duration}")
+        print("#### shock control parameters ####\n")
 
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
@@ -2984,6 +3011,29 @@ def main(actx_class,
                                       width=spark_diameter)
 
     ####################
+    # Normal Shock Sources #
+    ####################
+
+    # if you divide by 2.355, 50% of the spark is within this diameter
+    # if you divide by 6, 99% of the energy is deposited in this time
+    # spark_diameter /= 2.355
+    shock_diameter /= 6.0697
+    #impulse_duration /= 6.0697
+
+    # tanh application in time from 0 -> 1
+    def shock_time_func(t, width=shock_init_time_width):
+        tanhterm = (actx.np.tanh((t-shock_init_time)/width)+1) / 2
+        return tanhterm
+
+    if use_shock:
+        from y3prediction.utils import NormalShockSource
+        shock_source = NormalShockSource(dim=dim, center=shock_center,
+                                     amplitude_func=shock_time_func,
+                                     width=shock_diameter,
+                                     T1=shock_T1, T2=shock_T2,
+                                     P1=shock_P1, P2=shock_P2)
+
+    ####################
     # Momentum Sources #
     ####################
 
@@ -2991,19 +3041,20 @@ def main(actx_class,
     # if you divide by 6, 99% of the energy is deposited in this time
     # spark_diameter /= 2.355
     impulse_diameter /= 6.0697
-    #impulse_duration /= 6.0697
+
+    # impulse_duration /= 6.0697
 
     # tanh application in time from 0 -> 1
     def impulse_time_func(t, width=impulse_init_time_width):
-        tanhterm = (actx.np.tanh((t-impulse_init_time)/width)+1) / 2
+        tanhterm = (actx.np.tanh((t - impulse_init_time) / width) + 1) / 2
         return tanhterm
 
     if use_impulse:
         from y3prediction.utils import MomentumSource
         impulse_source = MomentumSource(dim=dim, center=impulse_center,
-                                     amplitude=impulse_strength,
-                                     amplitude_func=impulse_time_func,
-                                     width=impulse_diameter)
+                                        amplitude=impulse_strength,
+                                        amplitude_func=impulse_time_func,
+                                        width=impulse_diameter)
 
     if rank == 0:
         logger.info("Sponges processsing")
@@ -3524,6 +3575,10 @@ def main(actx_class,
                     wv.mass, wall_temperature, wall_kappa)
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
+
+            #if use_impulse:
+            #    viz_ext = [("momentum_source", impulse_source.expterm)]
+            #    fluid_viz_fields.extend(viz_ext)
 
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
@@ -4217,7 +4272,12 @@ def main(actx_class,
         if use_impulse:
             fluid_rhs = fluid_rhs + \
                 impulse_source(x_vec=fluid_nodes, state=fluid_state,
-                                eos=gas_model.eos, time=t)  # * current_dt
+                                eos=gas_model.eos, time=t)
+
+        if use_shock:
+            fluid_rhs = fluid_rhs + \
+                shock_source(x_vec=fluid_nodes, state=fluid_state,
+                                eos=gas_model.eos, time=t) / current_dt
 
         av_smu_rhs = actx.np.zeros_like(cv.mass)
         av_sbeta_rhs = actx.np.zeros_like(cv.mass)

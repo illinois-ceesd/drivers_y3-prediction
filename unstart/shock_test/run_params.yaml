@@ -1,0 +1,91 @@
+###############
+# Time Step Settings
+##############
+nrestart: 10000 
+nhealth: 1
+nstatus: 1
+#constant_cfl: 1
+constant_cfl: False
+#current_cfl: 0.2
+current_dt: 1e-8
+t_final: 1e-6
+
+##############
+# Viz Settings
+#############
+nviz: 1 
+viz_level: 2
+viz_interval_type: 0
+#############
+
+############
+# Physical Parameter Settings
+############
+nspecies:  0
+fluid_mu: 1.729e-5  # m^2/s
+transport: 0
+############
+# Numerical Parameter Settings
+###########
+order:  3
+alpha_sc: 0.01
+s0_sc: -5.0
+kappa_sc: 0.5
+integrator: "compiled_lsrk54"
+#health_pres_min: 2828
+#health_ares_max: 274259
+
+#############
+# Boundary Conditions
+#############
+use_wall: False #turn off wall model
+use_injection: False
+use_sponge: True
+inlet_sponge_x0: 0.030
+inlet_sponge_thickness: 0.015
+outlet_sponge_x0: 0.795
+outlet_sponge_thickness: 0.02
+sponge_sigma: 1000
+vel_sigma: 250
+temp_sigma: 300
+
+use_av: 2 # artificial viscosity
+use_outflow_boundary: "pressure_outflow"
+use_inflow_boundary: "prescribed"
+use_flow_boundary: "none"
+use_wall_boundary: "isothermal_noslip"
+use_injection_boundary: "none"
+use_interface_boundary: "none"
+total_pres_inflow: 551581  # Pa
+total_temp_inflow: 273  # K
+outflow_pressure: 4.25e+3  # 98595.03  # Pa
+
+##########
+# Mesh
+############
+mesh_filename: "data/unstart_2d_asym.msh"
+
+##################
+# Impulse Source
+##################
+use_impulse: False 
+impulse_init_time: 4e-8 
+impulse_strength: -2.15e7 
+impulse_diameter: 0.015
+impulse_init_loc_x: 0.50705  # Location of center of pin
+impulse_init_loc_y: 0.010  # Center of channel
+impulse_init_time_width: 2e-8
+
+##################
+# Shock Source
+##################
+use_shock: True 
+shock_init_time: 2e-7 
+shock_diameter: 0.01
+shock_init_loc_x: 0.50705  # Location of center of pin
+shock_init_loc_y: 0.010  # Center of channel
+shock_init_time_width: 1.0e-7
+shock_P1: 10000
+shock_P2: 103333
+shock_T1: 87
+shock_T2: 224.28
