@@ -1701,29 +1701,29 @@ def main(actx_class,
                         "wall_interface")
                 return mesh, tag_to_elements, volume_to_tags
 
-            # use a pre-partitioned mesh
-            if os.path.isdir(mesh_filename):
-                pkl_filename = (mesh_filename + "/" + mesh_partition_prefix
-                                + f"_mesh_np{nparts}_rank{rank}.pkl")
-                if rank == 0:
-                    print("Reading mesh from pkl files in directory"
-                          f" {mesh_filename}.")
-                if not os.path.exists(pkl_filename):
-                    raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
-                                       " not found.")
-                with open(pkl_filename, "rb") as pkl_file:
-                    global_nelements, volume_to_local_mesh_data = \
-                        pickle.load(pkl_file)
+        # use a pre-partitioned mesh
+        if os.path.isdir(mesh_filename):
+            pkl_filename = (mesh_filename + "/" + mesh_partition_prefix
+                            + f"_mesh_np{nparts}_rank{rank}.pkl")
+            if rank == 0:
+                print("Reading mesh from pkl files in directory"
+                      f" {mesh_filename}.")
+            if not os.path.exists(pkl_filename):
+                raise RuntimeError(f"Mesh pkl file ({pkl_filename})"
+                                   " not found.")
+            with open(pkl_filename, "rb") as pkl_file:
+                global_nelements, volume_to_local_mesh_data = \
+                    pickle.load(pkl_file)
 
-            else:
-                def my_partitioner(mesh, tag_to_elements, num_ranks):
-                    from mirgecom.simutil import geometric_mesh_partitioner
-                    return geometric_mesh_partitioner(
-                        mesh, num_ranks, auto_balance=True, debug=False)
+        else:
+            def my_partitioner(mesh, tag_to_elements, num_ranks):
+                from mirgecom.simutil import geometric_mesh_partitioner
+                return geometric_mesh_partitioner(
+                    mesh, num_ranks, auto_balance=True, debug=False)
 
-                part_func = my_partitioner if use_1d_part else None
-                volume_to_local_mesh_data, global_nelements = distribute_mesh(
-                    comm, get_mesh_data, partition_generator_func=part_func)
+            part_func = my_partitioner if use_1d_part else None
+            volume_to_local_mesh_data, global_nelements = distribute_mesh(
+                comm, get_mesh_data, partition_generator_func=part_func)
 
     local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
     if use_wall:
