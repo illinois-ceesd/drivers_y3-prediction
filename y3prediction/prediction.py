@@ -123,7 +123,6 @@ from y3prediction.wall import (
     WallVars,
     WallModel,
 )
-from y3prediction.uiuc_sharp import Thermochemistry
 from y3prediction.shock1d import PlanarDiscontinuityMulti
 
 from dataclasses import dataclass
@@ -1050,6 +1049,12 @@ def main(actx_class,
     if nspecies > 3:
         eos_type = 1
 
+    pyro_mech = configurate("pyro_mech", input_data, "uiuc_sharp")
+    pyro_mech_name = f"y3prediction.pyro_mechs.{pyro_mech}"
+
+    import importlib
+    pyromechlib = importlib.import_module(pyro_mech_name)
+
     if rank == 0:
         print("\n#### Simluation material properties: ####")
         print("#### Fluid domain: ####")
@@ -1076,18 +1081,69 @@ def main(actx_class,
             print("\tIdeal Gas EOS")
         elif eos_type == 1:
             print("\tPyrometheus EOS")
+            print("\tPyro mechanism {pyro_mech}")
 
         if use_species_limiter == 1:
             print("\nSpecies mass fractions limited to [0:1]")
 
-    transport_alpha = 0.6
-    transport_beta = 4.093e-7
-    transport_sigma = 2.0
-    transport_n = 0.666
+        if use_wall:
+            print("#### Wall domain: ####")
+
+            if wall_material == 0:
+                print("\tNon-reactive wall model")
+            elif wall_material == 1:
+                print("\tReactive wall model for non-porous media")
+            elif wall_material == 2:
+                print("\tReactive wall model for porous media")
+            else:
+                error_message = "Unknown wall_material {}".format(wall_material)
+                raise RuntimeError(error_message)
+
+            if use_wall_ox:
+                print("\tWall oxidizer transport enabled")
+            else:
+                print("\tWall oxidizer transport disabled")
+
+            if use_wall_mass:
+                print("\t Wall mass loss enabled")
+            else:
+                print("\t Wall mass loss disabled")
+
+            print(f"\tWall density = {wall_insert_rho}")
+            print(f"\tWall cp = {wall_insert_cp}")
+            print(f"\tWall O2 diff = {wall_insert_ox_diff}")
+            print(f"\tWall surround density = {wall_surround_rho}")
+            print(f"\tWall surround cp = {wall_surround_cp}")
+            print(f"\tWall surround kappa = {wall_surround_kappa}")
+            print(f"\tWall time scale = {wall_time_scale}")
+            print(f"\tWall penalty = {wall_penalty_amount}")
+        else:
+            print("\tWall model disabled")
+            use_wall_ox = False
+            use_wall_mass = False
+
+        print("#### Simluation material properties: ####")
+
+    chem_source_tol = 1.e-10
+    # make the eos
+    if eos_type == 0:
+        eos = IdealSingleGas(gamma=gamma, gas_const=r)
+        eos_init = eos
+    else:
+        from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
+        pyro_mech = get_pyrometheus_wrapper_class(
+            pyro_class=pyromechlib.Thermochemistry, temperature_niter=pyro_temp_iter,
+            zero_level=chem_source_tol)(actx.np)
+        eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
+        # seperate gas model for initialization,
+        # just to make sure we get converged temperature
+        pyro_mech_init = get_pyrometheus_wrapper_class(
+            pyro_class=pyromechlib.Thermochemistry, temperature_niter=5,
+            zero_level=chem_source_tol)(actx.np)
+        eos_init = PyrometheusMixture(pyro_mech_init,
+                                      temperature_guess=init_temperature)
 
     # set the species names
-    # and initialize pyrometheus, if needed
-    chem_source_tol = 1.e-10
     if eos_type == 0:
         if nspecies == 0:
             species_names = ["inert"]
@@ -1096,16 +1152,13 @@ def main(actx_class,
         elif nspecies == 3:
             species_names = ["air", "fuel", "inert"]
     else:
-        from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
-        pyro_mech = get_pyrometheus_wrapper_class(
-            pyro_class=Thermochemistry, temperature_niter=pyro_temp_iter,
-            zero_level=chem_source_tol)(actx.np)
-        # seperate gas model for initialization,
-        # just to make sure we get converged temperature
-        pyro_mech_init = get_pyrometheus_wrapper_class(
-            pyro_class=Thermochemistry, temperature_niter=5,
-            zero_level=chem_source_tol)(actx.np)
         species_names = pyro_mech.species_names
+
+    # initialize the transport model
+    transport_alpha = 0.6
+    transport_beta = 4.093e-7
+    transport_sigma = 2.0
+    transport_n = 0.666
 
     # use the species names to populate the default species diffusivities
     default_species_diffusivity = {}
@@ -1151,44 +1204,6 @@ def main(actx_class,
             error_message = "Unknown transport_type {}".format(transport_type)
             raise RuntimeError(error_message)
 
-        if use_wall:
-            print("#### Wall domain: ####")
-
-            if wall_material == 0:
-                print("\tNon-reactive wall model")
-            elif wall_material == 1:
-                print("\tReactive wall model for non-porous media")
-            elif wall_material == 2:
-                print("\tReactive wall model for porous media")
-            else:
-                error_message = "Unknown wall_material {}".format(wall_material)
-                raise RuntimeError(error_message)
-
-            if use_wall_ox:
-                print("\tWall oxidizer transport enabled")
-            else:
-                print("\tWall oxidizer transport disabled")
-
-            if use_wall_mass:
-                print("\t Wall mass loss enabled")
-            else:
-                print("\t Wall mass loss disabled")
-
-            print(f"\tWall density = {wall_insert_rho}")
-            print(f"\tWall cp = {wall_insert_cp}")
-            print(f"\tWall O2 diff = {wall_insert_ox_diff}")
-            print(f"\tWall surround density = {wall_surround_rho}")
-            print(f"\tWall surround cp = {wall_surround_cp}")
-            print(f"\tWall surround kappa = {wall_surround_kappa}")
-            print(f"\tWall time scale = {wall_time_scale}")
-            print(f"\tWall penalty = {wall_penalty_amount}")
-        else:
-            print("\tWall model disabled")
-            use_wall_ox = False
-            use_wall_mass = False
-
-        print("#### Simluation material properties: ####")
-
     if transport_type == 0:
         physical_transport_model = SimpleTransport(
             viscosity=mu, thermal_conductivity=kappa,
@@ -1217,17 +1232,7 @@ def main(actx_class,
             av_kappa=av2_kappa0, av_d=av2_d0,
             av_prandtl=av2_prandtl0)
 
-    # make the eos
-    if eos_type == 0:
-        eos = IdealSingleGas(gamma=gamma, gas_const=r)
-        eos_init = eos
-    else:
-        eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
-        # seperate gas model for initialization,
-        # just to make sure we get converged temperature
-        eos_init = PyrometheusMixture(pyro_mech_init,
-                                      temperature_guess=init_temperature)
-
+    # with transport and eos sorted out, build the gas model
     gas_model = GasModel(eos=eos, transport=transport_model)
 
     # initialize eos and species mass fractions
@@ -1254,8 +1259,6 @@ def main(actx_class,
         # Set the species mass fractions to the free-stream flow
         y_fuel[i_c2h4] = mf_c2h4
         y_fuel[i_h2] = mf_h2
-
-        print(f"{y_fuel=}")
 
     # select the initialization case
     if init_case == "shock1d":

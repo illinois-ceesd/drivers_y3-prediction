@@ -4,7 +4,7 @@ set -o pipefail
 
 echo "Running flake8..."
 if [[ $(command -v "flake8") ]]; then
-    flake8 --ignore=E126,E127,E128,E123,E226,E241,E242,E265,N802,W503,E402,N803,N806,N814,N817,W504 --show-source --statistics setup.py driver.py y3prediction 
+    flake8 --ignore=E126,E127,E128,E123,E226,E241,E242,E265,N802,W503,E402,N803,N806,N814,N817,W504 --show-source --statistics setup.py driver.py y3prediction/*.py
     res=$?
     if [[ $res -ne 0 ]]; then
         echo "Error: flake8 check failed. Fix the errors (or run git with --no-verify to bypass the check)."
