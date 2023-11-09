@@ -52,7 +52,7 @@ jobs:
             python -m pip install wheel
             python -m pip install pylint pyyaml
 
-            pylint setup.py driver.py y3prediction
+            pylint setup.py driver.py y3prediction/*.py
 
         - name: Eager smoke test
           run: |
