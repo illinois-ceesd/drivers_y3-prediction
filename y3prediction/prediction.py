@@ -3613,6 +3613,18 @@ def main(actx_class,
                 restart_data["wv"] = state.wv
                 restart_data["t_wall"] = t_wall
 
+            # map data item names to associated volume id
+            restart_data_to_volume = {
+                "cv": "fluid",
+                "av_smu": "fluid",
+                "av_sbeta": "fluid",
+                "av_skappa": "fluid",
+                "temperature_seed": "fluid",
+                "wv": "wall",
+                "t_wall": "wall"
+            }
+            restart_data["restart_data_to_volume"] = restart_data_to_volume
+
             write_restart_file(actx, restart_data, restart_fname, comm)
 
         if rank == 0:
