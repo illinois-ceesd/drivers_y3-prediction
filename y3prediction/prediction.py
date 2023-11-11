@@ -2466,7 +2466,16 @@ def main(actx_class,
         restart_av_smu = restart_data["av_smu"]
         restart_av_sbeta = restart_data["av_sbeta"]
         restart_av_skappa = restart_data["av_skappa"]
-        restart_av_sd = restart_data["av_sd"]
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            restart_av_sd = restart_data["av_sd"]
+        except (KeyError):
+            restart_av_sd = actx.zeros_like(restart_av_smu)
+            if rank == 0:
+                print("no data for av_sd in restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+
         if use_wall:
             restart_wv = restart_data["wv"]
         if restart_order != order:
@@ -2681,7 +2690,14 @@ def main(actx_class,
             target_av_smu = target_data["av_smu"]
             target_av_sbeta = target_data["av_sbeta"]
             target_av_skappa = target_data["av_skappa"]
-            target_av_sd = target_data["av_sd"]
+            # this is so we can restart from legacy, before use_av=3
+            try:
+                target_av_sd = target_data["av_sd"]
+            except (KeyError):
+                target_av_sd = actx.zeros_like(target_av_smu)
+                if rank == 0:
+                    print("no data for av_sd in target file")
+                    print("av_sd will be initialzed to 0 on the mesh")
 
         if target_nspecies != nspecies:
             if rank == 0:
