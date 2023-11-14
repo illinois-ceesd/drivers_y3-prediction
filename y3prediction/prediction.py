@@ -96,7 +96,8 @@ from mirgecom.eos import (
 from mirgecom.transport import (SimpleTransport,
                                 PowerLawTransport,
                                 ArtificialViscosityTransportDiv,
-                                ArtificialViscosityTransportDiv2)
+                                ArtificialViscosityTransportDiv2,
+                                ArtificialViscosityTransportDiv3)
 from mirgecom.gas_model import (
     GasModel,
     make_fluid_state,
@@ -149,6 +150,7 @@ class StepperState:
     av_smu: DOFArray
     av_sbeta: DOFArray
     av_skappa: DOFArray
+    av_sd: DOFArray
 
     def replace(self, **kwargs):
         """Return a copy of *self* with the attributes in *kwargs* replaced."""
@@ -158,7 +160,8 @@ class StepperState:
     def get_obj_array(self):
         """Return an object array containing all the stored quantitines."""
         return make_obj_array([self.cv, self.tseed,
-                               self.av_smu, self.av_sbeta, self.av_skappa])
+                               self.av_smu, self.av_sbeta,
+                               self.av_skappa, self.av_sd])
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -178,26 +181,31 @@ class WallStepperState(StepperState):
     def get_obj_array(self):
         """Return an object array containing all the stored quantitines."""
         return make_obj_array([self.cv, self.tseed,
-                               self.av_smu, self.av_sbeta, self.av_skappa,
+                               self.av_smu, self.av_sbeta,
+                               self.av_skappa, self.av_sd,
                                self.wv])
 
 
-def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, wv=None):
+def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, av_sd, wv=None):
     if wv is not None:
         return WallStepperState(cv=cv, tseed=tseed, av_smu=av_smu,
-                                av_sbeta=av_sbeta, av_skappa=av_skappa, wv=wv)
+                                av_sbeta=av_sbeta, av_skappa=av_skappa,
+                                av_sd=av_sd, wv=wv)
     else:
         return StepperState(cv=cv, tseed=tseed, av_smu=av_smu,
-                            av_sbeta=av_sbeta, av_skappa=av_skappa)
+                            av_sbeta=av_sbeta, av_skappa=av_skappa,
+                            av_sd=av_sd)
 
 
 def make_stepper_state_obj(ary):
-    if ary.size > 5:
+    if ary.size > 6:
         return WallStepperState(cv=ary[0], tseed=ary[1], av_smu=ary[2],
-                                av_sbeta=ary[3], av_skappa=ary[4], wv=ary[5])
+                                av_sbeta=ary[3], av_skappa=ary[4],
+                                av_sd=ary[5], wv=ary[6])
     else:
         return StepperState(cv=ary[0], tseed=ary[1], av_smu=ary[2],
-                                av_sbeta=ary[3], av_skappa=ary[4])
+                            av_sbeta=ary[3], av_skappa=ary[4],
+                            av_sd=ary[5])
 
 
 class SingleLevelFilter(logging.Filter):
@@ -279,6 +287,10 @@ class _KappaDiffFluidCommTag:
 
 
 class _MuDiffCommTag:
+    pass
+
+
+class _DDiffFluidCommTag:
     pass
 
 
@@ -498,10 +510,12 @@ def main(actx_class,
     av2_mu0 = configurate("av_mu0", input_data, 0.1)
     av2_beta0 = configurate("av2_beta0", input_data, 6.0)
     av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
+    av2_d0 = configurate("av_d0", input_data, 0.1)
     av2_prandtl0 = configurate("av2_prandtl0", input_data, 0.9)
     av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
     av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
     av2_beta_s0 = configurate("av2_beta_s0", input_data, 0.01)
+    av2_d_s0 = configurate("av2_d_s0", input_data, 0.)
     smooth_char_length = configurate("smooth_char_length", input_data, 5)
     smooth_char_length_alpha = configurate("smooth_char_length_alpha",
                                            input_data, 0.025)
@@ -578,10 +592,12 @@ def main(actx_class,
 
     # material properties and models options
     gas_mat_prop = configurate("gas_mat_prop", input_data, 0)
-    spec_diff = configurate("spec_diff", input_data, 1.e-4)
     nspecies = configurate("nspecies", input_data, 0)
+
+    spec_diff = configurate("spec_diff", input_data, 1.e-4)
     eos_type = configurate("eos", input_data, 0)
     transport_type = configurate("transport", input_data, 0)
+    use_lewis_transport = configurate("use_lewis_transport", input_data, False)
     # for pyrometheus, number of newton iterations
     pyro_temp_iter = configurate("pyro_temp_iter", input_data, 3)
     # for pyrometheus, toleranace for temperature residual
@@ -789,9 +805,19 @@ def main(actx_class,
             print("\t mu, beta, kappa")
             # MJA update this
             print(f"Shock capturing parameters:"
+                  f"\n\tav_mu {av2_mu0}"
+                  f"\n\tav_beta {av2_beta0}"
+                  f"\n\tav_kappa {av2_kappa0}"
+                  f"\n\tav_prantdl {av2_prandtl0}"
+                  f"\nstagnation temperature {static_temp}")
+        elif use_av == 3:
+            print("Artificial viscosity using modified transport properties")
+            print("\t mu, beta, kappa, D")
+            print(f"Shock capturing parameters:"
                   f"\tav_mu {av2_mu0}"
                   f"\tav_beta {av2_beta0}"
                   f"\tav_kappa {av2_kappa0}"
+                  f"\tav_d {av2_d0}"
                   f"\tav_prantdl {av2_prandtl0}"
                   f"stagnation temperature {static_temp}")
         else:
@@ -1023,6 +1049,12 @@ def main(actx_class,
     if nspecies > 3:
         eos_type = 1
 
+    pyro_mech = configurate("pyro_mech", input_data, "uiuc_sharp")
+    pyro_mech_name = f"y3prediction.pyro_mechs.{pyro_mech}"
+
+    import importlib
+    pyromechlib = importlib.import_module(pyro_mech_name)
+
     if rank == 0:
         print("\n#### Simluation material properties: ####")
         print("#### Fluid domain: ####")
@@ -1049,38 +1081,10 @@ def main(actx_class,
             print("\tIdeal Gas EOS")
         elif eos_type == 1:
             print("\tPyrometheus EOS")
+            print("\tPyro mechanism {pyro_mech}")
 
         if use_species_limiter == 1:
             print("\nSpecies mass fractions limited to [0:1]")
-
-    transport_alpha = 0.6
-    transport_beta = 4.093e-7
-    transport_sigma = 2.0
-    transport_n = 0.666
-    transport_le = np.ones(nspecies,)
-
-    if rank == 0:
-        if transport_type == 0:
-            print("\t Simple transport model:")
-            print("\t\t constant viscosity, species diffusivity")
-            print(f"\tmu = {mu}")
-            print(f"\tkappa = {kappa}")
-            print(f"\tspecies diffusivity = {spec_diff}")
-        elif transport_type == 1:
-            print("\t Power law transport model:")
-            print("\t\t temperature dependent viscosity, species diffusivity")
-            print(f"\ttransport_alpha = {transport_alpha}")
-            print(f"\ttransport_beta = {transport_beta}")
-            print(f"\ttransport_sigma = {transport_sigma}")
-            print(f"\ttransport_n = {transport_n}")
-            print(f"\ttransport Lewis Number = {transport_le}")
-            print(f"\tspecies diffusivity = {spec_diff}")
-        elif transport_type == 2:
-            print("\t Pyrometheus transport model:")
-            print("\t\t temperature/mass fraction dependence")
-        else:
-            error_message = "Unknown transport_type {}".format(transport_type)
-            raise RuntimeError(error_message)
 
         if use_wall:
             print("#### Wall domain: ####")
@@ -1120,43 +1124,11 @@ def main(actx_class,
 
         print("#### Simluation material properties: ####")
 
-    spec_diffusivity = spec_diff * np.ones(nspecies)
-    if transport_type == 0:
-        physical_transport_model = SimpleTransport(
-            viscosity=mu, thermal_conductivity=kappa,
-            species_diffusivity=spec_diffusivity)
-    if transport_type == 1:
-        physical_transport_model = PowerLawTransport(
-            alpha=transport_alpha, beta=transport_beta,
-            sigma=transport_sigma, n=transport_n,
-            lewis=transport_le,
-            species_diffusivity=spec_diffusivity)
-
-    transport_model = physical_transport_model
-    if use_av == 1:
-        transport_model = ArtificialViscosityTransportDiv(
-            physical_transport=physical_transport_model,
-            av_mu=alpha_sc, av_prandtl=0.75)
-    elif use_av == 2:
-        transport_model = ArtificialViscosityTransportDiv2(
-            physical_transport=physical_transport_model,
-            av_mu=av2_mu0, av_beta=av2_beta0, av_kappa=av2_kappa0,
-            av_prandtl=av2_prandtl0)
-
-    pyro_mech = configurate("pyro_mech", input_data, "uiuc_sharp")
-    pyro_mech_name = f"y3prediction.pyro_mechs.{pyro_mech}"
-
-    import importlib
-    pyromechlib = importlib.import_module(pyro_mech_name)
-
-    #from y3prediction.uiuc_sharp import Thermochemistry
-
     chem_source_tol = 1.e-10
     # make the eos
     if eos_type == 0:
         eos = IdealSingleGas(gamma=gamma, gas_const=r)
         eos_init = eos
-        species_names = ["air", "fuel", "inert"]
     else:
         from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
         pyro_mech = get_pyrometheus_wrapper_class(
@@ -1170,8 +1142,97 @@ def main(actx_class,
             zero_level=chem_source_tol)(actx.np)
         eos_init = PyrometheusMixture(pyro_mech_init,
                                       temperature_guess=init_temperature)
+
+    # set the species names
+    if eos_type == 0:
+        if nspecies == 0:
+            species_names = ["inert"]
+        elif nspecies == 2:
+            species_names = ["air", "fuel"]
+        elif nspecies == 3:
+            species_names = ["air", "fuel", "inert"]
+    else:
         species_names = pyro_mech.species_names
 
+    # initialize the transport model
+    transport_alpha = 0.6
+    transport_beta = 4.093e-7
+    transport_sigma = 2.0
+    transport_n = 0.666
+
+    # use the species names to populate the default species diffusivities
+    default_species_diffusivity = {}
+    for species in species_names:
+        default_species_diffusivity[species] = spec_diff
+
+    input_species_diffusivity = configurate(
+        "species_diffusivity", input_data, default_species_diffusivity)
+
+    # now read the diffusivities from input
+    print(f"{input_species_diffusivity}")
+
+    species_diffusivity = spec_diff * np.ones(nspecies)
+    for i in range(nspecies):
+        species_diffusivity[i] = input_species_diffusivity[species_names[i]]
+
+    transport_le = None
+    if use_lewis_transport:
+        transport_le = np.ones(nspecies,)
+
+    if rank == 0:
+        if transport_type == 0:
+            print("\t Simple transport model:")
+            print("\t\t constant viscosity, species diffusivity")
+            print(f"\tmu = {mu}")
+            print(f"\tkappa = {kappa}")
+            print(f"\tspecies diffusivity = {spec_diff}")
+        elif transport_type == 1:
+            print("\t Power law transport model:")
+            print("\t\t temperature dependent viscosity, species diffusivity")
+            print(f"\ttransport_alpha = {transport_alpha}")
+            print(f"\ttransport_beta = {transport_beta}")
+            print(f"\ttransport_sigma = {transport_sigma}")
+            print(f"\ttransport_n = {transport_n}")
+            if use_lewis_transport:
+                print(f"\ttransport Lewis Number = {transport_le}")
+            else:
+                print(f"\tspecies diffusivity = {species_diffusivity}")
+        elif transport_type == 2:
+            print("\t Pyrometheus transport model:")
+            print("\t\t temperature/mass fraction dependence")
+        else:
+            error_message = "Unknown transport_type {}".format(transport_type)
+            raise RuntimeError(error_message)
+
+    if transport_type == 0:
+        physical_transport_model = SimpleTransport(
+            viscosity=mu, thermal_conductivity=kappa,
+            species_diffusivity=species_diffusivity)
+    if transport_type == 1:
+        physical_transport_model = PowerLawTransport(
+            alpha=transport_alpha, beta=transport_beta,
+            sigma=transport_sigma, n=transport_n,
+            lewis=transport_le,
+            species_diffusivity=species_diffusivity)
+
+    transport_model = physical_transport_model
+    if use_av == 1:
+        transport_model = ArtificialViscosityTransportDiv(
+            physical_transport=physical_transport_model,
+            av_mu=alpha_sc, av_prandtl=0.75)
+    elif use_av == 2:
+        transport_model = ArtificialViscosityTransportDiv2(
+            physical_transport=physical_transport_model,
+            av_mu=av2_mu0, av_beta=av2_beta0, av_kappa=av2_kappa0,
+            av_prandtl=av2_prandtl0)
+    elif use_av == 3:
+        transport_model = ArtificialViscosityTransportDiv3(
+            physical_transport=physical_transport_model,
+            av_mu=av2_mu0, av_beta=av2_beta0,
+            av_kappa=av2_kappa0, av_d=av2_d0,
+            av_prandtl=av2_prandtl0)
+
+    # with transport and eos sorted out, build the gas model
     gas_model = GasModel(eos=eos, transport=transport_model)
 
     # initialize eos and species mass fractions
@@ -2084,18 +2145,20 @@ def main(actx_class,
     ########################################
 
     def _create_fluid_state(cv, temperature_seed, smoothness_mu,
-                            smoothness_beta, smoothness_kappa):
+                            smoothness_beta, smoothness_kappa, smoothness_d):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
                                 smoothness_mu=smoothness_mu,
                                 smoothness_beta=smoothness_beta,
                                 smoothness_kappa=smoothness_kappa,
+                                smoothness_d=smoothness_d,
                                 limiter_func=limiter_func,
                                 limiter_dd=dd_vol_fluid)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
-    def update_dv(cv, temperature, smoothness_mu, smoothness_beta, smoothness_kappa):
+    def update_dv(cv, temperature, smoothness_mu, smoothness_beta,
+                  smoothness_kappa, smoothness_d):
         if eos_type == 0:
             return GasDependentVars(
                 temperature=temperature,
@@ -2103,7 +2166,8 @@ def main(actx_class,
                 speed_of_sound=eos.sound_speed(cv, temperature),
                 smoothness_mu=smoothness_mu,
                 smoothness_beta=smoothness_beta,
-                smoothness_kappa=smoothness_kappa)
+                smoothness_kappa=smoothness_kappa,
+                smoothness_d=smoothness_d)
         else:
             return MixtureDependentVars(
                 temperature=temperature,
@@ -2112,7 +2176,8 @@ def main(actx_class,
                 species_enthalpies=eos.species_enthalpies(cv, temperature),
                 smoothness_mu=smoothness_mu,
                 smoothness_beta=smoothness_beta,
-                smoothness_kappa=smoothness_kappa)
+                smoothness_kappa=smoothness_kappa,
+                smoothness_d=smoothness_d)
 
     def update_tv(cv, dv):
         return gas_model.transport.transport_vars(cv, dv, eos)
@@ -2167,7 +2232,7 @@ def main(actx_class,
     def lmin(s):
         return s - lmax(s)
 
-    # smoothness used fore beta with av = 3
+    # smoothness used for beta with av = 2
     def compute_smoothness_mbk(cv, dv, grad_cv, grad_t):
 
         from mirgecom.fluid import velocity_gradient
@@ -2229,18 +2294,48 @@ def main(actx_class,
 
         return make_obj_array([smoothness_mu, smoothness_beta, smoothness_kappa])
 
+    # smoothness used for beta with av = 3
+    def compute_smoothness_mbkd(cv, dv, grad_cv, grad_t):
+
+        from mirgecom.fluid import species_mass_fraction_gradient
+        y_grad = species_mass_fraction_gradient(cv, grad_cv)
+
+        y_grad_max = y_grad[0]
+        """
+        y_grad_max = actx.np.max(y_grad)
+        for i in range(1, nspecies):
+            y_grad_max = actx.np.max(y_grad_max, y_grad[i])
+        """
+        grad_y_mag = actx.np.sqrt(np.dot(y_grad_max, y_grad_max))
+
+        href = smoothed_char_length_fluid
+        indicator = href*grad_y_mag
+
+        # limit the indicator range
+        indicator_max = 1.0
+        smoothness_d = (lmin(lmax(indicator - av2_d_s0) - indicator_max)
+                           + indicator_max)*href
+
+        smoothness_mu, smoothness_beta, smoothness_kappa = \
+            compute_smoothness_mbk(cv, dv, grad_cv, grad_t)
+
+        return make_obj_array([smoothness_mu, smoothness_beta,
+                               smoothness_kappa, smoothness_d])
+
     def update_smoothness(state, time):
         cv = state.cv
         tseed = state.tseed
         av_smu = state.av_smu
         av_sbeta = state.av_sbeta
         av_skappa = state.av_skappa
+        av_sd = state.av_sd
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
                                        smoothness_mu=av_smu,
                                        smoothness_beta=av_sbeta,
                                        smoothness_kappa=av_skappa,
+                                       smoothness_d=av_sd,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
         cv = fluid_state.cv  # reset cv to the limited version
@@ -2330,12 +2425,16 @@ def main(actx_class,
         elif use_av == 2:
             av_smu, av_sbeta, av_skappa = \
                 compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
+        elif use_av == 3:
+            av_smu, av_sbeta, av_skappa, av_sd = \
+                compute_smoothness_mbkd(cv, dv, grad_fluid_cv, grad_fluid_t)
 
         # update the stepper_state
         state = state.replace(cv=cv,
                               av_smu=av_smu,
                               av_sbeta=av_sbeta,
-                              av_skappa=av_skappa)
+                              av_skappa=av_skappa,
+                              av_sd=av_sd)
         if use_wall:
             state = state.replace(wv=wv)
 
@@ -2367,6 +2466,16 @@ def main(actx_class,
         restart_av_smu = restart_data["av_smu"]
         restart_av_sbeta = restart_data["av_sbeta"]
         restart_av_skappa = restart_data["av_skappa"]
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            restart_av_sd = restart_data["av_sd"]
+        except (KeyError):
+            restart_av_sd = actx.zeros_like(restart_av_smu)
+            if rank == 0:
+                print("no data for av_sd in restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+
         if use_wall:
             restart_wv = restart_data["wv"]
         if restart_order != order:
@@ -2392,6 +2501,7 @@ def main(actx_class,
             restart_av_smu = fluid_connection(restart_data["av_smu"])
             restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
             restart_av_skappa = fluid_connection(restart_data["av_skappa"])
+            restart_av_sd = fluid_connection(restart_data["av_sd"])
             temperature_seed = fluid_connection(restart_data["temperature_seed"])
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
@@ -2454,7 +2564,7 @@ def main(actx_class,
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-            smoothness_kappa=restart_av_skappa)
+            smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd)
 
         # update current state with injection intialization
         if init_injection:
@@ -2465,7 +2575,7 @@ def main(actx_class,
                 restart_fluid_state = create_fluid_state(
                     cv=restart_cv, temperature_seed=temperature_seed,
                     smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                    smoothness_kappa=restart_av_skappa)
+                    smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd)
                 temperature_seed = restart_fluid_state.temperature
 
             if use_upstream_injection:
@@ -2475,7 +2585,7 @@ def main(actx_class,
                 restart_fluid_state = create_fluid_state(
                     cv=restart_cv, temperature_seed=temperature_seed,
                     smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                    smoothness_kappa=restart_av_skappa)
+                    smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd)
                 temperature_seed = restart_fluid_state.temperature
 
         if logmgr:
@@ -2496,13 +2606,15 @@ def main(actx_class,
         restart_av_smu = actx.np.zeros_like(restart_cv.mass)
         restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
+        restart_av_sd = actx.np.zeros_like(restart_cv.mass)
 
         # get the initial temperature field to use as a seed
         restart_fluid_state = create_fluid_state(cv=restart_cv,
                                                  temperature_seed=temperature_seed,
                                                  smoothness_mu=restart_av_smu,
                                                  smoothness_beta=restart_av_sbeta,
-                                                 smoothness_kappa=restart_av_skappa)
+                                                 smoothness_kappa=restart_av_skappa,
+                                                 smoothness_d=restart_av_sd)
         temperature_seed = restart_fluid_state.temperature
 
         # update current state with injection intialization
@@ -2513,7 +2625,8 @@ def main(actx_class,
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                smoothness_kappa=restart_av_skappa)
+                smoothness_kappa=restart_av_skappa,
+                smoothness_d=restart_av_sd)
             temperature_seed = restart_fluid_state.temperature
 
         if use_upstream_injection:
@@ -2523,7 +2636,8 @@ def main(actx_class,
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                smoothness_kappa=restart_av_skappa)
+                smoothness_kappa=restart_av_skappa,
+                smoothness_d=restart_av_sd)
             temperature_seed = restart_fluid_state.temperature
 
         # Ideally we would compute the smoothness variables here,
@@ -2570,11 +2684,20 @@ def main(actx_class,
             target_av_smu = fluid_connection(target_data["av_smu"])
             target_av_sbeta = fluid_connection(target_data["av_sbeta"])
             target_av_skappa = fluid_connection(target_data["av_skappa"])
+            target_av_sd = fluid_connection(target_data["av_sd"])
         else:
             target_cv = target_data["cv"]
             target_av_smu = target_data["av_smu"]
             target_av_sbeta = target_data["av_sbeta"]
             target_av_skappa = target_data["av_skappa"]
+            # this is so we can restart from legacy, before use_av=3
+            try:
+                target_av_sd = target_data["av_sd"]
+            except (KeyError):
+                target_av_sd = actx.zeros_like(target_av_smu)
+                if rank == 0:
+                    print("no data for av_sd in target file")
+                    print("av_sd will be initialzed to 0 on the mesh")
 
         if target_nspecies != nspecies:
             if rank == 0:
@@ -2635,12 +2758,14 @@ def main(actx_class,
         target_av_smu = force_evaluation(actx, target_av_smu)
         target_av_sbeta = force_evaluation(actx, target_av_sbeta)
         target_av_skappa = force_evaluation(actx, target_av_skappa)
+        target_av_sd = force_evaluation(actx, target_av_sd)
 
         target_fluid_state = create_fluid_state(cv=target_cv,
                                                 temperature_seed=temperature_seed,
                                                 smoothness_mu=target_av_smu,
                                                 smoothness_beta=target_av_sbeta,
-                                                smoothness_kappa=target_av_skappa)
+                                                smoothness_kappa=target_av_skappa,
+                                                smoothness_d=target_av_sd)
 
     else:
         # Set the current state from time 0
@@ -2648,6 +2773,7 @@ def main(actx_class,
         target_av_smu = restart_av_smu
         target_av_sbeta = restart_av_sbeta
         target_av_skappa = restart_av_skappa
+        target_av_sd = restart_av_sd
 
         target_fluid_state = restart_fluid_state
 
@@ -2704,11 +2830,13 @@ def main(actx_class,
         target_av_smu = force_evaluation(actx, target_av_smu)
         target_av_sbeta = force_evaluation(actx, target_av_sbeta)
         target_av_skappa = force_evaluation(actx, target_av_skappa)
+        target_av_sd = force_evaluation(actx, target_av_sd)
 
         target_fluid_state = create_fluid_state(
             cv=target_cv, temperature_seed=temperature_seed,
             smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
-            smoothness_kappa=target_av_skappa)
+            smoothness_kappa=target_av_skappa,
+            smoothness_d=target_av_sd)
 
     #
     # Setup the wall model
@@ -2943,7 +3071,8 @@ def main(actx_class,
         wv=restart_wv,
         av_smu=restart_av_smu,
         av_sbeta=restart_av_sbeta,
-        av_skappa=restart_av_skappa)
+        av_skappa=restart_av_skappa,
+        av_sd=restart_av_sd)
 
     # finish initializing the smoothness for non-restarts
     if not restart_filename:
@@ -2956,13 +3085,15 @@ def main(actx_class,
     restart_av_smu = force_evaluation(actx, restart_stepper_state.av_smu)
     restart_av_sbeta = force_evaluation(actx, restart_stepper_state.av_sbeta)
     restart_av_skappa = force_evaluation(actx, restart_stepper_state.av_skappa)
+    restart_av_sd = force_evaluation(actx, restart_stepper_state.av_sd)
 
     # set the initial data used by the simulation
     current_fluid_state = create_fluid_state(cv=restart_cv,
                                              temperature_seed=temperature_seed,
                                              smoothness_mu=restart_av_smu,
                                              smoothness_beta=restart_av_sbeta,
-                                             smoothness_kappa=restart_av_skappa)
+                                             smoothness_kappa=restart_av_skappa,
+                                             smoothness_d=restart_av_sd)
 
     if use_wall:
         current_wv = force_evaluation(actx, restart_stepper_state.wv)
@@ -2973,7 +3104,8 @@ def main(actx_class,
         wv=current_wv,
         av_smu=current_fluid_state.dv.smoothness_mu,
         av_sbeta=current_fluid_state.dv.smoothness_beta,
-        av_skappa=current_fluid_state.dv.smoothness_kappa)
+        av_skappa=current_fluid_state.dv.smoothness_kappa,
+        av_sd=current_fluid_state.dv.smoothness_d)
 
     ####################
     # Ignition Sources #
@@ -3326,12 +3458,20 @@ def main(actx_class,
 
         wv = wv + 0.*wall_rhs
 
+        av_smu = actx.zeros_like(cv.mass)
+        av_sbeta = actx.zeros_like(cv.mass)
+        av_skappa = actx.zeros_like(cv.mass)
+        av_sd = actx.zeros_like(cv.mass)
+
         # now compute the smoothness part
         if use_av == 1:
             av_smu = compute_smoothness(cv, dv, grad_fluid_cv)
         elif use_av == 2:
             av_smu, av_sbeta, av_skappa = \
                 compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
+        elif use_av == 3:
+            av_smu, av_sbeta, av_skappa, av_sd = \
+                compute_smoothness_mbkd(cv, dv, grad_fluid_cv, grad_fluid_t)
 
         from mirgecom.fluid import (
             velocity_gradient,
@@ -3344,8 +3484,9 @@ def main(actx_class,
         local_fluid_viz_fields["smoothness_mu"] = [av_smu]
         local_fluid_viz_fields["smoothness_beta"] = [av_sbeta]
         local_fluid_viz_fields["smoothness_kappa"] = [av_skappa]
+        local_fluid_viz_fields["smoothness_d"] = [av_sd]
 
-        return make_obj_array([av_smu, av_sbeta, av_skappa,
+        return make_obj_array([av_smu, av_sbeta, av_skappa, av_sd,
                                grad_v, grad_y, grad_fluid_t,
                                grad_wall_t, cv, wv])
 
@@ -3366,12 +3507,20 @@ def main(actx_class,
             state=fluid_state, boundaries=uncoupled_fluid_boundaries,
             time=time, quadrature_tag=quadrature_tag)
 
+        av_smu = actx.zeros_like(cv.mass)
+        av_sbeta = actx.zeros_like(cv.mass)
+        av_skappa = actx.zeros_like(cv.mass)
+        av_sd = actx.zeros_like(cv.mass)
+
         # now compute the smoothness part
         if use_av == 1:
             av_smu = compute_smoothness(cv, dv, grad_fluid_cv)
         elif use_av == 2:
             av_smu, av_sbeta, av_skappa = \
                 compute_smoothness_mbk(cv, dv, grad_fluid_cv, grad_fluid_t)
+        elif use_av == 3:
+            av_smu, av_sbeta, av_skappa, av_sd = \
+                compute_smoothness_mbkd(cv, dv, grad_fluid_cv, grad_fluid_t)
 
         from mirgecom.fluid import (
             velocity_gradient,
@@ -3384,8 +3533,9 @@ def main(actx_class,
         local_fluid_viz_fields["smoothness_mu"] = [av_smu]
         local_fluid_viz_fields["smoothness_beta"] = [av_sbeta]
         local_fluid_viz_fields["smoothness_kappa"] = [av_skappa]
+        local_fluid_viz_fields["smoothness_d"] = [av_sd]
 
-        return make_obj_array([av_smu, av_sbeta, av_skappa,
+        return make_obj_array([av_smu, av_sbeta, av_skappa, av_sd,
                                grad_v, grad_y, grad_fluid_t, cv])
 
     compute_viz_fields_compiled = actx.compile(compute_viz_fields)
@@ -3454,10 +3604,17 @@ def main(actx_class,
                                  ("production_rates", production_rates)]
                 fluid_viz_fields.extend(fluid_viz_ext)
 
+            # expand to include species diffusivities?
             fluid_viz_ext = [("mu", fluid_state.viscosity),
                              ("beta", fluid_state.bulk_viscosity),
                              ("kappa", fluid_state.thermal_conductivity)]
             fluid_viz_fields.extend(fluid_viz_ext)
+
+            if transport_type > 0:
+                fluid_diffusivity = fluid_state.species_diffusivity
+                fluid_viz_fields.extend(
+                    ("D_"+species_names[i], fluid_diffusivity[i])
+                    for i in range(nspecies))
 
             if nparts > 1:
                 fluid_viz_ext = [("rank", rank)]
@@ -3476,8 +3633,12 @@ def main(actx_class,
             cell_Re = (cv.mass*cv.speed*char_length_fluid /
                 fluid_state.viscosity)
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
-            alpha_heat = fluid_state.thermal_conductivity/cp/fluid_state.viscosity
-            cell_Pe_heat = char_length_fluid*cv.speed/alpha_heat
+            alpha_heat = fluid_state.thermal_conductivity/cp/cv.mass
+            nu = fluid_state.viscosity/fluid_state.mass_density
+
+            cell_Pe_momentum = char_length_fluid*fluid_state.wavespeed/nu
+
+            cell_Pe_thermal = char_length_fluid*fluid_state.wavespeed/alpha_heat
 
             from mirgecom.viscous import get_local_max_species_diffusivity
             d_alpha_max = \
@@ -3486,17 +3647,17 @@ def main(actx_class,
                     fluid_state.species_diffusivity
                 )
 
-            cell_Pe_mass = char_length_fluid*cv.speed/d_alpha_max
+            cell_Pe_diffusion = char_length_fluid*fluid_state.wavespeed/d_alpha_max
 
             # these are useful if our transport properties
             # are not constant on the mesh
             # prandtl
             # schmidt_number
             # damkohler_number
-
             viz_ext = [("Re", cell_Re),
-                       ("Pe_mass", cell_Pe_mass),
-                       ("Pe_heat", cell_Pe_heat)]
+                       ("Pe_momentum", cell_Pe_momentum),
+                       ("Pe_thermal", cell_Pe_thermal),
+                       ("Pe_diffusion", cell_Pe_diffusion)]
             fluid_viz_fields.extend(viz_ext)
             viz_ext = [("char_length_fluid", char_length_fluid),
                        ("char_length_fluid_smooth", smoothed_char_length_fluid),
@@ -3504,18 +3665,15 @@ def main(actx_class,
             fluid_viz_fields.extend(viz_ext)
 
             cfl_fluid_inv = char_length_fluid / (fluid_state.wavespeed)
-            nu = fluid_state.viscosity/fluid_state.mass_density
             cfl_fluid_visc = char_length_fluid**2 / nu
-            #cfl_fluid_spec_diff
-            fluid_diffusivity = (fluid_state.thermal_conductivity/cv.mass /
-                                 eos.heat_capacity_cp(cv, dv.temperature))
-            cfl_fluid_heat_diff = (char_length_fluid**2/fluid_diffusivity)
+            cfl_fluid_spec_diff = char_length_fluid**2 / d_alpha_max
+            cfl_fluid_heat_diff = (char_length_fluid**2 / alpha_heat)
 
             viz_ext = [
                        ("cfl_fluid_inv", current_dt/cfl_fluid_inv),
                        ("cfl_fluid_visc", current_dt/cfl_fluid_visc),
-                       #("cfl_fluid_spec_diff", cfl_fluid_spec_diff),
-                       ("cfl_fluid_heat_diff", current_dt/cfl_fluid_heat_diff)]
+                       ("cfl_fluid_heat_diff", current_dt/cfl_fluid_heat_diff),
+                       ("cfl_fluid_spec_diff", current_dt/cfl_fluid_spec_diff)]
             fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
@@ -3541,16 +3699,18 @@ def main(actx_class,
             av_smu = viz_stuff[0]
             av_sbeta = viz_stuff[1]
             av_skappa = viz_stuff[2]
-            grad_v = viz_stuff[3]
-            grad_y = viz_stuff[4]
-            grad_fluid_t = viz_stuff[5]
+            av_sd = viz_stuff[3]
+            grad_v = viz_stuff[4]
+            grad_y = viz_stuff[5]
+            grad_fluid_t = viz_stuff[6]
 
             if use_wall:
-                grad_wall_t = viz_stuff[6]
+                grad_wall_t = viz_stuff[7]
 
             viz_ext = [("smoothness_mu", av_smu),
                        ("smoothness_beta", av_sbeta),
-                       ("smoothness_kappa", av_skappa)]
+                       ("smoothness_kappa", av_skappa),
+                       ("smoothness_d", av_sd)]
             fluid_viz_fields.extend(viz_ext)
 
             #viz_ext = [("rhs", ns_rhs),
@@ -3599,6 +3759,7 @@ def main(actx_class,
                 "av_smu": state.av_smu,
                 "av_sbeta": state.av_sbeta,
                 "av_skappa": state.av_skappa,
+                "av_sd": state.av_sd,
                 "temperature_seed": state.tseed,
                 "nspecies": nspecies,
                 "t": t,
@@ -3657,6 +3818,7 @@ def main(actx_class,
                      "pressure",
                      "smoothness_mu",
                      "smoothness_kappa",
+                     "smoothness_d",
                      "smoothness_beta"]
 
         for field in dv_fields:
@@ -3916,7 +4078,8 @@ def main(actx_class,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
                                          smoothness_beta=stepper_state.av_sbeta,
-                                         smoothness_kappa=stepper_state.av_skappa)
+                                         smoothness_kappa=stepper_state.av_skappa,
+                                         smoothness_d=stepper_state.av_sd)
 
         if use_wall:
             wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
@@ -4107,12 +4270,14 @@ def main(actx_class,
         av_smu = stepper_state.av_smu
         av_sbeta = stepper_state.av_sbeta
         av_skappa = stepper_state.av_skappa
+        av_sd = stepper_state.av_sd
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
                                        smoothness_mu=av_smu,
                                        smoothness_beta=av_sbeta,
                                        smoothness_kappa=av_skappa,
+                                       smoothness_d=av_sd,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
 
@@ -4171,6 +4336,11 @@ def main(actx_class,
                 compute_smoothness_mbk(cv=cv, dv=fluid_state.dv,
                                        grad_cv=grad_fluid_cv,
                                        grad_t=grad_fluid_t)
+        elif use_av == 3:
+            [smoothness_mu, smoothness_beta, smoothness_kappa, smoothness_d] = \
+                compute_smoothness_mbkd(cv=cv, dv=fluid_state.dv,
+                                       grad_cv=grad_fluid_cv,
+                                       grad_t=grad_fluid_t)
 
         tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
 
@@ -4216,6 +4386,7 @@ def main(actx_class,
         av_smu_rhs = actx.np.zeros_like(cv.mass)
         av_sbeta_rhs = actx.np.zeros_like(cv.mass)
         av_skappa_rhs = actx.np.zeros_like(cv.mass)
+        av_sd_rhs = actx.np.zeros_like(cv.mass)
         # work good for shock 1d
 
         tau = current_dt/smoothness_tau
@@ -4246,7 +4417,7 @@ def main(actx_class,
                 ) + 1/tau * (smoothness_mu - av_smu)
             )
 
-            if use_av == 2:
+            if use_av >= 2:
                 av_sbeta_rhs = (
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_sbeta,
@@ -4261,6 +4432,15 @@ def main(actx_class,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                         comm_tag=_KappaDiffFluidCommTag
                     ) + 1/tau * (smoothness_kappa - av_skappa)
+                )
+
+            if use_av == 3:
+                av_sd_rhs = (
+                    diffusion_operator(
+                        dcoll, epsilon_diff, fluid_av_boundaries, av_sd,
+                        quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                        comm_tag=_DDiffFluidCommTag
+                    ) + 1/tau * (smoothness_d - av_sd)
                 )
 
         if use_sponge:
@@ -4342,7 +4522,8 @@ def main(actx_class,
             wv=wall_rhs,
             av_smu=av_smu_rhs,
             av_sbeta=av_sbeta_rhs,
-            av_skappa=av_skappa_rhs)
+            av_skappa=av_skappa_rhs,
+            av_sd=av_sd_rhs)
 
         return rhs_stepper_state.get_obj_array()
 
@@ -4398,11 +4579,13 @@ def main(actx_class,
     current_av_smu = current_stepper_state.av_smu
     current_av_sbeta = current_stepper_state.av_sbeta
     current_av_skappa = current_stepper_state.av_skappa
+    current_av_sd = current_stepper_state.av_sd
 
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              smoothness_mu=current_av_smu,
                                              smoothness_beta=current_av_sbeta,
-                                             smoothness_kappa=current_av_skappa)
+                                             smoothness_kappa=current_av_skappa,
+                                             smoothness_d=current_av_sd)
     if use_wall:
         current_wv = current_stepper_state.wv
         current_wdv = create_wall_dependent_vars_compiled(current_wv)
