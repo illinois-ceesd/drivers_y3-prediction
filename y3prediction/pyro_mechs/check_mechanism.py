@@ -16,7 +16,7 @@ def check_mechanism(mech_file):
 
         numpts = 101
         lnumpts = 10
-        temperature_list = np.linspace(100, 1000, numpts)
+        temperature_list = np.linspace(100, 5000, numpts)
         low_temp_list = np.linspace(1, 91, lnumpts)
         temperature_list = np.insert(temperature_list, 0, low_temp_list)
 
@@ -35,6 +35,7 @@ def check_mechanism(mech_file):
             ii += 1
 
         gamma = cp/cv
+
 
         plt.close("all")
         fig = plt.figure(1, figsize=[6.4, 4.8])
