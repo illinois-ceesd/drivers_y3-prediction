@@ -2071,8 +2071,7 @@ def main(actx_class,
         kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
 
         mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
-                                   #species_mass_fractions=spec_lim)
-                                   species_mass_fractions=cv.species_mass_fractions)
+                                   species_mass_fractions=spec_lim)
 
         energy_lim = mass_lim*(
             gas_model.eos.get_internal_energy(temperature,
@@ -2501,7 +2500,16 @@ def main(actx_class,
             restart_av_smu = fluid_connection(restart_data["av_smu"])
             restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
             restart_av_skappa = fluid_connection(restart_data["av_skappa"])
-            restart_av_sd = fluid_connection(restart_data["av_sd"])
+
+            # this is so we can restart from legacy, before use_av=3
+            try:
+                restart_av_sd = fluid_connection(restart_data["av_sd"])
+            except (KeyError):
+                restart_av_sd = actx.zeros_like(restart_av_smu)
+                if rank == 0:
+                    print("no data for av_sd in restart file")
+                    print("av_sd will be initialzed to 0 on the mesh")
+
             temperature_seed = fluid_connection(restart_data["temperature_seed"])
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
