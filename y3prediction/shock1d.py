@@ -141,7 +141,9 @@ class PlanarDiscontinuityMulti:
         dist = np.dot(x0_species - x_vec, self._normal)
         xtanh = 1.0/self._sigma*dist
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
-        y = self._yl + (self._yr - self._yl)*weight
+        y = np.zeros(self._nspecies, dtype=object)
+        if self._nspecies > 0:
+            y = self._yl + (self._yr - self._yl)*weight
 
         # now solve for T, P, velocity
         dist = np.dot(x0 - x_vec, self._normal)
@@ -171,11 +173,8 @@ class PlanarDiscontinuityMulti:
             smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
             velocity[0] = velocity[0]*smoothing_top*smoothing_bottom
 
-        if self._nspecies:
-            mass = eos.get_density(pressure, temperature,
-                                   species_mass_fractions=y)
-        else:
-            mass = pressure/temperature/eos.gas_const()
+        mass = eos.get_density(pressure, temperature,
+                               species_mass_fractions=y)
 
         specmass = mass * y
         mom = mass * velocity

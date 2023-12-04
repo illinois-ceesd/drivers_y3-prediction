@@ -1272,8 +1272,6 @@ def main(actx_class,
         fuel_location[0] = fuel_loc_x
 
         # parameters to adjust the shape of the initialization
-        vel_sigma = 1000
-        temp_sigma = 1250
         temp_wall = 300
 
         # normal shock properties
