@@ -99,9 +99,9 @@ class InitACTII:
 
         self._exhaust = exhaust
         self._x_exhaust_left = 0.812
-        self._x_exhaust_right = 1.112
+        self._x_exhaust_right = 1.113
         self._y_exhaust_bottom = -0.114
-        self._y_exhaust_top = 0.12
+        self._y_exhaust_top = 0.121
 
         self._y_outlet_top = 0.020
         self._y_outlet_bottom = -0.01364
@@ -360,7 +360,7 @@ class InitACTII:
         # smooth the temperature at the upstream corner
         xc_left = zeros + self._x_cav_upstream
         xc_right = xc_left + 1200/self._temp_sigma*self._smooth_offset
-        print(xc_right)
+
         yc_bottom = zeros + self._y_cav_top
         yc_top = yc_bottom + 1200/self._temp_sigma*self._smooth_offset
         zc_aft = zeros - 0.0175 + 0.001
@@ -439,8 +439,35 @@ class InitACTII:
                                            corner_temperature,
                                            #corner_temperature)
                                            smooth_temperature)
-
         temperature = smooth_temperature
+        ############
+
+        ##########
+        if self._exhaust:
+            x_left = self._geom_top[-1][0]
+            upper_edge = actx.np.less(ypos, self._y_outlet_bottom + 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_exhaust_bottom - 1.e-6)
+            left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
+            right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
+            lower_box = left_edge * right_edge * upper_edge * lower_edge
+            temperature = actx.np.where(lower_box, zeros + self._temp_wall,
+                                                                temperature)
+
+            upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_outlet_top - 1.e-6)
+            left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
+            right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
+            upper_box = left_edge * right_edge * upper_edge * lower_edge
+            temperature = actx.np.where(upper_box, zeros + self._temp_wall,
+                                                                temperature)
+
+            upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_exhaust_bottom - 1.e-6)
+            left_edge = actx.np.greater(xpos, x_left - 1.e-6)
+            right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
+            left_box = left_edge * right_edge * upper_edge * lower_edge
+            temperature = actx.np.where(left_box, zeros + self._temp_wall,
+                                                                temperature)
 
         y = ones*self._mass_frac
         mass = eos.get_density(pressure=pressure, temperature=temperature,
