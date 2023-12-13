@@ -38,7 +38,7 @@ class InitACTII:
             inj_gamma_guess,
             inj_temp_sigma, inj_vel_sigma,
             inj_ytop, inj_ybottom,
-            inj_mach, injection=True
+            inj_mach, injection=True, exhaust=True
     ):
 
         r"""Initialize mixture parameters.
@@ -96,6 +96,15 @@ class InitACTII:
         self._y_cav_top = 0.0
         self._y_cav_bottom = -0.007
         self._smooth_offset = 0.001
+
+        self._exhaust = exhaust
+        self._x_exhaust_left = 0.812
+        self._x_exhaust_right = 1.112
+        self._y_exhaust_bottom = -0.114
+        self._y_exhaust_top = 0.12
+
+        self._y_outlet_top = 0.020
+        self._y_outlet_bottom = -0.01364
 
         self._inj_P0 = inj_pres
         self._inj_T0 = inj_temp
@@ -171,18 +180,22 @@ class InitACTII:
         theta_bottom_left = theta_geom_bottom[0][1]
 
         for ind in range(1, self._geom_top.shape[0]):
-            area_ratio = ((self._geom_top[ind][1] - self._geom_bottom[ind][1]) /
-                          self._throat_height)
-            if self._geom_top[ind][0] < self._x_throat:
-                mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
-                                                 gamma=gamma,
-                                                 mach_guess=0.01)
-            elif self._geom_top[ind][0] > self._x_throat:
-                mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
-                                                 gamma=gamma,
-                                                 mach_guess=1.01)
+
+            if self._exhaust and ind == self._geom_top.shape[0]-1:
+                mach_right = 0
             else:
-                mach_right = 1.0
+                area_ratio = ((self._geom_top[ind][1] - self._geom_bottom[ind][1]) /
+                              self._throat_height)
+                if self._geom_top[ind][0] < self._x_throat:
+                    mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
+                                                     gamma=gamma,
+                                                     mach_guess=0.01)
+                elif self._geom_top[ind][0] > self._x_throat:
+                    mach_right = getMachFromAreaRatio(area_ratio=area_ratio,
+                                                     gamma=gamma,
+                                                     mach_guess=1.01)
+                else:
+                    mach_right = 1.0
             ytop_right = self._geom_top[ind][1]
             ybottom_right = self._geom_bottom[ind][1]
             theta_top_right = theta_geom_top[ind][1]
@@ -208,10 +221,21 @@ class InitACTII:
                            (local_theta_top - local_theta_bottom) /
                            (local_ytop - local_ybottom)*(ypos - local_ybottom))
 
-            # extend just a a little bit to catch the edges
+            # extend just a little bit to catch the edges
+            # calculate pressure everywhere in the exhause
             left_edge = actx.np.greater(xpos, x_left - 1.e-6)
             right_edge = actx.np.less(xpos, x_right + 1.e-6)
-            inside_block = left_edge*right_edge
+            inside_block = left_edge * right_edge
+
+            # calculate temperature only near the outlet
+            if self._exhaust and ind == self._geom_top.shape[0]-1:
+                # first make the array for pressure
+                mach_pressure = actx.np.where(inside_block, local_mach, mach)
+
+                #now calculate temperature
+                upper_edge = actx.np.less(ypos, ytop_left + 1.e-6)
+                lower_edge = actx.np.greater(ypos, ybottom_left - 1.e-6)
+                inside_block = left_edge * right_edge * upper_edge * lower_edge
 
             mach = actx.np.where(inside_block, local_mach, mach)
             ytop = actx.np.where(inside_block, local_ytop, ytop)
@@ -225,11 +249,19 @@ class InitACTII:
             theta_top_left = theta_top_right
             x_left = x_right
 
-        pressure = getIsentropicPressure(
-            mach=mach,
-            P0=self._P0,
-            gamma=gamma
-        )
+        if not self._exhaust:
+            pressure = getIsentropicPressure(
+                mach=mach,
+                P0=self._P0,
+                gamma=gamma
+            )
+        else:
+            pressure = getIsentropicPressure(
+                mach=mach_pressure,
+                P0=self._P0,
+                gamma=gamma
+            )
+
         temperature = getIsentropicTemperature(
             mach=mach,
             T0=self._T0,
@@ -328,6 +360,7 @@ class InitACTII:
         # smooth the temperature at the upstream corner
         xc_left = zeros + self._x_cav_upstream
         xc_right = xc_left + 1200/self._temp_sigma*self._smooth_offset
+        print(xc_right)
         yc_bottom = zeros + self._y_cav_top
         yc_top = yc_bottom + 1200/self._temp_sigma*self._smooth_offset
         zc_aft = zeros - 0.0175 + 0.001
@@ -429,6 +462,7 @@ class InitACTII:
             smoothing_bottom = smooth_step(actx, sigma*(actx.np.abs(ypos-ybottom)))
             smoothing_fore = ones
             smoothing_aft = ones
+
             if self._dim == 3:
                 smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
                 smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))

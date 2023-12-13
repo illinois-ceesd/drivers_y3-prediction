@@ -1,5 +1,5 @@
 SetFactory("OpenCASCADE");
-surface_vector[] = ShapeFromFile("asymmetric_2d.brep");
+surface_vector[] = ShapeFromFile("asym_exhaust_2d.brep");
 
 
 // Millimeters to meters
@@ -77,6 +77,12 @@ Else
     nozzle_factor=6;
 EndIf
 
+If(Exists(exhaustfac))
+    exhaust_factor=exhaustfac;
+Else
+    exhaust_factor=0.5;
+EndIf
+
 // horizontal injection
 //cavityAngle=45;
 //inj_h=4.;  // height of injector (bottom) from floor
@@ -89,6 +95,7 @@ isosize = basesize/iso_factor;       // background mesh size in the isolator
 nozzlesize = basesize/nozzle_factor;       // background mesh size in the nozzle
 cavitysize = basesize/cavity_factor; // background mesh size in the cavity region
 shearsize = isosize/shear_factor; // background mesh size in the shear region
+exhaustsize = isosize/exhaust_factor; // background mesh size in the shear region
 // samplesize = basesize/sample_factor;       // background mesh size in the sample
 // injectorsize = inj_d/injector_factor; // background mesh size in the injector region
 
@@ -105,15 +112,15 @@ Printf("boundratiosurround = %f", boundratiosurround);
 Geometry.Tolerance = 1.e-3;
 Coherence;
 
-Curve Loop(2) = {1:20};
+Curve Loop(2) = {1:8,45,44, 43, 42, 41, 10:20};
 
 Plane Surface(2) = {2};
 
 Physical Surface('fluid') = {-1};
 
 Physical Curve("inflow") = {16}; // inlet
-Physical Curve("outflow") = {9}; // outlet
-Physical Curve("flow") = {16, 9}; // all inflow/outflow
+Physical Curve("outflow") = {43}; // outlet
+Physical Curve("flow") = {16, 43}; // all inflow/outflow
 Physical Curve('isothermal_wall') = {
     1, // isolator bottom
     2, // cavity front
@@ -123,6 +130,10 @@ Physical Curve('isothermal_wall') = {
     6, // combustor slant
     7, // fillet outlet sponge
     8, // flat outlet sponge
+    45, // lower vertical exhaust wall
+    44, // lower exhaust wall
+    42, // upper exhaust wall
+    41, // upper vertical exhaust wall
     10, // combustor/isolator top
     11, // diverging nozzle top
     12, // converging nozzle curve top
@@ -175,7 +186,7 @@ Field[2002].DistMin = 0.02;
 Field[2002].DistMax = 15;
 Field[2002].StopAtDistMax = 1;
 
-//Create threshold field that varries element size near boundaries
+//Create threshold field that varies element size near boundaries
 //this is for the nozzle expansion only
 Field[2003] = Threshold;
 Field[2003].InField = 1;
@@ -317,9 +328,21 @@ Field[9].Thickness = 100;
 Field[9].VIn = shearsize;
 Field[9].VOut = bigsize;
 
+//  background mesh size in the exhaust volume
+Field[33] = Box;
+Field[33].XMin = 812;
+Field[33].XMax = 2000.0;
+Field[33].YMin = -1000.0;
+Field[33].YMax = 1000.0;
+Field[33].ZMin = -1000.0;
+Field[33].ZMax = 1000.0;
+Field[33].VIn = exhaustsize;
+Field[33].VOut = bigsize;
+//
+
 // take the minimum of all defined meshing fields
 Field[100] = Min;
-Field[100].FieldsList = {2010, 2011, 3, 4, 5, 6, 9, 12, 102, 105};
+Field[100].FieldsList = {2010, 2011, 3, 4, 5, 6, 9, 12, 102, 105, 33};
 
 
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102};
