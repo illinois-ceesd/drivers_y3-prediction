@@ -102,6 +102,7 @@ class InitACTII:
         self._x_exhaust_right = 1.113
         self._y_exhaust_bottom = -0.114
         self._y_exhaust_top = 0.121
+        self._pressure_sigma = 50
 
         self._y_outlet_top = 0.020
         self._y_outlet_bottom = -0.01364
@@ -182,7 +183,7 @@ class InitACTII:
         for ind in range(1, self._geom_top.shape[0]):
 
             if self._exhaust and ind == self._geom_top.shape[0]-1:
-                mach_right = 0
+                mach_right = 0.9
             else:
                 area_ratio = ((self._geom_top[ind][1] - self._geom_bottom[ind][1]) /
                               self._throat_height)
@@ -261,6 +262,12 @@ class InitACTII:
                 P0=self._P0,
                 gamma=gamma
             )
+
+        #pressure = getIsentropicPressure(
+        #           mach=mach,
+        #           P0=self._P0,
+        #           gamma=gamma
+        #       )
 
         temperature = getIsentropicTemperature(
             mach=mach,
@@ -443,23 +450,119 @@ class InitACTII:
         ############
 
         ##########
-        if self._exhaust:
+        if self._exhaust and True:
+
+            ###################
+            # smooth the pressure around the exhaust jet
+            width = 1200 / self._pressure_sigma * self._smooth_offset
+            # upper suface
+            xc_left = zeros + self._x_exhaust_left
+            xc_right = zeros + self._geom_top[-1][0] - width
+            yc_bottom = zeros + self._y_outlet_top
+            yc_top = yc_bottom + width
+            zc_aft = zeros - 0.0175 + 0.001
+            zc_fore = zeros + 0.0175 - 0.001
+
+            left_edge = actx.np.greater(xpos, xc_left)
+            right_edge = actx.np.less(xpos, xc_right)
+            top_edge = actx.np.less(ypos, yc_top)
+            bottom_edge = actx.np.greater(ypos, yc_bottom)
+            aft_edge = ones
+            fore_edge = ones
+            if self._dim == 3:
+                aft_edge = actx.np.greater(zpos, zc_aft)
+                fore_edge = actx.np.less(zpos, zc_fore)
+
+            inside_region = (left_edge * right_edge * top_edge *
+                             bottom_edge * aft_edge * fore_edge)
+
+            vert_dist = actx.np.abs(ypos - yc_bottom)
+            sigma = self._pressure_sigma
+            smoothing_line = smooth_step(actx, sigma * vert_dist)
+            line_pressure = (pressure +
+                             (101325 - pressure) * smoothing_line)
+
+            pressure = actx.np.where(inside_region,
+                                     line_pressure,
+                                     pressure)
+
+            # lower interface
+            xc_left = zeros + self._x_exhaust_left
+            xc_right = zeros + self._geom_top[-1][0] - width
+            yc_bottom = zeros + self._y_outlet_bottom - width
+            yc_top = zeros + self._y_outlet_bottom
+            zc_aft = zeros - 0.0175 + 0.001
+            zc_fore = zeros + 0.0175 - 0.001
+
+            left_edge = actx.np.greater(xpos, xc_left)
+            right_edge = actx.np.less(xpos, xc_right)
+            top_edge = actx.np.less(ypos, yc_top)
+            bottom_edge = actx.np.greater(ypos, yc_bottom)
+            aft_edge = ones
+            fore_edge = ones
+            if self._dim == 3:
+                aft_edge = actx.np.greater(zpos, zc_aft)
+                fore_edge = actx.np.less(zpos, zc_fore)
+
+            inside_region = (left_edge * right_edge * top_edge
+                             * bottom_edge * aft_edge * fore_edge)
+            vert_dist = actx.np.abs(yc_top - ypos)
+            sigma = self._pressure_sigma
+            smoothing_line = smooth_step(actx, sigma * vert_dist)
+            line_pressure = (pressure +
+                             (101325 - pressure) * smoothing_line)
+
+            pressure = actx.np.where(inside_region,
+                                     line_pressure,
+                                     pressure)
+
+            # front surface moving into the jet instead of away from
+            xc_right = zeros + self._geom_top[-1][0]
+            xc_left = xc_right - width
+            yc_bottom = zeros + self._y_outlet_bottom - width/2
+            yc_top = zeros + self._y_outlet_top + width/2
+            zc_aft = zeros - 0.0175 + 0.001
+            zc_fore = zeros + 0.0175 - 0.001
+
+            left_edge = actx.np.greater(xpos, xc_left)
+            right_edge = actx.np.less(xpos, xc_right)
+            top_edge = actx.np.less(ypos, yc_top)
+            bottom_edge = actx.np.greater(ypos, yc_bottom)
+            aft_edge = ones
+            fore_edge = ones
+            if self._dim == 3:
+                aft_edge = actx.np.greater(zpos, zc_aft)
+                fore_edge = actx.np.less(zpos, zc_fore)
+
+            inside_region = (left_edge * right_edge * top_edge
+                             * bottom_edge * aft_edge * fore_edge)
+
+            horizontal_dist = xpos - xc_left
+            sigma = self._pressure_sigma
+            smoothing_line = smooth_step(actx, sigma * horizontal_dist)
+
+            line_pressure = (pressure +
+                             (101325 - pressure) * smoothing_line)
+            pressure = actx.np.where(inside_region,
+                                    line_pressure,
+                                    pressure)
+
             x_left = self._geom_top[-1][0]
-            upper_edge = actx.np.less(ypos, self._y_outlet_bottom + 1.e-6)
+            upper_edge = actx.np.less(ypos, self._y_outlet_bottom - 1.e-6)
             lower_edge = actx.np.greater(ypos, self._y_exhaust_bottom - 1.e-6)
             left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
             right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
             lower_box = left_edge * right_edge * upper_edge * lower_edge
             temperature = actx.np.where(lower_box, zeros + self._temp_wall,
-                                                                temperature)
+                                        temperature)
 
             upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
-            lower_edge = actx.np.greater(ypos, self._y_outlet_top - 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_outlet_top + 1.e-6)
             left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
             right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
             upper_box = left_edge * right_edge * upper_edge * lower_edge
             temperature = actx.np.where(upper_box, zeros + self._temp_wall,
-                                                                temperature)
+                                        temperature)
 
             upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
             lower_edge = actx.np.greater(ypos, self._y_exhaust_bottom - 1.e-6)
@@ -467,8 +570,34 @@ class InitACTII:
             right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
             left_box = left_edge * right_edge * upper_edge * lower_edge
             temperature = actx.np.where(left_box, zeros + self._temp_wall,
-                                                                temperature)
+                                        temperature)
 
+            # Now do the same for pressure
+
+            x_left = self._geom_top[-1][0]
+            upper_edge = actx.np.less(ypos, self._y_outlet_bottom - width + 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_exhaust_bottom - 1.e-6)
+            left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
+            right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
+            lower_box = left_edge * right_edge * upper_edge * lower_edge
+            pressure = actx.np.where(lower_box, zeros + 101325,
+                                     pressure)
+
+            upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_outlet_top + width - 1.e-6)
+            left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
+            right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
+            upper_box = left_edge * right_edge * upper_edge * lower_edge
+            pressure = actx.np.where(upper_box, zeros + 101325,
+                                     pressure)
+
+            upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
+            lower_edge = actx.np.greater(ypos, self._y_exhaust_bottom - 1.e-6)
+            left_edge = actx.np.greater(xpos, x_left - 1.e-6)
+            right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
+            left_box = left_edge * right_edge * upper_edge * lower_edge
+            pressure = actx.np.where(left_box, zeros + 101325, pressure)
+        ######################
         y = ones*self._mass_frac
         mass = eos.get_density(pressure=pressure, temperature=temperature,
                                species_mass_fractions=y)
