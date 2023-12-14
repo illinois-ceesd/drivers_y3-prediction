@@ -179,7 +179,7 @@ class InitACTII:
         ybottom_left = self._geom_bottom[0][1]
         theta_top_left = theta_geom_top[0][1]
         theta_bottom_left = theta_geom_bottom[0][1]
-
+        mach_pressure = ones
         for ind in range(1, self._geom_top.shape[0]):
 
             if self._exhaust and ind == self._geom_top.shape[0]-1:
@@ -223,15 +223,24 @@ class InitACTII:
                            (local_ytop - local_ybottom)*(ypos - local_ybottom))
 
             # extend just a little bit to catch the edges
-            # calculate pressure everywhere in the exhause
+            # calculate pressure everywhere in the exhaust
             left_edge = actx.np.greater(xpos, x_left - 1.e-6)
             right_edge = actx.np.less(xpos, x_right + 1.e-6)
             inside_block = left_edge * right_edge
 
+            # use this second to last point to extend the jet away
+            # from the outlet, but keep it within the jet
+
             # calculate temperature only near the outlet
-            if self._exhaust and ind == self._geom_top.shape[0]-1:
+            if self._exhaust and (ind == self._geom_top.shape[0]-1
+                                  or ind == self._geom_top.shape[0]-2):
                 # first make the array for pressure
-                mach_pressure = actx.np.where(inside_block, local_mach, mach)
+                if ind == self._geom_top.shape[0]-1:
+                    mach_pressure = actx.np.where(inside_block, local_mach,
+                                                                mach_pressure)
+                else:
+                    mach_pressure = actx.np.where(inside_block, local_mach,
+                                                                        mach)
 
                 #now calculate temperature
                 upper_edge = actx.np.less(ypos, ytop_left + 1.e-6)
@@ -452,12 +461,48 @@ class InitACTII:
         ##########
         if self._exhaust and True:
 
+            front_face_factor = 3
             ###################
             # smooth the pressure around the exhaust jet
-            width = 1200 / self._pressure_sigma * self._smooth_offset
+            sigma = self._pressure_sigma * front_face_factor
+            width = 1200 / sigma * self._smooth_offset
+
+            # front surface moving into the jet instead of away from
+            xc_right = zeros + self._geom_top[-1][0]
+            xc_left = xc_right - width
+            yc_bottom = zeros + self._y_outlet_bottom - width * front_face_factor
+            yc_top = zeros + self._y_outlet_top + width * front_face_factor
+            zc_aft = zeros - 0.0175 + 0.001
+            zc_fore = zeros + 0.0175 - 0.001
+
+            left_edge = actx.np.greater(xpos, xc_left)
+            right_edge = actx.np.less(xpos, xc_right)
+            top_edge = actx.np.less(ypos, yc_top)
+            bottom_edge = actx.np.greater(ypos, yc_bottom)
+            aft_edge = ones
+            fore_edge = ones
+            if self._dim == 3:
+                aft_edge = actx.np.greater(zpos, zc_aft)
+                fore_edge = actx.np.less(zpos, zc_fore)
+
+            inside_region = (left_edge * right_edge * top_edge
+                             * bottom_edge * aft_edge * fore_edge)
+
+            horizontal_dist = xpos - xc_left
+
+            smoothing_line = smooth_step(actx, sigma * horizontal_dist)
+
+            line_pressure = (pressure +
+                             (101325 - pressure) * smoothing_line)
+            pressure = actx.np.where(inside_region,
+                                     line_pressure,
+                                     pressure)
+
             # upper suface
+            sigma = self._pressure_sigma
+            width = 1200 / sigma * self._smooth_offset
             xc_left = zeros + self._x_exhaust_left
-            xc_right = zeros + self._geom_top[-1][0] - width
+            xc_right = zeros + self._geom_top[-1][0] - width / front_face_factor
             yc_bottom = zeros + self._y_outlet_top
             yc_top = yc_bottom + width
             zc_aft = zeros - 0.0175 + 0.001
@@ -487,8 +532,10 @@ class InitACTII:
                                      pressure)
 
             # lower interface
+            sigma = self._pressure_sigma
+            width = 1200 / sigma * self._smooth_offset
             xc_left = zeros + self._x_exhaust_left
-            xc_right = zeros + self._geom_top[-1][0] - width
+            xc_right = zeros + self._geom_top[-1][0] - width / front_face_factor
             yc_bottom = zeros + self._y_outlet_bottom - width
             yc_top = zeros + self._y_outlet_bottom
             zc_aft = zeros - 0.0175 + 0.001
@@ -515,37 +562,6 @@ class InitACTII:
             pressure = actx.np.where(inside_region,
                                      line_pressure,
                                      pressure)
-
-            # front surface moving into the jet instead of away from
-            xc_right = zeros + self._geom_top[-1][0]
-            xc_left = xc_right - width
-            yc_bottom = zeros + self._y_outlet_bottom - width/2
-            yc_top = zeros + self._y_outlet_top + width/2
-            zc_aft = zeros - 0.0175 + 0.001
-            zc_fore = zeros + 0.0175 - 0.001
-
-            left_edge = actx.np.greater(xpos, xc_left)
-            right_edge = actx.np.less(xpos, xc_right)
-            top_edge = actx.np.less(ypos, yc_top)
-            bottom_edge = actx.np.greater(ypos, yc_bottom)
-            aft_edge = ones
-            fore_edge = ones
-            if self._dim == 3:
-                aft_edge = actx.np.greater(zpos, zc_aft)
-                fore_edge = actx.np.less(zpos, zc_fore)
-
-            inside_region = (left_edge * right_edge * top_edge
-                             * bottom_edge * aft_edge * fore_edge)
-
-            horizontal_dist = xpos - xc_left
-            sigma = self._pressure_sigma
-            smoothing_line = smooth_step(actx, sigma * horizontal_dist)
-
-            line_pressure = (pressure +
-                             (101325 - pressure) * smoothing_line)
-            pressure = actx.np.where(inside_region,
-                                    line_pressure,
-                                    pressure)
 
             x_left = self._geom_top[-1][0]
             upper_edge = actx.np.less(ypos, self._y_outlet_bottom - 1.e-6)
