@@ -30,7 +30,7 @@ class InitACTII:
 
     def __init__(
             self, *, dim=2, nspecies=0, geom_top, geom_bottom,
-            P0, T0, temp_wall, temp_sigma, vel_sigma, gamma_guess,
+            P0, T0, temp_wall, temp_sigma, vel_sigma, pressure_sigma, gamma_guess,
             mass_frac=None,
             inj_pres, inj_temp, inj_vel,
             inj_pres_u, inj_temp_u, inj_vel_u,
@@ -102,7 +102,7 @@ class InitACTII:
         self._x_exhaust_right = 1.113
         self._y_exhaust_bottom = -0.114
         self._y_exhaust_top = 0.121
-        self._pressure_sigma = 50
+        self._pressure_sigma = pressure_sigma
 
         self._y_outlet_top = 0.020
         self._y_outlet_bottom = -0.01364

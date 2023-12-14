@@ -690,6 +690,7 @@ def main(actx_class,
     # parameters to adjust the shape of the initialization
     vel_sigma = configurate("vel_sigma", input_data, 1000)
     temp_sigma = configurate("temp_sigma", input_data, 1250)
+    pressure_sigma = configurate("pressure_sigma", input_data, 1250)
     # adjusted to match the mass flow rate
     vel_sigma_inj = configurate("vel_sigma_inj", input_data, 5000)
     temp_sigma_inj = configurate("temp_sigma_inj", input_data, 5000)
@@ -1622,7 +1623,8 @@ def main(actx_class,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
                               P0=total_pres_inflow, T0=total_temp_inflow,
                               temp_wall=temp_wall, temp_sigma=temp_sigma,
-                              vel_sigma=vel_sigma, nspecies=nspecies,
+                              vel_sigma=vel_sigma, pressure_sigma=pressure_sigma,
+                              nspecies=nspecies,
                               mass_frac=y, gamma_guess=inlet_gamma,
                               inj_gamma_guess=gamma_injection,
                               inj_pres=total_pres_inj,
