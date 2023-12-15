@@ -541,6 +541,7 @@ def main(actx_class,
         "use_interface_boundary", input_data, "none")
 
     outflow_pressure = configurate("outflow_pressure", input_data, 100.0)
+    exhaust_pressure = configurate("exhaust_pressure", input_data, 100.0)
 
     # for each tagged boundary surface, what are they assigned to be
     # isothermal wall -> wall when current running simulation support is not needed
@@ -1624,7 +1625,7 @@ def main(actx_class,
                               P0=total_pres_inflow, T0=total_temp_inflow,
                               temp_wall=temp_wall, temp_sigma=temp_sigma,
                               vel_sigma=vel_sigma, pressure_sigma=pressure_sigma,
-                              nspecies=nspecies,
+                              outlet_pressure=exhaust_pressure, nspecies=nspecies,
                               mass_frac=y, gamma_guess=inlet_gamma,
                               inj_gamma_guess=gamma_injection,
                               inj_pres=total_pres_inj,

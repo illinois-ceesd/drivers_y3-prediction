@@ -38,7 +38,8 @@ class InitACTII:
             inj_gamma_guess,
             inj_temp_sigma, inj_vel_sigma,
             inj_ytop, inj_ybottom,
-            inj_mach, injection=True, exhaust=True
+            inj_mach, injection=True, exhaust=True,
+            outlet_pressure=None
     ):
 
         r"""Initialize mixture parameters.
@@ -103,6 +104,7 @@ class InitACTII:
         self._y_exhaust_bottom = -0.114
         self._y_exhaust_top = 0.121
         self._pressure_sigma = pressure_sigma
+        self._outlet_pressure = outlet_pressure
 
         self._y_outlet_top = 0.020
         self._y_outlet_bottom = -0.01364
@@ -493,7 +495,7 @@ class InitACTII:
             smoothing_line = smooth_step(actx, sigma * horizontal_dist)
 
             line_pressure = (pressure +
-                             (101325 - pressure) * smoothing_line)
+                             (self._outlet_pressure - pressure) * smoothing_line)
             pressure = actx.np.where(inside_region,
                                      line_pressure,
                                      pressure)
@@ -525,7 +527,7 @@ class InitACTII:
             sigma = self._pressure_sigma
             smoothing_line = smooth_step(actx, sigma * vert_dist)
             line_pressure = (pressure +
-                             (101325 - pressure) * smoothing_line)
+                             (self._outlet_pressure - pressure) * smoothing_line)
 
             pressure = actx.np.where(inside_region,
                                      line_pressure,
@@ -557,7 +559,7 @@ class InitACTII:
             sigma = self._pressure_sigma
             smoothing_line = smooth_step(actx, sigma * vert_dist)
             line_pressure = (pressure +
-                             (101325 - pressure) * smoothing_line)
+                             (self._outlet_pressure - pressure) * smoothing_line)
 
             pressure = actx.np.where(inside_region,
                                      line_pressure,
@@ -596,7 +598,7 @@ class InitACTII:
             left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
             right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
             lower_box = left_edge * right_edge * upper_edge * lower_edge
-            pressure = actx.np.where(lower_box, zeros + 101325,
+            pressure = actx.np.where(lower_box, zeros + self._outlet_pressure,
                                      pressure)
 
             upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
@@ -604,7 +606,7 @@ class InitACTII:
             left_edge = actx.np.greater(xpos, self._x_exhaust_left - 1.e-6)
             right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
             upper_box = left_edge * right_edge * upper_edge * lower_edge
-            pressure = actx.np.where(upper_box, zeros + 101325,
+            pressure = actx.np.where(upper_box, zeros + self._outlet_pressure,
                                      pressure)
 
             upper_edge = actx.np.less(ypos, self._y_exhaust_top + 1.e-6)
@@ -612,7 +614,8 @@ class InitACTII:
             left_edge = actx.np.greater(xpos, x_left - 1.e-6)
             right_edge = actx.np.less(xpos, self._x_exhaust_right + 1.e-6)
             left_box = left_edge * right_edge * upper_edge * lower_edge
-            pressure = actx.np.where(left_box, zeros + 101325, pressure)
+            pressure = actx.np.where(left_box, zeros + self._outlet_pressure,
+                                                                    pressure)
         ######################
         y = ones*self._mass_frac
         mass = eos.get_density(pressure=pressure, temperature=temperature,
