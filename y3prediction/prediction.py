@@ -2215,8 +2215,7 @@ def main(actx_class,
         div_v = np.trace(velocity_gradient(cv, grad_cv))
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
-        y = cv.species_mass_fractions
-        r = gas_model.eos.gas_const(species_mass_fractions=y)
+        r = gas_model.eos.gas_const(cv=cv)
         c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
         href = smoothed_char_length_fluid
         indicator = -gamma_sc*href*div_v/c_star
@@ -2242,8 +2241,7 @@ def main(actx_class,
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         # somehow this can be negative ... which is bad
-        y = cv.species_mass_fractions
-        r = actx.np.abs(gas_model.eos.gas_const(species_mass_fractions=y))
+        r = actx.np.abs(gas_model.eos.gas_const(cv=cv))
         c_star = actx.np.sqrt(gamma*r*(2/(gamma+1)*static_temp))
         #c_star = 460
         href = smoothed_char_length_fluid
