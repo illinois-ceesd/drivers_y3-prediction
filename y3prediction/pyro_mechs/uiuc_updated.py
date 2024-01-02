@@ -77,7 +77,7 @@ class Thermochemistry:
         """
 
         self.usr_np = usr_np
-        self.model_name = 'mechs/uiuc_const_gamma.yaml'
+        self.model_name = 'mechs/uiuc_updated.yaml'
         self.num_elements = 4
         self.num_species = 7
         self.num_reactions = 3
@@ -274,13 +274,13 @@ class Thermochemistry:
 
     def get_species_thermal_conductivities(self, temperature):
         return self._pyro_make_array([
-            self.usr_np.sqrt(temperature)*(0.024768220196107412 + -0.016958321557599142*self.usr_np.log(temperature) + 0.004182784447772059*self.usr_np.log(temperature)**2 + -0.00042688086846579774*self.usr_np.log(temperature)**3 + 1.5897516098329563e-05*self.usr_np.log(temperature)**4),
-            self.usr_np.sqrt(temperature)*(-0.015481158007414581 + 0.008107744158330227*self.usr_np.log(temperature) + -0.0014727237664308797*self.usr_np.log(temperature)**2 + 0.00012258649045091376*self.usr_np.log(temperature)**3 + -3.7620170290280283e-06*self.usr_np.log(temperature)**4),
-            self.usr_np.sqrt(temperature)*(0.007084443377440107 + -0.005933304595567435*self.usr_np.log(temperature) + 0.0016646988442643909*self.usr_np.log(temperature)**2 + -0.00018167323847976725*self.usr_np.log(temperature)**3 + 7.099116964946257e-06*self.usr_np.log(temperature)**4),
-            self.usr_np.sqrt(temperature)*(-0.01587710127810821 + 0.008414615440914385*self.usr_np.log(temperature) + -0.0015331347580630724*self.usr_np.log(temperature)**2 + 0.00012861516067115835*self.usr_np.log(temperature)**3 + -3.971062243361484e-06*self.usr_np.log(temperature)**4),
-            self.usr_np.sqrt(temperature)*(0.017574727960998848 + -0.006060019898997622*self.usr_np.log(temperature) + 0.00021480200785089777*self.usr_np.log(temperature)**2 + 0.00011121870189934865*self.usr_np.log(temperature)**3 + -8.5433098539559e-06*self.usr_np.log(temperature)**4),
-            self.usr_np.sqrt(temperature)*(-0.021491312355598608 + 0.014941063472184156*self.usr_np.log(temperature) + -0.0028494128257054874*self.usr_np.log(temperature)**2 + 0.0002652044624026782*self.usr_np.log(temperature)**3 + -8.793827992999824e-06*self.usr_np.log(temperature)**4),
-            self.usr_np.sqrt(temperature)*(-0.01411306905666898 + 0.007522128253094343*self.usr_np.log(temperature) + -0.0013882229396473555*self.usr_np.log(temperature)**2 + 0.00011748749772499026*self.usr_np.log(temperature)**3 + -3.6691089537892834e-06*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(0.26914171009508786 + -0.14659184877064113*self.usr_np.log(temperature) + 0.02897524049196588*self.usr_np.log(temperature)**2 + -0.00244992069368175*self.usr_np.log(temperature)**3 + 7.573278901128235e-05*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(0.10722021131452411 + -0.06366580810278227*self.usr_np.log(temperature) + 0.014135856934947557*self.usr_np.log(temperature)**2 + -0.0013775482335985185*self.usr_np.log(temperature)**3 + 5.025840037762428e-05*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(0.17252090526858171 + -0.10099664642884776*self.usr_np.log(temperature) + 0.02181411164660652*self.usr_np.log(temperature)**2 + -0.0020540091197394812*self.usr_np.log(temperature)**3 + 7.178979117622355e-05*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(0.016422669771643392 + -0.007379942245211536*self.usr_np.log(temperature) + 0.0011429507917741942*self.usr_np.log(temperature)**2 + -5.4399695505915866e-05*self.usr_np.log(temperature)**3 + 3.8182834335749466e-08*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(-0.4280234346405582 + 0.2655889462962601*self.usr_np.log(temperature) + -0.06130426151881312*self.usr_np.log(temperature)**2 + 0.006228944286398163*self.usr_np.log(temperature)**3 + -0.00023313122458860615*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(-0.7615749481097951 + 0.4565265559399355*self.usr_np.log(temperature) + -0.10060249107262409*self.usr_np.log(temperature)**2 + 0.00975552682683555*self.usr_np.log(temperature)**3 + -0.0003485428774356381*self.usr_np.log(temperature)**4),
+            self.usr_np.sqrt(temperature)*(-0.02434376513780127 + 0.016551120297101568*self.usr_np.log(temperature) + -0.004074756646783793*self.usr_np.log(temperature)**2 + 0.000447071166736109*self.usr_np.log(temperature)**3 + -1.789185475768969e-05*self.usr_np.log(temperature)**4),
         ])
 
     def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
@@ -402,41 +402,41 @@ class Thermochemistry:
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 7.51, 7.51),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.74, 3.74),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 5.37, 5.37),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 4.59, 4.59),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 4.24, 4.24),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.52, 3.52),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.56, 3.56),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.03611116 + 0.014645415*temperature + -6.7107792e-06*temperature**2 + 1.4722292e-09*temperature**3 + -1.2570606e-13*temperature**4, 3.374024438 + 2.8692e-05*temperature**2 + -3.07487e-08*temperature**3 + 1e-11*temperature**4),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.28253784 + 0.0014830875*temperature + -7.5796667e-07*temperature**2 + 2.0947056e-10*temperature**3 + -2.1671779e-14*temperature**4, 3.407764682 + 1.8541997e-06*temperature**2 + -1.0665069e-09*temperature**3),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.85746029 + 0.0044143703*temperature + -2.214814e-06*temperature**2 + 5.2349019e-10*temperature**3 + -4.7208416e-14*temperature**4, 3.54272566 + 1.26053e-05*temperature**2 + -1.46148e-08*temperature**3 + 5e-12*temperature**4),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.71518561 + 0.0020625274*temperature + -9.9882577e-07*temperature**2 + 2.3005301e-10*temperature**3 + -2.0364772e-14*temperature**4, 3.374024438 + 1.17008e-06*temperature**2 + -5.55526e-10*temperature**3),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.03399249 + 0.002176918*temperature + -1.6407252e-07*temperature**2 + -9.7041987e-11*temperature**3 + 1.6820099e-14*temperature**4, 3.947608592 + 1.4321e-06*temperature**2 + -4.13088e-10*temperature**3),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.3372792 + -4.9402473e-05*temperature + 4.9945678e-07*temperature**2 + -1.7956639e-10*temperature**3 + 2.0025538e-14*temperature**4, 3.475245171 + -3.32716e-08*temperature**2 + 1.85819e-10*temperature**3),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.92664 + 0.0014879768*temperature + -5.68476e-07*temperature**2 + 1.0097038e-10*temperature**3 + -6.753351e-15*temperature**4, 3.407764682 + 9.70853e-07*temperature**2 + -4.38261e-10*temperature**3),
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 7.51 + 5089.77593 / temperature, 7.51 + 5089.77593 / temperature),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.74 + -1063.94356 / temperature, 3.74 + -1063.94356 / temperature),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 5.37 + -48371.9697 / temperature, 5.37 + -48371.9697 / temperature),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 4.59 + -14344.086 / temperature, 4.59 + -14344.086 / temperature),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 4.24 + -30293.7267 / temperature, 4.24 + -30293.7267 / temperature),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.52 + -917.935173 / temperature, 3.52 + -917.935173 / temperature),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.56 + -1020.8999 / temperature, 3.56 + -1020.8999 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.03611116 + 0.0073227075*temperature + -2.2369264e-06*temperature**2 + 3.680573e-10*temperature**3 + -2.5141212e-14*temperature**4 + 4875.796036 / temperature, 3.374024438 + 9.564e-06*temperature**2 + -7.687175e-09*temperature**3 + 2e-12*temperature**4 + 5089.77593 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.28253784 + 0.00074154375*temperature + -2.5265555666666666e-07*temperature**2 + 5.236764e-11*temperature**3 + -4.3343558e-15*temperature**4 + -1124.198373 / temperature, 3.407764682 + 6.180665666666666e-07*temperature**2 + -2.66626725e-10*temperature**3 + -1063.94356 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.85746029 + 0.00220718515*temperature + -7.382713333333333e-07*temperature**2 + 1.308725475e-10*temperature**3 + -9.4416832e-15*temperature**4 + -48728.96093 / temperature, 3.54272566 + 4.201766666666667e-06*temperature**2 + -3.6537e-09*temperature**3 + 1e-12*temperature**4 + -48371.9697 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.71518561 + 0.0010312637*temperature + -3.329419233333333e-07*temperature**2 + 5.75132525e-11*temperature**3 + -4.0729544e-15*temperature**4 + -14185.86505 / temperature, 3.374024438 + 3.9002666666666663e-07*temperature**2 + -1.388815e-10*temperature**3 + -14344.086 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.03399249 + 0.001088459*temperature + -5.469084e-08*temperature**2 + -2.426049675e-11*temperature**3 + 3.3640198e-15*temperature**4 + -30018.88916 / temperature, 3.947608592 + 4.773666666666667e-07*temperature**2 + -1.03272e-10*temperature**3 + -30293.7267 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.3372792 + -2.47012365e-05*temperature + 1.6648559333333333e-07*temperature**2 + -4.48915975e-11*temperature**3 + 4.0051076e-15*temperature**4 + -845.5028269 / temperature, 3.475245171 + -1.1090533333333334e-08*temperature**2 + 4.645475e-11*temperature**3 + -917.935173 / temperature),
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.92664 + 0.0007439884*temperature + -1.8949200000000001e-07*temperature**2 + 2.5242595e-11*temperature**3 + -1.3506701999999999e-15*temperature**4 + -904.1112284 / temperature, 3.407764682 + 3.236176666666667e-07*temperature**2 + -1.0956525e-10*temperature**3 + -1020.8999 / temperature),
                 ])
 
     def get_species_entropies_r(self, pressure, temperature):
         return self._pyro_make_array([
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 7.51*self.usr_np.log(temperature) + 4.09733096, 7.51*self.usr_np.log(temperature) + 4.09733096)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.03611116*self.usr_np.log(temperature) + 0.014645415*temperature + -3.3553896e-06*temperature**2 + 4.907430666666667e-10*temperature**3 + -3.1426515e-14*temperature**4 + 8.1863696, 3.374024438*self.usr_np.log(temperature) + 1.4346e-05*temperature**2 + -1.0249566666666668e-08*temperature**3 + 2.5e-12*temperature**4 + 4.09733096)
             - self.usr_np.log(pressure/101325.0),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.74*self.usr_np.log(temperature) + 3.65767573, 3.74*self.usr_np.log(temperature) + 3.65767573)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.28253784*self.usr_np.log(temperature) + 0.0014830875*temperature + -3.78983335e-07*temperature**2 + 6.982352e-11*temperature**3 + -5.41794475e-15*temperature**4 + 3.9257999, 3.407764682*self.usr_np.log(temperature) + 9.2709985e-07*temperature**2 + -3.5550229999999997e-10*temperature**3 + 3.65767573)
             - self.usr_np.log(pressure/101325.0),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 5.37*self.usr_np.log(temperature) + 9.90105222, 5.37*self.usr_np.log(temperature) + 9.90105222)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.85746029*self.usr_np.log(temperature) + 0.0044143703*temperature + -1.107407e-06*temperature**2 + 1.7449673e-10*temperature**3 + -1.1802104e-14*temperature**4 + 6.9383652, 3.54272566*self.usr_np.log(temperature) + 6.30265e-06*temperature**2 + -4.8716e-09*temperature**3 + 1.25e-12*temperature**4 + 9.90105222)
             - self.usr_np.log(pressure/101325.0),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 4.59*self.usr_np.log(temperature) + 3.50840928, 4.59*self.usr_np.log(temperature) + 3.50840928)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.71518561*self.usr_np.log(temperature) + 0.0020625274*temperature + -4.99412885e-07*temperature**2 + 7.668433666666666e-11*temperature**3 + -5.091193e-15*temperature**4 + 6.8246622, 3.374024438*self.usr_np.log(temperature) + 5.8504e-07*temperature**2 + -1.8517533333333333e-10*temperature**3 + 3.50840928)
             - self.usr_np.log(pressure/101325.0),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 4.24*self.usr_np.log(temperature) + -0.849032208, 4.24*self.usr_np.log(temperature) + -0.849032208)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.03399249*self.usr_np.log(temperature) + 0.002176918*temperature + -8.203626e-08*temperature**2 + -3.2347329e-11*temperature**3 + 4.20502475e-15*temperature**4 + 3.9736165, 3.947608592*self.usr_np.log(temperature) + 7.1605e-07*temperature**2 + -1.37696e-10*temperature**3 + -0.849032208)
             - self.usr_np.log(pressure/101325.0),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.52*self.usr_np.log(temperature) + 0.683010238, 3.52*self.usr_np.log(temperature) + 0.683010238)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.3372792*self.usr_np.log(temperature) + -4.9402473e-05*temperature + 2.4972839e-07*temperature**2 + -5.985546333333334e-11*temperature**3 + 5.0063845e-15*temperature**4 + 1.5358725, 3.475245171*self.usr_np.log(temperature) + -1.66358e-08*temperature**2 + 6.193966666666666e-11*temperature**3 + 0.683010238)
             - self.usr_np.log(pressure/101325.0),
-            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 3.56*self.usr_np.log(temperature) + 3.950372, 3.56*self.usr_np.log(temperature) + 3.950372)
+            self.usr_np.where(self.usr_np.greater(temperature, 1000.0), 2.92664*self.usr_np.log(temperature) + 0.0014879768*temperature + -2.84238e-07*temperature**2 + 3.3656793333333334e-11*temperature**3 + -1.68833775e-15*temperature**4 + 6.3774957, 3.407764682*self.usr_np.log(temperature) + 4.854265e-07*temperature**2 + -1.46087e-10*temperature**3 + 3.950372)
             - self.usr_np.log(pressure/101325.0),
                 ])
 
