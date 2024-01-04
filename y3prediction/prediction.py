@@ -507,10 +507,10 @@ def main(actx_class,
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
-    av2_mu0 = configurate("av_mu0", input_data, 0.1)
+    av2_mu0 = configurate("av2_mu0", input_data, 0.1)
     av2_beta0 = configurate("av2_beta0", input_data, 6.0)
     av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
-    av2_d0 = configurate("av_d0", input_data, 0.1)
+    av2_d0 = configurate("av2_d0", input_data, 0.1)
     av2_prandtl0 = configurate("av2_prandtl0", input_data, 0.9)
     av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
     av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
@@ -1038,7 +1038,6 @@ def main(actx_class,
 
     # don't allow limiting on flows without species
     if nspecies == 0:
-        use_species_limiter = 0
         use_injection = False
         use_upstream_injection = False
 
@@ -1081,7 +1080,7 @@ def main(actx_class,
             print("\tIdeal Gas EOS")
         elif eos_type == 1:
             print("\tPyrometheus EOS")
-            print("\tPyro mechanism {pyro_mech}")
+            print(f"\tPyro mechanism {pyro_mech}")
 
         if use_species_limiter == 1:
             print("\nSpecies mass fractions limited to [0:1]")
@@ -1254,6 +1253,8 @@ def main(actx_class,
                 i_di = i
 
         # Set the species mass fractions to the free-stream flow
+        # MJA take this out!!!
+        mf_o2 = 1
         y[i_ox] = mf_o2
         y[i_di] = 1. - mf_o2
         # Set the species mass fractions to the free-stream flow
@@ -1274,19 +1275,85 @@ def main(actx_class,
         # parameters to adjust the shape of the initialization
         temp_wall = 300
 
-        # normal shock properties
+        # normal shock properties for a calorically perfect gas
+        # state 1: pre-shock
+        # state 2: post-shock
         rho_bkrnd = pres_bkrnd/r/temp_bkrnd
         c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
-        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
-        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+        velocity1 = -mach*c_bkrnd
+
+        gamma1 = gamma
+        gamma2 = gamma
+
         rho1 = rho_bkrnd
         pressure1 = pres_bkrnd
-        temperature1 = pressure1/rho1/r
+        temperature1 = temp_bkrnd
+
+        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
+        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+
         rho2 = rho1*density_ratio
         pressure2 = pressure1*pressure_ratio
         temperature2 = pressure2/rho2/r
-        velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
+        # shock stationary frame
+        velocity2 = velocity1*(1/density_ratio)
         temp_wall = temperature1
+
+        # for non-calorically perfect gas, we iterate on the density ratio,
+        # until we converge
+        if eos_type > 0:
+            if shock_loc_x < fuel_loc_x:
+                y1 = y
+                y2 = y
+            else:
+                y1 = y_fuel
+                y2 = y_fuel
+
+            rho1 = pyro_mech.get_density(pressure1, temperature1, y1)
+
+            # guess a density ratio (rho1/rho2)
+            density_ratio = 0.1
+            rho2 = rho1/density_ratio
+            enthalpy1 = gas_model.eos.get_internal_energy(
+                temperature1, y1) + pressure1/rho1
+            # iteratively solve the shock hugoniot
+            error = 100
+            while error > 1e-8:
+                pressure2 = pressure1 + rho1*velocity1**2*(1 - density_ratio)
+                enthalpy2 = enthalpy1 + 0.5*velocity1**2*(1 - (density_ratio)**2)
+
+                # find temperature from new energy and get an updated density
+                energy2 = enthalpy2 - pressure2/rho2
+                temperature2 = pyro_mech.get_temperature(energy2, temperature2, y2)
+                rho2_old = rho2
+                rho2 = pyro_mech.get_density(pressure2, temperature2, y2)
+
+                # compute the error in density and form a new density ratio
+                error = np.abs((rho2 - rho2_old)/rho2_old)
+                density_ratio = rho1/rho2
+                velocity2 = velocity1*(density_ratio)
+
+            gamma1 = (pyro_mech.get_mixture_specific_heat_cp_mass(temperature1, y1) /
+                      pyro_mech.get_mixture_specific_heat_cv_mass(temperature1, y1))
+            gamma2 = (pyro_mech.get_mixture_specific_heat_cp_mass(temperature2, y1) /
+                      pyro_mech.get_mixture_specific_heat_cv_mass(temperature2, y1))
+
+            print(f"{error=}")
+            print(f"{pressure1=}")
+            print(f"{temperature1=}")
+            print(f"{rho1=}")
+            print(f"{velocity1=}")
+            print(f"{gamma1=}")
+            print(f"{pressure2=}")
+            print(f"{temperature2=}")
+            print(f"{rho2=}")
+            print(f"{velocity2=}")
+            print(f"{gamma2=}")
+            print(f"{density_ratio=}")
+
+        # convert to shock moving frame
+        velocity2 = velocity2 - velocity1
+        velocity1 = 0.
 
         vel_left = np.zeros(shape=(dim,))
         vel_right = np.zeros(shape=(dim,))
@@ -1299,16 +1366,21 @@ def main(actx_class,
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
 
-        vel_left = velocity2*plane_normal
+        vel_left = (velocity2 - velocity1)*plane_normal
 
         if rank == 0:
             print("#### Simluation initialization data: ####")
-            print(f"\tinlet Mach number {mach}")
-            print(f"\tinlet gamma {gamma}")
-            print(f"\tinlet temperature {temperature2}")
-            print(f"\tinlet pressure {pressure2}")
-            print(f"\tinlet rho {rho2}")
-            print(f"\tinlet velocity {velocity2}")
+            print(f"\tshock Mach number {mach}")
+            print(f"\tpre-shock gamma {gamma1}")
+            print(f"\tpre-shock temperature {temperature1}")
+            print(f"\tpre-shock pressure {pressure1}")
+            print(f"\tpre-shock rho {rho1}")
+            print(f"\tpre-shock velocity {velocity1}")
+            print(f"\tpost-shock gamma {gamma2}")
+            print(f"\tpost-shock temperature {temperature2}")
+            print(f"\tpost-shock pressure {pressure2}")
+            print(f"\tpost-shock rho {rho2}")
+            print(f"\tpost-shock velocity {velocity2}")
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -2084,7 +2156,56 @@ def main(actx_class,
                               momentum=mom_lim,
                               species_mass=mass_lim*spec_lim)
 
-        #return cv
+    def limit_fluid_state_new(cv, pressure, temperature, dd=dd_vol_fluid):
+
+        spec_lim = cv.species_mass_fractions
+        if nspecies > 0:
+            spec_lim = make_obj_array([
+                bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                         field=cv.species_mass_fractions[i],
+                                         mmin=0., mmax=1.0, modify_average=True)
+                for i in range(nspecies)
+            ])
+
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+            spec_lim = spec_lim/aux
+
+        #print("before limiter")
+        #print(f"{temperature=}")
+
+        temperature_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                                   field=temperature,
+                                                   mmin=200.0, mmax=None,
+                                                   modify_average=True)
+        #print("after limiter")
+        #print(f"{temperature_lim=}")
+
+        mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                            field=cv.mass,
+                                            mmin=1.e-6, mmax=None,
+                                            modify_average=True)
+
+        #temperature_lim = temperature
+        #mass_lim = cv.mass
+        #spec_lim = cv.species_mass_fractions
+
+        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+
+        energy_lim = mass_lim*(
+            gas_model.eos.get_internal_energy(temperature_lim,
+                                              species_mass_fractions=spec_lim)
+            + kin_energy
+        )
+
+        mom_lim = mass_lim*cv.velocity
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=mass_lim*spec_lim)
+
+        return make_obj_array([temperature_lim, cv_lim])
 
     if soln_filter_cutoff < 0:
         soln_filter_cutoff = int(soln_filter_frac * order)
@@ -2136,7 +2257,7 @@ def main(actx_class,
 
     limiter_func = None
     if use_species_limiter:
-        limiter_func = limit_fluid_state
+        limiter_func = limit_fluid_state_new
 
     ########################################
     # Helper functions for building states #
@@ -3588,10 +3709,38 @@ def main(actx_class,
                              ("velocity", cv.velocity)]
             fluid_viz_fields.extend(fluid_viz_ext)
 
+            internal_energy_density = cv.energy - 0.5*cv.mass*np.dot(
+                cv.velocity, cv.velocity)
+            internal_energy = internal_energy_density/cv.mass
+            enthalpy = internal_energy + dv.pressure/cv.mass
+
+            fluid_viz_ext = [("internal_energy", internal_energy),
+                             ("internal_energy_density", internal_energy_density),
+                             ("enthalpy", enthalpy)]
+            fluid_viz_fields.extend(fluid_viz_ext)
+
             # species mass fractions
             fluid_viz_fields.extend(
                 ("Y_"+species_names[i], cv.species_mass_fractions[i])
                 for i in range(nspecies))
+
+            # entropy
+            if eos_type == 1:
+                gamma = gas_model.eos.gamma(cv, dv.temperature)
+
+                species_entropy = np.zeros(nspecies, dtype=object)
+                entropy = actx.zeros_like(cv.mass)
+                for i in range(nspecies):
+                    species_entropy[i] = \
+                        pyro_mech.get_species_entropies_r(dv.temperature)
+                    entropy = entropy +\
+                        species_entropy[i]*cv.species_mass_fractions[i]
+                entropy = entropy*pyro_mech.get_specific_gas_constant(
+                    cv.species_mass_fractions)
+
+                fluid_viz_ext = [("entropy", entropy),
+                                 ("gamma", gamma)]
+                fluid_viz_fields.extend(fluid_viz_ext)
 
             if eos_type == 1:
                 temp_resid = get_temperature_update_compiled(
@@ -4072,6 +4221,8 @@ def main(actx_class,
             cv = filter_cv_compiled(stepper_state.cv)
             stepper_state = stepper_state.replace(cv=cv)
 
+        #print("my_pre_step before create_fluid_state")
+
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
@@ -4079,9 +4230,16 @@ def main(actx_class,
                                          smoothness_kappa=stepper_state.av_skappa,
                                          smoothness_d=stepper_state.av_sd)
 
+        #print("my_pre_step after create_fluid_state")
+
         if use_wall:
             wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
         cv = fluid_state.cv  # reset cv to limited version
+        tseed = fluid_state.temperature
+
+        # This re-creation of the state resets *tseed* to current temp and forces the
+        # limited cv into state
+        stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
 
         try:
             if logmgr:
@@ -4095,9 +4253,6 @@ def main(actx_class,
             do_health = check_step(step=step, interval=nhealth)
             do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
-
-            # This re-creation of the state forces the limited cv into state
-            stepper_state = stepper_state.replace(cv=cv)
 
             if any([do_viz, do_restart, do_health, do_status]):
 
@@ -4236,9 +4391,6 @@ def main(actx_class,
             my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
             comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
-
-        # This re-creation of the state resets *tseed* to current temp
-        stepper_state = stepper_state.replace(tseed=fluid_state.temperature)
 
         return stepper_state.get_obj_array(), dt
 

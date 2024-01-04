@@ -193,7 +193,9 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     """Generate a grid using `gmsh`."""
 
     height = 0.02
+    # MJA temporary for testing
     fluid_length = 0.1
+    #fluid_length = 0.05
     wall_length = 0.02
     bottom_inflow = np.zeros(shape=(dim,))
     top_inflow = np.zeros(shape=(dim,))
