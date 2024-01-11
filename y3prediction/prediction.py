@@ -36,7 +36,7 @@ from pytools.obj_array import make_obj_array
 from functools import partial
 from mirgecom.discretization import create_discretization_collection
 
-from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
+from meshmode.mesh import BTAG_ALL, BTAG_REALLY_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
 from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE, DD_VOLUME_ALL
 from grudge.op import nodal_max, nodal_min
@@ -112,6 +112,7 @@ from mirgecom.navierstokes import (
     grad_t_operator as fluid_grad_t_operator,
     ns_operator
 )
+from mirgecom.artificial_viscosity import smoothness_indicator
 # driver specific utilties
 from y3prediction.utils import (
     getIsentropicPressure,
@@ -223,6 +224,10 @@ class SingleLevelFilter(logging.Filter):
 class MyRuntimeError(RuntimeError):
     """Simple exception to kill the simulation."""
 
+    pass
+
+
+class _FluidAvgCVTag:
     pass
 
 
@@ -507,6 +512,7 @@ def main(actx_class,
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
+    das = 0.0
     av2_mu0 = configurate("av2_mu0", input_data, 0.1)
     av2_beta0 = configurate("av2_beta0", input_data, 6.0)
     av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
@@ -2158,6 +2164,81 @@ def main(actx_class,
 
     def limit_fluid_state_new(cv, pressure, temperature, dd=dd_vol_fluid):
 
+        #print("Inside limit_fluid_state_new")
+        #print(f"{dd=}")
+        #print(f"{cv.mass[0].shape=}")
+
+        if isinstance(dd.domain_tag, VolumeDomainTag):
+            #print("Volume dd")
+            """
+            elem_average = _element_average_cv(cv)
+            neighbor_minimum = _neighbor_minimum_cv(elem_average)
+            neighbor_maximum = _neighbor_maximum_cv(elem_average)
+
+            fluid_state_minimum = make_fluid_state(cv=neighbor_minimum,
+                                                   gas_model=gas_model,
+                                                   temperature_seed=temperature)
+            fluid_state_maximum = make_fluid_state(cv=neighbor_maximum,
+                                                   gas_model=gas_model,
+                                                   temperature_seed=temperature)
+            elem_minimum = _element_minimum_cv(cv)
+            elem_maximum = _element_maximum_cv(cv)
+            neighbor_minimum2 = _neighbor_minimum_cv(elem_minimum)
+            neighbor_maximum2 = _neighbor_maximum_cv(elem_maximum)
+
+            fluid_state_minimum2 = make_fluid_state(cv=neighbor_minimum2,
+                                                    gas_model=gas_model,
+                                                    temperature_seed=temperature)
+            fluid_state_maximum2 = make_fluid_state(cv=neighbor_maximum2,
+                                                   gas_model=gas_model,
+                                                   temperature_seed=temperature)
+
+            #temp_max = op.project(dcoll, dd_vol_fluid, dd,
+                                  #1.1*fluid_state_maximum.dv.temperature)
+            #temp_min = op.project(dcoll, dd_vol_fluid, dd,
+                                  #0.9*fluid_state_minimum.dv.temperature)
+            temp_max = 1.1*fluid_state_maximum.dv.temperature
+            temp_min = 0.9*fluid_state_minimum.dv.temperature
+            temp_max = 1.1*fluid_state_maximum2.dv.temperature
+            temp_min = fluid_state_minimum2.dv.temperature
+            #print(f"{temp_max[0].shape=}")
+
+            elem_average_temp = element_average(dcoll, temperature)
+            elem_minimum_temp = element_minimum(dcoll, temperature)
+            elem_maximum_temp = element_maximum(dcoll, temperature)
+            neighbor_min_avg_temp = _neighbor_minimum(elem_average_temp)
+            neighbor_min_min_temp = _neighbor_minimum(elem_minimum_temp)
+            neighbor_max_avg_temp = _neighbor_maximum(elem_average_temp)
+            neighbor_max_max_temp = _neighbor_maximum(elem_maximum_temp)
+
+            temp_max = neighbor_max_avg_temp
+            temp_min = neighbor_min_avg_temp
+
+            temp_max = neighbor_max_max_temp
+            temp_min = neighbor_min_min_temp
+            """
+
+            elem_average_pres = element_average(dcoll, pressure)
+            elem_minimum_pres = element_minimum(dcoll, pressure)
+            elem_maximum_pres = element_maximum(dcoll, pressure)
+            neighbor_min_avg_pres = _neighbor_minimum(elem_average_pres)
+            neighbor_min_min_pres = _neighbor_minimum(elem_minimum_pres)
+            neighbor_max_avg_pres = _neighbor_maximum(elem_average_pres)
+            neighbor_max_max_pres = _neighbor_maximum(elem_maximum_pres)
+
+            pres_max = neighbor_max_avg_pres
+            pres_min = neighbor_min_avg_pres
+
+            pres_max = neighbor_max_max_pres
+            pres_min = neighbor_min_min_pres
+
+        else:
+            pres_min = 1.e3
+            pres_max = 1.e7
+
+        #temp_min = 50.
+        #temp_max = 10000.
+
         spec_lim = cv.species_mass_fractions
         if nspecies > 0:
             spec_lim = make_obj_array([
@@ -2173,26 +2254,23 @@ def main(actx_class,
                 aux = aux + spec_lim[i]
             spec_lim = spec_lim/aux
 
-        #print("before limiter")
-        #print(f"{temperature=}")
-
-        temperature_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
-                                                   field=temperature,
-                                                   mmin=200.0, mmax=None,
-                                                   modify_average=True)
-        #print("after limiter")
-        #print(f"{temperature_lim=}")
-
         mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
                                             field=cv.mass,
                                             mmin=1.e-6, mmax=None,
                                             modify_average=True)
 
-        #temperature_lim = temperature
-        #mass_lim = cv.mass
-        #spec_lim = cv.species_mass_fractions
+        # should recompute the pressure here with the limited mass?
+        pressure_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                                field=pressure,
+                                                mmin=pres_min,
+                                                mmax=pres_max,
+                                                modify_average=True)
 
         kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+
+        # limit on pressure, instead of temperature
+        gas_const = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
+        temperature_lim = pressure_lim/gas_const/mass_lim
 
         energy_lim = mass_lim*(
             gas_model.eos.get_internal_energy(temperature_lim,
@@ -2205,7 +2283,385 @@ def main(actx_class,
                                 momentum=mom_lim,
                                 species_mass=mass_lim*spec_lim)
 
-        return make_obj_array([temperature_lim, cv_lim])
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
+
+    from grudge.dof_desc import DISCR_TAG_MODAL
+    from meshmode.transform_metadata import FirstAxisIsElementsTag
+    from meshmode.dof_array import DOFArray
+
+    def drop_order(dcoll, field, theta, dd=dd_vol_fluid,
+                   positivity_preserving=False):
+        # Compute cell averages of the state
+        def cancel_polynomials(grp):
+            return actx.from_numpy(
+                np.asarray([1 if sum(mode_id) == 0
+                            else 0 for mode_id in grp.mode_ids()]))
+
+        dd_nodal = dd
+        dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
+
+        modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
+        nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
+
+        modal_discr = dcoll.discr_from_dd(dd_modal)
+        modal_field = modal_map(field)
+
+        # cancel the ``high-order"" polynomials p > 0 and keep the average
+        filtered_modal_field = DOFArray(
+            actx,
+            tuple(actx.einsum("ej,j->ej",
+                              vec_i,
+                              cancel_polynomials(grp),
+                              arg_names=("vec", "filter"),
+                              tagged=(FirstAxisIsElementsTag(),))
+                  for grp, vec_i in zip(modal_discr.groups, modal_field))
+        )
+
+        # convert back to nodal to have the average at all points
+        cell_avgs = nodal_map(filtered_modal_field)
+
+        if positivity_preserving:
+            cell_avgs = actx.np.where(actx.np.greater(cell_avgs, 1e-5),
+                                                      cell_avgs, 1e-5)
+
+        return theta*(field - cell_avgs) + cell_avgs
+
+    def _drop_order_cv(cv, flipped_smoothness, theta_factor, dd=None):
+
+        smoothness = 1.0 - theta_factor*flipped_smoothness
+
+        density_lim = drop_order(dcoll, cv.mass, smoothness)
+        momentum_lim = make_obj_array([
+            drop_order(dcoll, cv.momentum[0], smoothness),
+            drop_order(dcoll, cv.momentum[1], smoothness)])
+        energy_lim = drop_order(dcoll, cv.energy, smoothness)
+
+        # make a new CV with the limited variables
+        return make_conserved(dim=dim, mass=density_lim, energy=energy_lim,
+                              momentum=momentum_lim, species_mass=cv.species_mass)
+
+    drop_order_cv = actx.compile(_drop_order_cv)
+
+    def element_average(dcoll, field, dd=dd_vol_fluid,
+                        positivity_preserving=False):
+        # Compute cell averages of the state
+        def cancel_polynomials(grp):
+            return actx.from_numpy(
+                np.asarray([1 if sum(mode_id) == 0
+                            else 0 for mode_id in grp.mode_ids()]))
+
+        dd_nodal = dd
+        dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
+
+        modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
+        nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
+
+        modal_discr = dcoll.discr_from_dd(dd_modal)
+        modal_field = modal_map(field)
+
+        # cancel the ``high-order"" polynomials p > 0 and keep the average
+        filtered_modal_field = DOFArray(
+            actx,
+            tuple(actx.einsum("ej,j->ej",
+                              vec_i,
+                              cancel_polynomials(grp),
+                              arg_names=("vec", "filter"),
+                              tagged=(FirstAxisIsElementsTag(),))
+                  for grp, vec_i in zip(modal_discr.groups, modal_field))
+        )
+
+        # convert back to nodal to have the average at all points
+        cell_avgs = nodal_map(filtered_modal_field)
+
+        return cell_avgs
+
+    def _element_average_cv(cv):
+
+        density = element_average(dcoll, cv.mass, dd_vol_fluid)
+        momentum = make_obj_array([
+            element_average(dcoll, cv.momentum[i], dd_vol_fluid)
+            for i in range(dim)])
+        energy = element_average(dcoll, cv.energy, dd_vol_fluid)
+
+        species_mass = None
+        if nspecies > 0:
+            species_mass = make_obj_array([
+                element_average(dcoll, cv.species_mass[i], dd_vol_fluid)
+                for i in range(dim)])
+
+        # make a new CV with the limited variables
+        return make_conserved(dim=dim, mass=density, energy=energy,
+                              momentum=momentum, species_mass=species_mass)
+
+    element_average_cv = actx.compile(_element_average_cv)
+
+    def element_minimum(dcoll, field, dd=dd_vol_fluid,
+                        positivity_preserving=False):
+
+        # convert back to nodal to have the average at all points
+        cell_min = op.elementwise_min(dcoll, dd, field)
+
+        return cell_min
+
+    def _element_minimum_cv(cv):
+
+        density = element_minimum(dcoll, cv.mass, dd_vol_fluid)
+        momentum = make_obj_array([
+            element_minimum(dcoll, cv.momentum[i], dd_vol_fluid)
+            for i in range(dim)])
+        energy = element_minimum(dcoll, cv.energy, dd_vol_fluid)
+
+        species_mass = None
+        if nspecies > 0:
+            species_mass = make_obj_array([
+                element_minimum(dcoll, cv.species_mass[i], dd_vol_fluid)
+                for i in range(dim)])
+
+        # make a new CV with the limited variables
+        return make_conserved(dim=dim, mass=density, energy=energy,
+                              momentum=momentum, species_mass=species_mass)
+
+    element_minimum_cv = actx.compile(_element_minimum_cv)
+
+    def element_maximum(dcoll, field, dd=dd_vol_fluid,
+                        positivity_preserving=False):
+
+        # convert back to nodal to have the average at all points
+        cell_max = op.elementwise_max(dcoll, dd, field)
+
+        return cell_max
+
+    def _element_maximum_cv(cv):
+
+        density = element_maximum(dcoll, cv.mass, dd_vol_fluid)
+        momentum = make_obj_array([
+            element_maximum(dcoll, cv.momentum[i], dd_vol_fluid)
+            for i in range(dim)])
+        energy = element_maximum(dcoll, cv.energy, dd_vol_fluid)
+
+        species_mass = None
+        if nspecies > 0:
+            species_mass = make_obj_array([
+                element_maximum(dcoll, cv.species_mass[i], dd_vol_fluid)
+                for i in range(dim)])
+
+        # make a new CV with the limited variables
+        return make_conserved(dim=dim, mass=density, energy=energy,
+                              momentum=momentum, species_mass=species_mass)
+
+    element_maximum_cv = actx.compile(_element_maximum_cv)
+
+    def _neighbor_maximum(field):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, field, volume_dd=dd_vol_fluid,
+                                   comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., -np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.max(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.max(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    def _neighbor_minimum(field):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, field, volume_dd=dd_vol_fluid,
+                                          comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.min(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.min(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    def _neighbor_maximum_cv(cv):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, cv, volume_dd=dd_vol_fluid,
+                                   comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., -np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.max(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.max(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    def _neighbor_minimum_cv(cv):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, cv, volume_dd=dd_vol_fluid,
+                                          comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.min(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.min(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    element_average_cv = actx.compile(_element_average_cv)
+    neighbor_minimum_cv = actx.compile(_neighbor_minimum_cv)
+    neighbor_maximum_cv = actx.compile(_neighbor_maximum_cv)
 
     if soln_filter_cutoff < 0:
         soln_filter_cutoff = int(soln_filter_frac * order)
@@ -3854,10 +4310,14 @@ def main(actx_class,
             if use_wall:
                 grad_wall_t = viz_stuff[7]
 
+            smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
+                                              kappa=kappa_sc, s0=s0_sc)
+
             viz_ext = [("smoothness_mu", av_smu),
                        ("smoothness_beta", av_sbeta),
                        ("smoothness_kappa", av_skappa),
-                       ("smoothness_d", av_sd)]
+                       ("smoothness_d", av_sd),
+                       ("smoothness", smoothness)]
             fluid_viz_fields.extend(viz_ext)
 
             #viz_ext = [("rhs", ns_rhs),
@@ -3874,6 +4334,53 @@ def main(actx_class,
             if use_wall:
                 viz_ext = [("grad_temperature", grad_wall_t)]
                 wall_viz_fields.extend(viz_ext)
+
+            elem_average = element_average_cv(cv)
+            elem_minimum = element_minimum_cv(cv)
+            elem_maximum = element_maximum_cv(cv)
+            neighbor_min_cv = neighbor_minimum_cv(elem_average)
+            neighbor_min_cv2 = neighbor_minimum_cv(elem_minimum)
+            neighbor_max_cv = neighbor_maximum_cv(elem_average)
+            neighbor_max_cv2 = neighbor_maximum_cv(elem_maximum)
+
+            fluid_state_minimum = make_fluid_state(cv=neighbor_min_cv,
+                                                   gas_model=gas_model,
+                                                   temperature_seed=dv.temperature)
+            fluid_state_minimum2 = make_fluid_state(cv=neighbor_min_cv2,
+                                                    gas_model=gas_model,
+                                                    temperature_seed=dv.temperature)
+            fluid_state_maximum = make_fluid_state(cv=neighbor_max_cv,
+                                                   gas_model=gas_model,
+                                                   temperature_seed=dv.temperature)
+            fluid_state_maximum2 = make_fluid_state(cv=neighbor_max_cv2,
+                                                   gas_model=gas_model,
+                                                   temperature_seed=dv.temperature)
+
+            elem_average_temp = element_average(dcoll, dv.temperature)
+            elem_minimum_temp = element_minimum(dcoll, dv.temperature)
+            elem_maximum_temp = element_maximum(dcoll, dv.temperature)
+            neighbor_min_avg_temp = _neighbor_minimum(elem_average_temp)
+            neighbor_min_min_temp = _neighbor_minimum(elem_minimum_temp)
+            neighbor_max_avg_temp = _neighbor_maximum(elem_average_temp)
+            neighbor_max_max_temp = _neighbor_maximum(elem_maximum_temp)
+
+            viz_ext = [("element_average", elem_average),
+                       ("element_average_temp", elem_average_temp),
+                       ("element_minimum_temp", elem_minimum_temp),
+                       ("element_minimum", elem_minimum),
+                       ("neighbor_min_pres", fluid_state_minimum.dv.pressure),
+                       ("neighbor_min_temp", fluid_state_minimum.dv.temperature),
+                       ("neighbor_min_temp2", fluid_state_minimum2.dv.temperature),
+                       ("neighbor_max_pres", fluid_state_maximum.dv.pressure),
+                       ("neighbor_max_temp", fluid_state_maximum.dv.temperature),
+                       ("neighbor_max_temp2", fluid_state_maximum2.dv.temperature),
+                       ("neighbor_min_avg_temp", neighbor_min_avg_temp),
+                       ("neighbor_min_min_temp", neighbor_min_min_temp),
+                       ("neighbor_max_avg_temp", neighbor_max_avg_temp),
+                       ("neighbor_max_max_temp", neighbor_max_max_temp),
+                       ("neighbor_minimum", neighbor_min_cv),
+                       ("neighbor_maximum", neighbor_max_cv)]
+            fluid_viz_fields.extend(viz_ext)
 
         write_visfile(
             dcoll, fluid_viz_fields, fluid_visualizer,
@@ -4223,6 +4730,12 @@ def main(actx_class,
 
         #print("my_pre_step before create_fluid_state")
 
+        # this limits the solution at the shock front,
+        smoothness = smoothness_indicator(dcoll, stepper_state.cv.mass,
+                                          dd=dd_vol_fluid,
+                                          kappa=kappa_sc, s0=s0_sc)
+        cv = drop_order_cv(stepper_state.cv, smoothness, das)
+
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
@@ -4421,6 +4934,10 @@ def main(actx_class,
         av_sbeta = stepper_state.av_sbeta
         av_skappa = stepper_state.av_skappa
         av_sd = stepper_state.av_sd
+
+        smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
+                                          kappa=kappa_sc, s0=s0_sc)
+        cv = _drop_order_cv(cv, smoothness, das)
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
