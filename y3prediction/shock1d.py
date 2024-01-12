@@ -122,8 +122,8 @@ class PlanarDiscontinuityMulti:
             raise ValueError(f"Position vector has unexpected dimensionality,"
                              f" expected {self._dim}.")
 
-        xpos = x_vec[0]
-        ypos = x_vec[1]
+        xpos = x_vec[0]*self._normal[0] + x_vec[1]*self._normal[1]
+        ypos = -x_vec[0]*self._normal[1] + x_vec[1]*self._normal[0]
 
         actx = xpos.array_context
         #if isinstance(self._disc_location, Number):
@@ -169,7 +169,7 @@ class PlanarDiscontinuityMulti:
         if sigma > 0:
             smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
             smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
-            velocity[0] = velocity[0]*smoothing_top*smoothing_bottom
+            velocity = velocity*smoothing_top*smoothing_bottom
 
         if self._nspecies:
             mass = eos.get_density(pressure, temperature,
@@ -205,7 +205,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     top_wall = np.zeros(shape=(dim,))
 
     # rotate the mesh around the bottom-left corner
-    theta = angle/180.*np.pi/2.
+    theta = angle/180.*np.pi
     bottom_inflow[0] = 0.0
     bottom_inflow[1] = -0.01
     top_inflow[0] = bottom_inflow[0] - height*np.sin(theta)

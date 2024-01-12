@@ -510,7 +510,7 @@ def main(actx_class,
     av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
     av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
     av2_beta_s0 = configurate("av2_beta_s0", input_data, 0.01)
-    smooth_char_length = configurate("smooth_char_length", input_data, 5)
+    smooth_char_length = configurate("smooth_char_length", input_data, 0)
     smooth_char_length_alpha = configurate("smooth_char_length_alpha",
                                            input_data, 0.025)
     use_smoothed_char_length = False
@@ -1233,7 +1233,7 @@ def main(actx_class,
         vel_cross[1] = 0
 
         plane_normal = np.zeros(shape=(dim,))
-        theta = mesh_angle/180.*np.pi/2.
+        theta = mesh_angle/180.*np.pi
         plane_normal[0] = np.cos(theta)
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
@@ -1637,7 +1637,7 @@ def main(actx_class,
             def get_mesh_data():
                 from y3prediction.shock1d import get_mesh
                 mesh, tag_to_elements = get_mesh(
-                    dim=dim, angle=mesh_angle, size=mesh_size,
+                    dim=dim, angle=0.*mesh_angle, size=mesh_size,
                     bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                     transfinite=transfinite, use_wall=use_wall,
                     use_quads=use_tensor_product_elements, use_gmsh=use_gmsh)()
@@ -1678,7 +1678,11 @@ def main(actx_class,
 
                     mesh = glue_mesh_boundaries(mesh, bdry_pair_mappings_and_tols)
                     """
-                print(f"{mesh=}")
+                # print(f"{mesh=}")
+                from meshmode.mesh.processing import rotate_mesh_around_axis
+                if mesh_angle > 0:
+                    mesh = rotate_mesh_around_axis(mesh, theta=theta)
+
                 return mesh, tag_to_elements, volume_to_tags
         elif init_case == "y3prediction":
             if rank == 0:
