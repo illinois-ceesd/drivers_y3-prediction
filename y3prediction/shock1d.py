@@ -281,7 +281,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             my_string += (f"""
                 Transfinite Curve {{1, 3}} = {0.1}/{size};
                 Transfinite Curve {{-2, 4}} = {0.02}/{size} Using Bump 1/{bl_ratio};
-                Transfinite Surface {{1, 2}} Right;
+                Transfinite Surface {{1}} Right;
 
                 Mesh.MeshSizeExtendFromBoundary = 0;
                 Mesh.MeshSizeFromPoints = 0;

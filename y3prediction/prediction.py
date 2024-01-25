@@ -512,7 +512,12 @@ def main(actx_class,
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
-    das = 0.0
+
+    drop_order_strength = configurate("drop_order_strength", input_data, 0.)
+    use_drop_order = False
+    if drop_order_strength > 0.:
+        use_drop_order = True
+
     av2_mu0 = configurate("av2_mu0", input_data, 0.1)
     av2_beta0 = configurate("av2_beta0", input_data, 6.0)
     av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
@@ -661,9 +666,9 @@ def main(actx_class,
     # filter every *nfilter* steps (-1 = no filtering)
     soln_nfilter = configurate("soln_nfilter", input_data, -1)
     soln_filter_frac = configurate("soln_filter_frac", input_data, 0.5)
-    # soln_filter_cutoff = -1 => filter_frac*order)
     soln_filter_cutoff = configurate("soln_filter_cutoff", input_data, -1)
     soln_filter_order = configurate("soln_filter_order", input_data, 8)
+
     # Alpha value suggested by:
     # JSH/TW Nodal DG Methods, Section 5.3
     # DOI: 10.1007/978-0-387-72067-8
@@ -693,7 +698,7 @@ def main(actx_class,
     mesh_size = configurate("mesh_size", input_data, 0.001)
     bl_ratio = configurate("bl_ratio", input_data, 3)
     interface_ratio = configurate("interface_ratio", input_data, 2)
-    transfinite = configurate("transfinit", input_data, False)
+    transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
     # ACTII flow properties
@@ -2129,6 +2134,10 @@ def main(actx_class,
     # Convenience Functions #
     #########################
 
+    #
+    # original limiter implementation
+    # only limits the species mass fractions
+    #
     def limit_fluid_state(cv, pressure, temperature, dd=dd_vol_fluid):
 
         spec_lim = make_obj_array([
@@ -2162,82 +2171,95 @@ def main(actx_class,
                               momentum=mom_lim,
                               species_mass=mass_lim*spec_lim)
 
-    def limit_fluid_state_new(cv, pressure, temperature, dd=dd_vol_fluid):
+    #
+    # positivity preserving limiter of liu
+    # limits the density and mass fractions based on global minima
+    # then computes an average fluid state and uses the averge pressure
+    # to limit the entire cv in regions with very small pressures
+    #
+    def limit_fluid_state_liu(cv, pressure, temperature, dd=dd_vol_fluid):
 
-        #print("Inside limit_fluid_state_new")
-        #print(f"{dd=}")
-        #print(f"{cv.mass[0].shape=}")
+        # 1.0 limit the density to be above 0.
+        mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                            field=cv.mass,
+                                            mmin=1.e-10, mmax=None,
+                                            modify_average=True)
 
-        if isinstance(dd.domain_tag, VolumeDomainTag):
-            #print("Volume dd")
-            """
-            elem_average = _element_average_cv(cv)
-            neighbor_minimum = _neighbor_minimum_cv(elem_average)
-            neighbor_maximum = _neighbor_maximum_cv(elem_average)
+        # 2.0 limit the species mass fractions
+        spec_lim = cv.species_mass_fractions
+        if nspecies > 0:
+            spec_lim = make_obj_array([
+                bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                         field=cv.species_mass_fractions[i],
+                                         mmin=1.e-10, mmax=1.0, modify_average=True)
+                for i in range(nspecies)
+            ])
 
-            fluid_state_minimum = make_fluid_state(cv=neighbor_minimum,
-                                                   gas_model=gas_model,
-                                                   temperature_seed=temperature)
-            fluid_state_maximum = make_fluid_state(cv=neighbor_maximum,
-                                                   gas_model=gas_model,
-                                                   temperature_seed=temperature)
-            elem_minimum = _element_minimum_cv(cv)
-            elem_maximum = _element_maximum_cv(cv)
-            neighbor_minimum2 = _neighbor_minimum_cv(elem_minimum)
-            neighbor_maximum2 = _neighbor_maximum_cv(elem_maximum)
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+            spec_lim = spec_lim/aux
 
-            fluid_state_minimum2 = make_fluid_state(cv=neighbor_minimum2,
-                                                    gas_model=gas_model,
+        # 3.0 reconstruct cv and find the average element cv and pressure
+        #
+        # Question:
+        # we don't update the energy or the momentum here
+        # so if the density is reduced it results in a
+        #    net decrease in the pressure and increase in velocity?
+        cv_updated = make_conserved(dim=dim, mass=mass_lim, energy=cv.energy,
+                                    momentum=cv.momentum,
+                                    species_mass=mass_lim*spec_lim)
+
+        elem_avg_cv = _element_average_cv(cv_updated, dd)
+
+        elem_avg_temp = gas_model.eos.temperature(cv=elem_avg_cv,
+                                                  temperature_seed=temperature)
+        elem_avg_pres = gas_model.eos.pressure(cv=elem_avg_cv,
+                                               temperature=elem_avg_temp)
+
+        mmin_i = op.elementwise_min(dcoll, dd, pressure)
+        mmin = 1.
+
+        _theta = actx.np.minimum(
+            1.0, actx.np.where(actx.np.less(mmin_i, mmin),
+            abs((mmin-elem_avg_pres)/(mmin_i-elem_avg_pres+1e-13)), 1.0)
+        )
+
+        # 4.0 limit cv where the pressure is negative
+        #     this is turn keeps the pressure positive
+
+        mass_lim = (_theta*(cv_updated.mass - elem_avg_cv.mass)
+            + elem_avg_cv.mass)
+        mom_lim = make_obj_array([
+            (_theta*(cv_updated.momentum[i] - elem_avg_cv.momentum[i])
+             + elem_avg_cv.momentum[i])
+            for i in range(dim)
+        ])
+        energy_lim = (_theta*(cv_updated.energy - elem_avg_cv.energy)
+            + elem_avg_cv.energy)
+        spec_lim = make_obj_array([
+            (_theta*(cv_updated.species_mass[i] - elem_avg_cv.species_mass[i])
+             + elem_avg_cv.species_mass[i])
+            for i in range(0, nspecies)
+        ])
+
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=spec_lim)
+        temperature_lim = gas_model.eos.temperature(cv=cv_lim,
                                                     temperature_seed=temperature)
-            fluid_state_maximum2 = make_fluid_state(cv=neighbor_maximum2,
-                                                   gas_model=gas_model,
-                                                   temperature_seed=temperature)
+        pressure_lim = gas_model.eos.pressure(cv=cv_lim, temperature=temperature_lim)
 
-            #temp_max = op.project(dcoll, dd_vol_fluid, dd,
-                                  #1.1*fluid_state_maximum.dv.temperature)
-            #temp_min = op.project(dcoll, dd_vol_fluid, dd,
-                                  #0.9*fluid_state_minimum.dv.temperature)
-            temp_max = 1.1*fluid_state_maximum.dv.temperature
-            temp_min = 0.9*fluid_state_minimum.dv.temperature
-            temp_max = 1.1*fluid_state_maximum2.dv.temperature
-            temp_min = fluid_state_minimum2.dv.temperature
-            #print(f"{temp_max[0].shape=}")
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
 
-            elem_average_temp = element_average(dcoll, temperature)
-            elem_minimum_temp = element_minimum(dcoll, temperature)
-            elem_maximum_temp = element_maximum(dcoll, temperature)
-            neighbor_min_avg_temp = _neighbor_minimum(elem_average_temp)
-            neighbor_min_min_temp = _neighbor_minimum(elem_minimum_temp)
-            neighbor_max_avg_temp = _neighbor_maximum(elem_average_temp)
-            neighbor_max_max_temp = _neighbor_maximum(elem_maximum_temp)
+    #
+    # limit the fluid state based on globally defined parameters
+    #
+    def limit_fluid_state_global(cv, pressure, temperature, dd=dd_vol_fluid):
 
-            temp_max = neighbor_max_avg_temp
-            temp_min = neighbor_min_avg_temp
-
-            temp_max = neighbor_max_max_temp
-            temp_min = neighbor_min_min_temp
-            """
-
-            elem_average_pres = element_average(dcoll, pressure)
-            elem_minimum_pres = element_minimum(dcoll, pressure)
-            elem_maximum_pres = element_maximum(dcoll, pressure)
-            neighbor_min_avg_pres = _neighbor_minimum(elem_average_pres)
-            neighbor_min_min_pres = _neighbor_minimum(elem_minimum_pres)
-            neighbor_max_avg_pres = _neighbor_maximum(elem_average_pres)
-            neighbor_max_max_pres = _neighbor_maximum(elem_maximum_pres)
-
-            pres_max = neighbor_max_avg_pres
-            pres_min = neighbor_min_avg_pres
-
-            pres_max = neighbor_max_max_pres
-            pres_min = neighbor_min_min_pres
-
-        else:
-            pres_min = 1.e3
-            pres_max = 1.e7
-
-        #temp_min = 50.
-        #temp_max = 10000.
+        pres_min = 5.e3
+        density_min = 1.e-2
 
         spec_lim = cv.species_mass_fractions
         if nspecies > 0:
@@ -2256,14 +2278,15 @@ def main(actx_class,
 
         mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
                                             field=cv.mass,
-                                            mmin=1.e-6, mmax=None,
+                                            mmin=density_min, mmax=None,
                                             modify_average=True)
 
         # should recompute the pressure here with the limited mass?
         pressure_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
                                                 field=pressure,
                                                 mmin=pres_min,
-                                                mmax=pres_max,
+                                                #mmax=pres_max,
+                                                mmax=None,
                                                 modify_average=True)
 
         kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
@@ -2288,6 +2311,102 @@ def main(actx_class,
     from grudge.dof_desc import DISCR_TAG_MODAL
     from meshmode.transform_metadata import FirstAxisIsElementsTag
     from meshmode.dof_array import DOFArray
+
+    #
+    # limit the fluid state based on the min/max values of the neighboring
+    # elements
+    #
+    def limit_fluid_state_neighbors(cv, pressure, temperature, dd=dd_vol_fluid):
+
+        elem_average_rho = element_average(dcoll, cv.mass, dd)
+        elem_average_velocity = make_obj_array([
+            element_average(dcoll, cv.momentum[i]/cv.mass, dd)
+            for i in range(dim)])
+        elem_average_pres = element_average(dcoll, pressure, dd)
+        if isinstance(dd.domain_tag, VolumeDomainTag):
+            #print("Volume dd")
+            neighbor_min_avg_rho = _neighbor_minimum(elem_average_rho)
+            neighbor_max_avg_rho = _neighbor_maximum(elem_average_rho)
+
+            neighbor_min_avg_velocity = make_obj_array([
+                _neighbor_minimum(elem_average_velocity[i])
+                for i in range(dim)])
+            neighbor_max_avg_velocity = make_obj_array([
+                _neighbor_maximum(elem_average_velocity[i])
+                for i in range(dim)])
+
+            neighbor_min_avg_pres = _neighbor_minimum(elem_average_pres)
+            neighbor_max_avg_pres = _neighbor_maximum(elem_average_pres)
+
+            rho_min = neighbor_min_avg_rho
+            rho_max = neighbor_max_avg_rho
+            vel_min = neighbor_min_avg_velocity
+            vel_max = neighbor_max_avg_velocity
+            pres_min = neighbor_min_avg_pres
+            pres_max = neighbor_max_avg_pres
+
+        else:
+            # on boundaries, use just the element average
+            rho_min = elem_average_rho
+            rho_max = elem_average_rho
+            vel_min = elem_average_velocity
+            vel_max = elem_average_velocity
+            pres_min = elem_average_pres
+            pres_max = elem_average_pres
+
+        spec_lim = cv.species_mass_fractions
+        if nspecies > 0:
+            spec_lim = make_obj_array([
+                bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                         field=cv.species_mass_fractions[i],
+                                         mmin=0., mmax=1.0, modify_average=True)
+                for i in range(nspecies)
+            ])
+
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+            spec_lim = spec_lim/aux
+
+        mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                            field=cv.mass,
+                                            mmin=rho_min, mmax=rho_max,
+                                            modify_average=True)
+
+        vel_lim = make_obj_array([
+            bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                     field=cv.momentum[i]/cv.mass,
+                                     mmin=vel_min[i], mmax=vel_max[i],
+                                     modify_average=True)
+            for i in range(dim)
+        ])
+
+        # should recompute the pressure here with the limited mass?
+        pressure_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                                field=pressure,
+                                                mmin=pres_min,
+                                                mmax=pres_max,
+                                                modify_average=True)
+
+        kin_energy = 0.5*np.dot(vel_lim, vel_lim)
+
+        # limit on pressure, instead of temperature
+        gas_const = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
+        temperature_lim = pressure_lim/gas_const/mass_lim
+
+        energy_lim = mass_lim*(
+            gas_model.eos.get_internal_energy(temperature_lim,
+                                              species_mass_fractions=spec_lim)
+            + kin_energy
+        )
+
+        mom_lim = mass_lim*vel_lim
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=mass_lim*spec_lim)
+
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
 
     def drop_order(dcoll, field, theta, dd=dd_vol_fluid,
                    positivity_preserving=False):
@@ -2375,25 +2494,23 @@ def main(actx_class,
 
         return cell_avgs
 
-    def _element_average_cv(cv):
+    def _element_average_cv(cv, dd=dd_vol_fluid):
 
-        density = element_average(dcoll, cv.mass, dd_vol_fluid)
+        density = element_average(dcoll, cv.mass, dd)
         momentum = make_obj_array([
-            element_average(dcoll, cv.momentum[i], dd_vol_fluid)
+            element_average(dcoll, cv.momentum[i], dd)
             for i in range(dim)])
-        energy = element_average(dcoll, cv.energy, dd_vol_fluid)
+        energy = element_average(dcoll, cv.energy, dd)
 
         species_mass = None
         if nspecies > 0:
             species_mass = make_obj_array([
-                element_average(dcoll, cv.species_mass[i], dd_vol_fluid)
-                for i in range(dim)])
+                element_average(dcoll, cv.species_mass[i], dd)
+                for i in range(0, nspecies)])
 
         # make a new CV with the limited variables
         return make_conserved(dim=dim, mass=density, energy=energy,
                               momentum=momentum, species_mass=species_mass)
-
-    element_average_cv = actx.compile(_element_average_cv)
 
     def element_minimum(dcoll, field, dd=dd_vol_fluid,
                         positivity_preserving=False):
@@ -2403,26 +2520,6 @@ def main(actx_class,
 
         return cell_min
 
-    def _element_minimum_cv(cv):
-
-        density = element_minimum(dcoll, cv.mass, dd_vol_fluid)
-        momentum = make_obj_array([
-            element_minimum(dcoll, cv.momentum[i], dd_vol_fluid)
-            for i in range(dim)])
-        energy = element_minimum(dcoll, cv.energy, dd_vol_fluid)
-
-        species_mass = None
-        if nspecies > 0:
-            species_mass = make_obj_array([
-                element_minimum(dcoll, cv.species_mass[i], dd_vol_fluid)
-                for i in range(dim)])
-
-        # make a new CV with the limited variables
-        return make_conserved(dim=dim, mass=density, energy=energy,
-                              momentum=momentum, species_mass=species_mass)
-
-    element_minimum_cv = actx.compile(_element_minimum_cv)
-
     def element_maximum(dcoll, field, dd=dd_vol_fluid,
                         positivity_preserving=False):
 
@@ -2430,26 +2527,6 @@ def main(actx_class,
         cell_max = op.elementwise_max(dcoll, dd, field)
 
         return cell_max
-
-    def _element_maximum_cv(cv):
-
-        density = element_maximum(dcoll, cv.mass, dd_vol_fluid)
-        momentum = make_obj_array([
-            element_maximum(dcoll, cv.momentum[i], dd_vol_fluid)
-            for i in range(dim)])
-        energy = element_maximum(dcoll, cv.energy, dd_vol_fluid)
-
-        species_mass = None
-        if nspecies > 0:
-            species_mass = make_obj_array([
-                element_maximum(dcoll, cv.species_mass[i], dd_vol_fluid)
-                for i in range(dim)])
-
-        # make a new CV with the limited variables
-        return make_conserved(dim=dim, mass=density, energy=energy,
-                              momentum=momentum, species_mass=species_mass)
-
-    element_maximum_cv = actx.compile(_element_maximum_cv)
 
     def _neighbor_maximum(field):
 
@@ -2659,18 +2736,14 @@ def main(actx_class,
 
         return el_data
 
-    element_average_cv = actx.compile(_element_average_cv)
-    neighbor_minimum_cv = actx.compile(_neighbor_minimum_cv)
-    neighbor_maximum_cv = actx.compile(_neighbor_maximum_cv)
-
     if soln_filter_cutoff < 0:
         soln_filter_cutoff = int(soln_filter_frac * order)
     if rhs_filter_cutoff < 0:
         rhs_filter_cutoff = int(rhs_filter_frac * order)
 
-    if soln_filter_cutoff >= order:
+    if soln_filter_cutoff >= order and soln_nfilter > 0:
         raise ValueError("Invalid setting for solution filter (cutoff >= order).")
-    if rhs_filter_cutoff >= order:
+    if rhs_filter_cutoff >= order and use_rhs_filter:
         raise ValueError("Invalid setting for RHS filter (cutoff >= order).")
 
     from mirgecom.filter import (
@@ -2713,7 +2786,12 @@ def main(actx_class,
 
     limiter_func = None
     if use_species_limiter:
-        limiter_func = limit_fluid_state_new
+        #limiter_func = limit_fluid_state_new
+        #limiter_func = limit_fluid_state_average_pressure
+        #limiter_func = limit_fluid_state_neighbors_tulio
+        #limiter_func = limit_fluid_state_neighbors
+        #limiter_func = limit_fluid_state_global
+        limiter_func = limit_fluid_state_liu
 
     ########################################
     # Helper functions for building states #
@@ -4181,8 +4259,8 @@ def main(actx_class,
                 for i in range(nspecies))
 
             # entropy
+            gamma = gas_model.eos.gamma(cv, dv.temperature)
             if eos_type == 1:
-                gamma = gas_model.eos.gamma(cv, dv.temperature)
 
                 species_entropy = np.zeros(nspecies, dtype=object)
                 entropy = actx.zeros_like(cv.mass)
@@ -4193,10 +4271,12 @@ def main(actx_class,
                         species_entropy[i]*cv.species_mass_fractions[i]
                 entropy = entropy*pyro_mech.get_specific_gas_constant(
                     cv.species_mass_fractions)
+            else:
+                entropy = actx.np.log(dv.pressure/(cv.mass**gamma))
 
-                fluid_viz_ext = [("entropy", entropy),
-                                 ("gamma", gamma)]
-                fluid_viz_fields.extend(fluid_viz_ext)
+            fluid_viz_ext = [("entropy", entropy),
+                             ("gamma", gamma)]
+            fluid_viz_fields.extend(fluid_viz_ext)
 
             if eos_type == 1:
                 temp_resid = get_temperature_update_compiled(
@@ -4310,15 +4390,17 @@ def main(actx_class,
             if use_wall:
                 grad_wall_t = viz_stuff[7]
 
-            smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
-                                              kappa=kappa_sc, s0=s0_sc)
-
             viz_ext = [("smoothness_mu", av_smu),
                        ("smoothness_beta", av_sbeta),
                        ("smoothness_kappa", av_skappa),
-                       ("smoothness_d", av_sd),
-                       ("smoothness", smoothness)]
+                       ("smoothness_d", av_sd)]
             fluid_viz_fields.extend(viz_ext)
+
+            if use_drop_order:
+                smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
+                                                  kappa=kappa_sc, s0=s0_sc)
+                viz_ext = [("smoothness", smoothness)]
+                fluid_viz_fields.extend(viz_ext)
 
             #viz_ext = [("rhs", ns_rhs),
             viz_ext = [("grad_temperature", grad_fluid_t),
@@ -4335,52 +4417,32 @@ def main(actx_class,
                 viz_ext = [("grad_temperature", grad_wall_t)]
                 wall_viz_fields.extend(viz_ext)
 
+            """
             elem_average = element_average_cv(cv)
             elem_minimum = element_minimum_cv(cv)
             elem_maximum = element_maximum_cv(cv)
-            neighbor_min_cv = neighbor_minimum_cv(elem_average)
-            neighbor_min_cv2 = neighbor_minimum_cv(elem_minimum)
-            neighbor_max_cv = neighbor_maximum_cv(elem_average)
-            neighbor_max_cv2 = neighbor_maximum_cv(elem_maximum)
+            neighbor_min_avg_cv = neighbor_minimum_cv(elem_average)
+            neighbor_min_min_cv = neighbor_minimum_cv(elem_minimum)
+            neighbor_max_avg_cv = neighbor_maximum_cv(elem_average)
+            neighbor_max_max_cv = neighbor_maximum_cv(elem_maximum)
 
-            fluid_state_minimum = make_fluid_state(cv=neighbor_min_cv,
-                                                   gas_model=gas_model,
-                                                   temperature_seed=dv.temperature)
-            fluid_state_minimum2 = make_fluid_state(cv=neighbor_min_cv2,
-                                                    gas_model=gas_model,
-                                                    temperature_seed=dv.temperature)
-            fluid_state_maximum = make_fluid_state(cv=neighbor_max_cv,
-                                                   gas_model=gas_model,
-                                                   temperature_seed=dv.temperature)
-            fluid_state_maximum2 = make_fluid_state(cv=neighbor_max_cv2,
-                                                   gas_model=gas_model,
-                                                   temperature_seed=dv.temperature)
-
-            elem_average_temp = element_average(dcoll, dv.temperature)
-            elem_minimum_temp = element_minimum(dcoll, dv.temperature)
-            elem_maximum_temp = element_maximum(dcoll, dv.temperature)
-            neighbor_min_avg_temp = _neighbor_minimum(elem_average_temp)
-            neighbor_min_min_temp = _neighbor_minimum(elem_minimum_temp)
-            neighbor_max_avg_temp = _neighbor_maximum(elem_average_temp)
-            neighbor_max_max_temp = _neighbor_maximum(elem_maximum_temp)
+            elem_average_pres = element_average(dcoll, dv.pressure)
+            elem_minimum_pres = element_minimum(dcoll, dv.pressure)
+            elem_maximum_pres = element_maximum(dcoll, dv.pressure)
+            neighbor_min_avg_pres = _neighbor_minimum(elem_average_pres)
+            neighbor_min_min_pres = _neighbor_minimum(elem_minimum_pres)
+            neighbor_max_avg_pres = _neighbor_maximum(elem_average_pres)
+            neighbor_max_max_pres = _neighbor_maximum(elem_maximum_pres)
 
             viz_ext = [("element_average", elem_average),
-                       ("element_average_temp", elem_average_temp),
-                       ("element_minimum_temp", elem_minimum_temp),
                        ("element_minimum", elem_minimum),
-                       ("neighbor_min_pres", fluid_state_minimum.dv.pressure),
-                       ("neighbor_min_temp", fluid_state_minimum.dv.temperature),
-                       ("neighbor_min_temp2", fluid_state_minimum2.dv.temperature),
-                       ("neighbor_max_pres", fluid_state_maximum.dv.pressure),
-                       ("neighbor_max_temp", fluid_state_maximum.dv.temperature),
-                       ("neighbor_max_temp2", fluid_state_maximum2.dv.temperature),
-                       ("neighbor_min_avg_temp", neighbor_min_avg_temp),
-                       ("neighbor_min_min_temp", neighbor_min_min_temp),
-                       ("neighbor_max_avg_temp", neighbor_max_avg_temp),
-                       ("neighbor_max_max_temp", neighbor_max_max_temp),
-                       ("neighbor_minimum", neighbor_min_cv),
-                       ("neighbor_maximum", neighbor_max_cv)]
+                       ("element_maximum", elem_maximum),
+                       ("neighbor_min_min_pres", neighbor_min_min_pres),
+                       ("neighbor_max_max_pres", neighbor_max_max_pres),
+                       ("neighbor_min_avg_pres", neighbor_min_avg_pres),
+                       ("neighbor_max_avg_pres", neighbor_max_avg_pres)]
             fluid_viz_fields.extend(viz_ext)
+        """
 
         write_visfile(
             dcoll, fluid_viz_fields, fluid_visualizer,
@@ -4728,13 +4790,14 @@ def main(actx_class,
             cv = filter_cv_compiled(stepper_state.cv)
             stepper_state = stepper_state.replace(cv=cv)
 
-        #print("my_pre_step before create_fluid_state")
-
-        # this limits the solution at the shock front,
-        smoothness = smoothness_indicator(dcoll, stepper_state.cv.mass,
-                                          dd=dd_vol_fluid,
-                                          kappa=kappa_sc, s0=s0_sc)
-        cv = drop_order_cv(stepper_state.cv, smoothness, das)
+        if use_drop_order:
+            # this limits the solution at the shock front,
+            smoothness = smoothness_indicator(dcoll, stepper_state.cv.mass,
+                                              dd=dd_vol_fluid,
+                                              kappa=kappa_sc, s0=s0_sc)
+            #smoothness = actx.zeros_like(stepper_state.cv.mass) + 1.0
+            cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
+            stepper_state = stepper_state.replace(cv=cv)
 
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
@@ -4935,9 +4998,11 @@ def main(actx_class,
         av_skappa = stepper_state.av_skappa
         av_sd = stepper_state.av_sd
 
-        smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
-                                          kappa=kappa_sc, s0=s0_sc)
-        cv = _drop_order_cv(cv, smoothness, das)
+        if use_drop_order:
+            smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
+                                              kappa=kappa_sc, s0=s0_sc)
+            #smoothness = actx.zeros_like(cv.mass) + 1.0
+            cv = _drop_order_cv(cv, smoothness, drop_order_strength)
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
