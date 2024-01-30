@@ -246,20 +246,53 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         Line Loop(2) = {{2, 5, -7, -6}};
         Plane Surface(1) = {{1}};
         Plane Surface(2) = {{2}};
-        Physical Surface('fluid') = {{1}};
-        Physical Surface('wall_insert') = {{2}};
-        Physical Curve('inflow') = {{4}};
-        Physical Curve('outflow') = {{2}};
-        Physical Curve('flow') = {{2, 4}};
-        Physical Curve('isothermal_wall') = {{1,3}};
-        Physical Curve('periodic_y_top') = {{3}};
-        Physical Curve('periodic_y_bottom') = {{1}};
-        Physical Curve('wall_interface') = {{2}};
-        Physical Curve('wall_farfield') = {{5, 6, 7}};
-        Physical Curve('solid_wall_top') = {{5}};
-        Physical Curve('solid_wall_bottom') = {{6}};
-        Physical Curve('solid_wall_end') = {{7}};
         """)
+    if dim == 2:
+        my_string += ("""
+            Physical Surface('fluid') = {1};
+            Physical Surface('wall_insert') = {2};
+            Physical Curve('inflow') = {4};
+            Physical Curve('outflow') = {2};
+            Physical Curve('flow') = {2, 4};
+            Physical Curve('isothermal_wall') = {1,3};
+            Physical Curve('periodic_y_top') = {3};
+            Physical Curve('periodic_y_bottom') = {1};
+            Physical Curve('wall_interface') = {2};
+            Physical Curve('wall_farfield') = {5, 6, 7};
+            Physical Curve('solid_wall_top') = {5};
+            Physical Curve('solid_wall_bottom') = {6};
+            Physical Curve('solid_wall_end') = {7};
+            """)
+    elif dim == 3:
+        my_string += ("""
+            fluid_surface_vector[] = Extrude {0, 0, 0.02} { Surface{1}; };
+            wall_surface_vector[] = Extrude {0, 0, 0.02} { Surface{2}; };
+            """)
+
+        my_string += ("""
+            Physical Volume('fluid') = {fluid_surface_vector[1]};
+            Physical Volume('wall_insert') = {wall_surface_vector[1]};
+            Physical Surface('inflow') = {fluid_surface_vector[2]};
+            Physical Surface('outflow') = {fluid_surface_vector[4]};
+            Physical Surface('flow') = {
+                fluid_surface_vector[2],
+                fluid_surface_vector[4]
+            };
+            Physical Surface('isothermal_wall') = {
+                1,
+                fluid_surface_vector[0],
+                fluid_surface_vector[3],
+                fluid_surface_vector[5]
+            };
+            Physical Surface('wall_interface') = {fluid_surface_vector[4]};
+            Physical Surface('wall_farfield') = {
+                2,
+                wall_surface_vector[0],
+                wall_surface_vector[3],
+                wall_surface_vector[4],
+                wall_surface_vector[5]
+            };
+            """)
 
     if transfinite:
         if use_wall:
@@ -268,82 +301,120 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 Transfinite Curve {{5, 6}} = {0.02} / {size};
                 Transfinite Curve {{-2, 4, 7}}={0.02}/{size} Using Bump 1/{bl_ratio};
                 Transfinite Surface {{1, 2}} Right;
-
-                Mesh.MeshSizeExtendFromBoundary = 0;
-                Mesh.MeshSizeFromPoints = 0;
-                Mesh.MeshSizeFromCurvature = 0;
-
-                Mesh.Algorithm = 5;
-                Mesh.OptimizeNetgen = 1;
-                Mesh.Smoothing = 0;
             """)
         else:
             my_string += (f"""
                 Transfinite Curve {{1, 3}} = {0.1}/{size};
                 Transfinite Curve {{-2, 4}} = {0.02}/{size} Using Bump 1/{bl_ratio};
                 Transfinite Surface {{1}} Right;
-
-                Mesh.MeshSizeExtendFromBoundary = 0;
-                Mesh.MeshSizeFromPoints = 0;
-                Mesh.MeshSizeFromCurvature = 0;
-
-                Mesh.Algorithm = 5;
-                Mesh.OptimizeNetgen = 1;
-                Mesh.Smoothing = 0;
             """)
     else:
-        my_string += (f"""
-            // Create distance field from curves, excludes cavity
-            Field[1] = Distance;
-            Field[1].CurvesList = {{1,3}};
-            Field[1].NumPointsPerCurve = 100000;
+        if dim == 2:
+            my_string += (f"""
+                // Create distance field from curves, excludes cavity
+                Field[1] = Distance;
+                Field[1].CurvesList = {{1,3}};
+                Field[1].NumPointsPerCurve = 100000;
 
-            //Create threshold field that varrries element size near boundaries
-            Field[2] = Threshold;
-            Field[2].InField = 1;
-            Field[2].SizeMin = {size} / {bl_ratio};
-            Field[2].SizeMax = {size};
-            Field[2].DistMin = 0.0002;
-            Field[2].DistMax = 0.005;
-            Field[2].StopAtDistMax = 1;
+                //Create threshold field that varrries element size near boundaries
+                Field[2] = Threshold;
+                Field[2].InField = 1;
+                Field[2].SizeMin = {size} / {bl_ratio};
+                Field[2].SizeMax = {size};
+                Field[2].DistMin = 0.0002;
+                Field[2].DistMax = 0.005;
+                Field[2].StopAtDistMax = 1;
 
-            //  background mesh size
-            Field[3] = Box;
-            Field[3].XMin = 0.;
-            Field[3].XMax = 1.0;
-            Field[3].YMin = -1.0;
-            Field[3].YMax = 1.0;
-            Field[3].VIn = {size};
+                //  background mesh size
+                Field[3] = Box;
+                Field[3].XMin = 0.;
+                Field[3].XMax = 1.0;
+                Field[3].YMin = -1.0;
+                Field[3].YMax = 1.0;
+                Field[3].VIn = {size};
 
-            // Create distance field from curves, excludes cavity
-            Field[4] = Distance;
-            Field[4].CurvesList = {{2}};
-            Field[4].NumPointsPerCurve = 100000;
+                // Create distance field from curves, excludes cavity
+                Field[4] = Distance;
+                Field[4].CurvesList = {{2}};
+                Field[4].NumPointsPerCurve = 100000;
 
-            //Create threshold field that varrries element size near boundaries
-            Field[5] = Threshold;
-            Field[5].InField = 4;
-            Field[5].SizeMin = {size} / {interface_ratio};
-            Field[5].SizeMax = {size};
-            Field[5].DistMin = 0.0002;
-            Field[5].DistMax = 0.005;
-            Field[5].StopAtDistMax = 1;
+                //Create threshold field that varrries element size near boundaries
+                Field[5] = Threshold;
+                Field[5].InField = 4;
+                Field[5].SizeMin = {size} / {interface_ratio};
+                Field[5].SizeMax = {size};
+                Field[5].DistMin = 0.0002;
+                Field[5].DistMax = 0.005;
+                Field[5].StopAtDistMax = 1;
 
-            // take the minimum of all defined meshing fields
-            Field[100] = Min;
-            Field[100].FieldsList = {{2, 3, 5}};
-            Background Field = 100;
+                // take the minimum of all defined meshing fields
+                Field[100] = Min;
+                Field[100].FieldsList = {{2, 3, 5}};
+                Background Field = 100;
+            """)
+        elif dim == 3:
+            my_string += (f"""
+                // Create distance field from surface,
+                Field[1] = Distance;
+                Field[1].SurfacesList = {{
+                1,
+                fluid_surface_vector[0],
+                fluid_surface_vector[3],
+                fluid_surface_vector[5]
+                }};
+                Field[1].Sampling = 1000;
 
+                //Create threshold field that varrries element size near boundaries
+                Field[2] = Threshold;
+                Field[2].InField = 1;
+                Field[2].SizeMin = {size} / {bl_ratio};
+                Field[2].SizeMax = {size};
+                Field[2].DistMin = 0.0002;
+                Field[2].DistMax = 0.005;
+                Field[2].StopAtDistMax = 1;
+
+                //  background mesh size
+                Field[3] = Box;
+                Field[3].XMin = 0.;
+                Field[3].XMax = 1.0;
+                Field[3].YMin = -1.0;
+                Field[3].YMax = 1.0;
+                Field[3].ZMin = -1.0;
+                Field[3].ZMax = 1.0;
+                Field[3].VIn = {size};
+
+                // Create distance field from surface
+                Field[4] = Distance;
+                Field[4].SurfacesList = {{fluid_surface_vector[4]}};
+                Field[4].Sampling = 1000;
+
+                //Create threshold field that varrries element size near boundaries
+                Field[5] = Threshold;
+                Field[5].InField = 4;
+                Field[5].SizeMin = {size} / {interface_ratio};
+                Field[5].SizeMax = {size};
+                Field[5].DistMin = 0.0002;
+                Field[5].DistMax = 0.005;
+                Field[5].StopAtDistMax = 1;
+
+                // take the minimum of all defined meshing fields
+                Field[100] = Min;
+                Field[100].FieldsList = {{2, 3, 5}};
+                Background Field = 100;
+            """)
+
+        my_string += ("""
             Mesh.MeshSizeExtendFromBoundary = 0;
             Mesh.MeshSizeFromPoints = 0;
             Mesh.MeshSizeFromCurvature = 0;
 
             Mesh.Algorithm = 5;
+            Mesh.Algorithm3D = 10;
             Mesh.OptimizeNetgen = 1;
             Mesh.Smoothing = 100;
         """)
 
-    #print(my_string)
+    print(my_string)
     return partial(generate_gmsh, ScriptSource(my_string, "geo"),
-                            force_ambient_dim=2, dimensions=2, target_unit="M",
+                            force_ambient_dim=dim, dimensions=dim, target_unit="M",
                             return_tag_to_elements_map=True)
