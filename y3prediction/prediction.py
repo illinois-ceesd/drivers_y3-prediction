@@ -2270,9 +2270,12 @@ def main(actx_class,
     def limit_fluid_state_lv(cv, pressure, temperature, dd=dd_vol_fluid):
 
         # 1.0 limit the density to be above 0.
+        elem_avg_cv = _element_average_cv(cv, dd)
+        rho_lim = elem_avg_cv.mass*0.1
+
         mass_lim = bound_preserving_limiter_lv(dcoll=dcoll, dd=dd,
                                             field=cv.mass,
-                                            mmin=1.e-10, mmax=None,
+                                            mmin=rho_lim, mmax=None,
                                             modify_average=True)
 
         # 2.0 limit the species mass fractions
@@ -2333,9 +2336,48 @@ def main(actx_class,
         cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                 momentum=mom_lim,
                                 species_mass=spec_lim)
-        temperature_lim = gas_model.eos.temperature(cv=cv_lim,
-                                                    temperature_seed=temperature)
+        temperature_lim = gas_model.eos.temperature(
+            cv=cv_lim, temperature_seed=temperature_updated)
         pressure_lim = gas_model.eos.pressure(cv=cv_lim, temperature=temperature_lim)
+
+        #if isinstance(dd.domain_tag, VolumeDomainTag):
+        if 0:
+            index = 502
+            np.set_printoptions(threshold=sys.maxsize, precision=16)
+            #print(f"({pressure_lim=})")
+            # initial state
+            print("initial state")
+            data = actx.to_numpy(pressure)
+            print(f"pressure \n {data[0][index]}")
+            data = actx.to_numpy(temperature)
+            print(f"temperature \n {data[0][index]}")
+            data = actx.to_numpy(cv.mass)
+            print(f"rho \n {data[0][index]}")
+            data = actx.to_numpy(cv.energy)
+            print(f"energy \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv.momentum)
+                print(f"momentum[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y[{i}] \n {data[i][0][index]}")
+
+            # final limited state
+            print("limited state")
+            data = actx.to_numpy(pressure_lim)
+            print(f"pressure_lim \n {data[0][index]}")
+            data = actx.to_numpy(temperature_lim)
+            print(f"temperature_lim \n {data[0][index]}")
+            data = actx.to_numpy(cv_lim.mass)
+            print(f"rho_lim \n {data[0][index]}")
+            data = actx.to_numpy(cv_lim.energy)
+            print(f"energy_lim \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_lim.momentum)
+                print(f"momentum_lim[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_lim.species_mass_fractions)
+                print(f"Y_lim[{i}] \n {data[i][0][index]}")
 
         return make_obj_array([temperature_lim, pressure_lim, cv_lim])
 
