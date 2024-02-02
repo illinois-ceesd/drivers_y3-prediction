@@ -2269,6 +2269,17 @@ def main(actx_class,
     #
     def limit_fluid_state_lv(cv, pressure, temperature, dd=dd_vol_fluid):
 
+        index = 408
+        print_stuff = False
+        # we need a reasonable guess for temperature, use the element
+        # average when the incoming temperature is negative
+        # remove any negative values from the average, to ensure positivity
+        safe_temp = actx.np.where(actx.np.less(temperature, 0.),
+                                      1., temperature)
+        tseed_avg = element_average(dcoll, safe_temp, dd)
+        tseed = actx.np.where(actx.np.less(temperature, 0.),
+                              tseed_avg, temperature)
+
         # 1.0 limit the density to be above 0.
         elem_avg_cv = _element_average_cv(cv, dd)
         rho_lim = elem_avg_cv.mass*0.1
@@ -2293,6 +2304,7 @@ def main(actx_class,
             for i in range(0, nspecies):
                 aux = aux + spec_lim[i]
             spec_lim = spec_lim/aux
+        spec_lim_sav = spec_lim
 
         # 3.0 reconstruct cv and find the average element cv and pressure
         cv_updated = make_conserved(dim=dim, mass=mass_lim, energy=cv.energy,
@@ -2300,13 +2312,14 @@ def main(actx_class,
                                     species_mass=mass_lim*spec_lim)
 
         temperature_updated = gas_model.eos.temperature(cv=cv_updated,
-                                                        temperature_seed=temperature)
+                                                        temperature_seed=tseed)
         pressure_updated = gas_model.eos.pressure(cv=cv_updated,
                                                   temperature=temperature_updated)
 
         elem_avg_cv = _element_average_cv(cv_updated, dd)
+        #
         elem_avg_temp = gas_model.eos.temperature(
-            cv=elem_avg_cv, temperature_seed=temperature_updated)
+            cv=elem_avg_cv, temperature_seed=tseed_avg)
         elem_avg_pres = gas_model.eos.pressure(
             cv=elem_avg_cv, temperature=elem_avg_temp)
 
@@ -2318,6 +2331,23 @@ def main(actx_class,
                           (mmin-mmin_i)/(elem_avg_pres - mmin_i),
                           0.)
         )
+
+        if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+            np.set_printoptions(threshold=sys.maxsize, precision=16)
+            # initial state
+            print("limit pressure")
+            data = actx.to_numpy(_theta)
+            print(f"_theta \n {data[0][index]}")
+            data = actx.to_numpy(pressure_updated)
+            print(f"pressure_updated \n {data[0][index]}")
+            data = actx.to_numpy(mmin_i)
+            print(f"mmin_i \n {data[0][index]}")
+            data = actx.to_numpy(elem_avg_pres)
+            print(f"elem_avg_pres \n {data[0][index]}")
+            data = actx.to_numpy(elem_avg_temp)
+            print(f"elem_avg_temp \n {data[0][index]}")
+            data = actx.to_numpy(tseed_avg)
+            print(f"tseed_avg \n {data[0][index]}")
 
         # 4.0 limit cv where the pressure is negative
         #     this is turn keeps the pressure positive
@@ -2333,16 +2363,60 @@ def main(actx_class,
             for i in range(0, nspecies)
         ])
 
+        cv_updated2 = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                     momentum=mom_lim,
+                                     species_mass=spec_lim)
+                                     #species_mass=spec_lim_sav*mass_lim)
+
+        # we need a reasonable guess for temperature, use the element
+        # average when the incoming temperature is negative
+        temperature_updated2 = gas_model.eos.temperature(
+            cv=cv_updated2, temperature_seed=tseed)
+        pressure_updated2 = gas_model.eos.pressure(cv=cv_updated2,
+                                                   temperature=temperature_updated2)
+
+        # 5.0 one more time for good measure sake
+        #     sometimes the above limit can fail to raise the pressure sufficiently
+        #     for thermally perfect gases
+
+        elem_avg_cv = _element_average_cv(cv_updated2, dd)
+        elem_avg_temp = gas_model.eos.temperature(
+            cv=elem_avg_cv, temperature_seed=tseed_avg)
+        elem_avg_pres = gas_model.eos.pressure(
+            cv=elem_avg_cv, temperature=elem_avg_temp)
+
+        mmin_i = op.elementwise_min(dcoll, dd, pressure_updated2)
+        mmin = 1.
+
+        _theta = actx.np.maximum(0.,
+            actx.np.where(actx.np.less(mmin_i, mmin),
+                          (mmin-mmin_i)/(elem_avg_pres - mmin_i),
+                          0.)
+        )
+
+        # 4.0 limit cv where the pressure is negative
+        #     this is turn keeps the pressure positive
+        mass_lim = cv_updated2.mass + _theta*(elem_avg_cv.mass - cv_updated2.mass)
+        mom_lim = make_obj_array([cv_updated2.momentum[i] +
+            _theta*(elem_avg_cv.momentum[i] - cv_updated2.momentum[i])
+            for i in range(dim)
+        ])
+        energy_lim = (cv_updated2.energy +
+                      _theta*(elem_avg_cv.energy - cv_updated2.energy))
+        spec_lim = make_obj_array([cv_updated2.species_mass[i] +
+            _theta*(elem_avg_cv.species_mass[i] - cv_updated2.species_mass[i])
+            for i in range(0, nspecies)
+        ])
+
         cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                 momentum=mom_lim,
                                 species_mass=spec_lim)
+                                #species_mass=spec_lim_sav*mass_lim)
         temperature_lim = gas_model.eos.temperature(
-            cv=cv_lim, temperature_seed=temperature_updated)
+            cv=cv_lim, temperature_seed=tseed)
         pressure_lim = gas_model.eos.pressure(cv=cv_lim, temperature=temperature_lim)
 
-        #if isinstance(dd.domain_tag, VolumeDomainTag):
-        if 0:
-            index = 502
+        if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
             np.set_printoptions(threshold=sys.maxsize, precision=16)
             #print(f"({pressure_lim=})")
             # initial state
@@ -2361,6 +2435,40 @@ def main(actx_class,
             for i in range(0, nspecies):
                 data = actx.to_numpy(cv.species_mass_fractions)
                 print(f"Y[{i}] \n {data[i][0][index]}")
+
+            # updated limited state
+            print("updated state")
+            data = actx.to_numpy(pressure_updated)
+            print(f"pressure_updated \n {data[0][index]}")
+            data = actx.to_numpy(temperature_updated)
+            print(f"temperature_updated \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated.mass)
+            print(f"rho_updated \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated.energy)
+            print(f"energy_updated \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_updated.momentum)
+                print(f"momentum_updated[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_updated.species_mass_fractions)
+                print(f"Y_updated[{i}] \n {data[i][0][index]}")
+
+            # second updated2 limited state
+            print("updated2 state")
+            data = actx.to_numpy(pressure_updated2)
+            print(f"pressure_updated2 \n {data[0][index]}")
+            data = actx.to_numpy(temperature_updated2)
+            print(f"temperature_updated2 \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated2.mass)
+            print(f"rho_updated2 \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated2.energy)
+            print(f"energy_updated2 \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_updated2.momentum)
+                print(f"momentum_updated2[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_updated2.species_mass_fractions)
+                print(f"Y_updated2[{i}] \n {data[i][0][index]}")
 
             # final limited state
             print("limited state")
