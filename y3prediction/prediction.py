@@ -36,7 +36,7 @@ from pytools.obj_array import make_obj_array
 from functools import partial
 from mirgecom.discretization import create_discretization_collection
 
-from meshmode.mesh import BTAG_ALL, BTAG_NONE  # noqa
+from meshmode.mesh import BTAG_ALL, BTAG_REALLY_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
 from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE, DD_VOLUME_ALL
 from grudge.op import nodal_max, nodal_min
@@ -72,7 +72,8 @@ from mirgecom.viscous import (viscous_facial_flux_central,
 from grudge.shortcuts import compiled_lsrk45_step
 
 from mirgecom.fluid import make_conserved
-from mirgecom.limiter import bound_preserving_limiter
+from mirgecom.limiter import (bound_preserving_limiter_lv,
+                              bound_preserving_limiter)
 from mirgecom.steppers import advance_state
 from mirgecom.boundary import (
     PrescribedFluidBoundary,
@@ -112,6 +113,7 @@ from mirgecom.navierstokes import (
     grad_t_operator as fluid_grad_t_operator,
     ns_operator
 )
+from mirgecom.artificial_viscosity import smoothness_indicator
 # driver specific utilties
 from y3prediction.utils import (
     getIsentropicPressure,
@@ -223,6 +225,10 @@ class SingleLevelFilter(logging.Filter):
 class MyRuntimeError(RuntimeError):
     """Simple exception to kill the simulation."""
 
+    pass
+
+
+class _FluidAvgCVTag:
     pass
 
 
@@ -510,10 +516,16 @@ def main(actx_class,
     alpha_sc = configurate("alpha_sc", input_data, 0.3)
     kappa_sc = configurate("kappa_sc", input_data, 0.5)
     s0_sc = configurate("s0_sc", input_data, -5.0)
-    av2_mu0 = configurate("av_mu0", input_data, 0.1)
+
+    drop_order_strength = configurate("drop_order_strength", input_data, 0.)
+    use_drop_order = False
+    if drop_order_strength > 0.:
+        use_drop_order = True
+
+    av2_mu0 = configurate("av2_mu0", input_data, 0.1)
     av2_beta0 = configurate("av2_beta0", input_data, 6.0)
     av2_kappa0 = configurate("av2_kappa0", input_data, 1.0)
-    av2_d0 = configurate("av_d0", input_data, 0.1)
+    av2_d0 = configurate("av2_d0", input_data, 0.1)
     av2_prandtl0 = configurate("av2_prandtl0", input_data, 0.9)
     av2_mu_s0 = configurate("av2_mu_s0", input_data, 0.)
     av2_kappa_s0 = configurate("av2_kappa_s0", input_data, 0.)
@@ -658,9 +670,9 @@ def main(actx_class,
     # filter every *nfilter* steps (-1 = no filtering)
     soln_nfilter = configurate("soln_nfilter", input_data, -1)
     soln_filter_frac = configurate("soln_filter_frac", input_data, 0.5)
-    # soln_filter_cutoff = -1 => filter_frac*order)
     soln_filter_cutoff = configurate("soln_filter_cutoff", input_data, -1)
     soln_filter_order = configurate("soln_filter_order", input_data, 8)
+
     # Alpha value suggested by:
     # JSH/TW Nodal DG Methods, Section 5.3
     # DOI: 10.1007/978-0-387-72067-8
@@ -1041,7 +1053,6 @@ def main(actx_class,
 
     # don't allow limiting on flows without species
     if nspecies == 0:
-        use_species_limiter = 0
         use_injection = False
         use_upstream_injection = False
 
@@ -1084,7 +1095,7 @@ def main(actx_class,
             print("\tIdeal Gas EOS")
         elif eos_type == 1:
             print("\tPyrometheus EOS")
-            print("\tPyro mechanism {pyro_mech}")
+            print(f"\tPyro mechanism {pyro_mech}")
 
         if use_species_limiter == 1:
             print("\nSpecies mass fractions limited to [0:1]")
@@ -1257,6 +1268,8 @@ def main(actx_class,
                 i_di = i
 
         # Set the species mass fractions to the free-stream flow
+        # MJA take this out!!!
+        mf_o2 = 1
         y[i_ox] = mf_o2
         y[i_di] = 1. - mf_o2
         # Set the species mass fractions to the free-stream flow
@@ -1277,19 +1290,85 @@ def main(actx_class,
         # parameters to adjust the shape of the initialization
         temp_wall = 300
 
-        # normal shock properties
+        # normal shock properties for a calorically perfect gas
+        # state 1: pre-shock
+        # state 2: post-shock
         rho_bkrnd = pres_bkrnd/r/temp_bkrnd
         c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
-        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
-        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+        velocity1 = -mach*c_bkrnd
+
+        gamma1 = gamma
+        gamma2 = gamma
+
         rho1 = rho_bkrnd
         pressure1 = pres_bkrnd
-        temperature1 = pressure1/rho1/r
+        temperature1 = temp_bkrnd
+
+        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)
+        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)
+
         rho2 = rho1*density_ratio
         pressure2 = pressure1*pressure_ratio
         temperature2 = pressure2/rho2/r
-        velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
+        # shock stationary frame
+        velocity2 = velocity1*(1/density_ratio)
         temp_wall = temperature1
+
+        # for non-calorically perfect gas, we iterate on the density ratio,
+        # until we converge
+        if eos_type > 0:
+            if shock_loc_x < fuel_loc_x:
+                y1 = y
+                y2 = y
+            else:
+                y1 = y_fuel
+                y2 = y_fuel
+
+            rho1 = pyro_mech.get_density(pressure1, temperature1, y1)
+
+            # guess a density ratio (rho1/rho2)
+            density_ratio = 0.1
+            rho2 = rho1/density_ratio
+            enthalpy1 = gas_model.eos.get_internal_energy(
+                temperature1, y1) + pressure1/rho1
+            # iteratively solve the shock hugoniot
+            error = 100
+            while error > 1e-8:
+                pressure2 = pressure1 + rho1*velocity1**2*(1 - density_ratio)
+                enthalpy2 = enthalpy1 + 0.5*velocity1**2*(1 - (density_ratio)**2)
+
+                # find temperature from new energy and get an updated density
+                energy2 = enthalpy2 - pressure2/rho2
+                temperature2 = pyro_mech.get_temperature(energy2, temperature2, y2)
+                rho2_old = rho2
+                rho2 = pyro_mech.get_density(pressure2, temperature2, y2)
+
+                # compute the error in density and form a new density ratio
+                error = np.abs((rho2 - rho2_old)/rho2_old)
+                density_ratio = rho1/rho2
+                velocity2 = velocity1*(density_ratio)
+
+            gamma1 = (pyro_mech.get_mixture_specific_heat_cp_mass(temperature1, y1) /
+                      pyro_mech.get_mixture_specific_heat_cv_mass(temperature1, y1))
+            gamma2 = (pyro_mech.get_mixture_specific_heat_cp_mass(temperature2, y1) /
+                      pyro_mech.get_mixture_specific_heat_cv_mass(temperature2, y1))
+
+            print(f"{error=}")
+            print(f"{pressure1=}")
+            print(f"{temperature1=}")
+            print(f"{rho1=}")
+            print(f"{velocity1=}")
+            print(f"{gamma1=}")
+            print(f"{pressure2=}")
+            print(f"{temperature2=}")
+            print(f"{rho2=}")
+            print(f"{velocity2=}")
+            print(f"{gamma2=}")
+            print(f"{density_ratio=}")
+
+        # convert to shock moving frame
+        velocity2 = velocity2 - velocity1
+        velocity1 = 0.
 
         vel_left = np.zeros(shape=(dim,))
         vel_right = np.zeros(shape=(dim,))
@@ -1302,16 +1381,21 @@ def main(actx_class,
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
 
-        vel_left = velocity2*plane_normal
+        vel_left = (velocity2 - velocity1)*plane_normal
 
         if rank == 0:
             print("#### Simluation initialization data: ####")
-            print(f"\tinlet Mach number {mach}")
-            print(f"\tinlet gamma {gamma}")
-            print(f"\tinlet temperature {temperature2}")
-            print(f"\tinlet pressure {pressure2}")
-            print(f"\tinlet rho {rho2}")
-            print(f"\tinlet velocity {velocity2}")
+            print(f"\tshock Mach number {mach}")
+            print(f"\tpre-shock gamma {gamma1}")
+            print(f"\tpre-shock temperature {temperature1}")
+            print(f"\tpre-shock pressure {pressure1}")
+            print(f"\tpre-shock rho {rho1}")
+            print(f"\tpre-shock velocity {velocity1}")
+            print(f"\tpost-shock gamma {gamma2}")
+            print(f"\tpost-shock temperature {temperature2}")
+            print(f"\tpost-shock pressure {pressure2}")
+            print(f"\tpost-shock rho {rho2}")
+            print(f"\tpost-shock velocity {velocity2}")
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -2053,6 +2137,10 @@ def main(actx_class,
     # Convenience Functions #
     #########################
 
+    #
+    # original limiter implementation
+    # only limits the species mass fractions
+    #
     def limit_fluid_state(cv, pressure, temperature, dd=dd_vol_fluid):
 
         spec_lim = make_obj_array([
@@ -2086,16 +2174,814 @@ def main(actx_class,
                               momentum=mom_lim,
                               species_mass=mass_lim*spec_lim)
 
-        #return cv
+    #
+    # positivity preserving limiter of liu
+    # limits the density and mass fractions based on global minima
+    # then computes an average fluid state and uses the averge pressure
+    # to limit the entire cv in regions with very small pressures
+    #
+    def limit_fluid_state_liu(cv, pressure, temperature, dd=dd_vol_fluid):
+
+        rho_lim = 1.e-10
+        pres_lim = 1.0
+
+        elem_avg_cv = _element_average_cv(cv, dd)
+
+        # 1.0 limit the density
+        theta_rho = actx.np.abs((elem_avg_cv.mass - rho_lim) /
+                                (elem_avg_cv.mass - cv.mass + 1.e-13))
+
+        # only apply limiting when theta < 1
+        mass_lim = actx.np.where(actx.np.less(theta_rho, 1.0),
+            theta_rho*cv.mass + (1 - theta_rho)*elem_avg_cv.mass, cv.mass)
+
+        # 2.0 limit the species mass fractions
+        spec_mass_lim = cv.species_mass
+        theta_rhoY = actx.zeros_like(cv.species_mass)
+        for i in range(0, nspecies):
+            theta_rhoY[i] = actx.np.abs(
+                (elem_avg_cv.species_mass) /
+                (elem_avg_cv.species_mass - cv.species_mass + 1.e-13))
+
+            # only apply limiting when theta < 1
+            spec_mass_lim = actx.np.where(
+                actx.np.less(theta_rhoY, 1.0),
+                theta_rho*cv.species_mass + (1 - theta_rho)*elem_avg_cv.mass,
+                cv.species_mass)
+
+        # 3.0 reconstruct cv and find the average element cv and pressure
+        #
+        # Question:
+        # we don't update the energy or the momentum here
+        # so if the density is reduced it results in a
+        #    net decrease in the pressure and increase in velocity?
+        cv_updated = make_conserved(dim=dim, mass=mass_lim, energy=cv.energy,
+                                    momentum=cv.momentum,
+                                    species_mass=spec_mass_lim)
+        temperature_updated = gas_model.eos.temperature(cv=cv_updated,
+                                                        temperature_seed=temperature)
+        pressure_updated = gas_model.eos.pressure(cv=cv_updated,
+                                                  temperature=temperature_updated)
+
+        elem_avg_temp = gas_model.eos.temperature(
+            cv=elem_avg_cv, temperature_seed=temperature_updated)
+        elem_avg_pres = gas_model.eos.pressure(
+            cv=elem_avg_cv, temperature=elem_avg_temp)
+
+        mmin_i = op.elementwise_min(dcoll, dd, pressure_updated)
+        mmin = pres_lim
+
+        _theta = actx.np.minimum(
+            1.0, actx.np.where(actx.np.less(mmin_i, mmin),
+            abs((mmin-elem_avg_pres)/(mmin_i-elem_avg_pres+1e-13)), 1.0)
+        )
+
+        # 4.0 limit cv where the pressure is negative
+        #     this is turn keeps the pressure positive
+
+        mass_lim = (_theta*(cv_updated.mass - elem_avg_cv.mass)
+            + elem_avg_cv.mass)
+        mom_lim = make_obj_array([
+            (_theta*(cv_updated.momentum[i] - elem_avg_cv.momentum[i])
+             + elem_avg_cv.momentum[i])
+            for i in range(dim)
+        ])
+        energy_lim = (_theta*(cv_updated.energy - elem_avg_cv.energy)
+            + elem_avg_cv.energy)
+        spec_lim = make_obj_array([
+            (_theta*(cv_updated.species_mass[i] - elem_avg_cv.species_mass[i])
+             + elem_avg_cv.species_mass[i])
+            for i in range(0, nspecies)
+        ])
+
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=spec_lim)
+        temperature_lim = gas_model.eos.temperature(cv=cv_lim,
+                                                    temperature_seed=temperature)
+        pressure_lim = gas_model.eos.pressure(cv=cv_lim, temperature=temperature_lim)
+
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
+
+    #
+    # positivity preserving limiter of lv
+    # limits the density and mass fractions based on global minima
+    # then computes an average fluid state and uses the averge pressure
+    # to limit the entire cv in regions with very small pressures
+    #
+    def limit_fluid_state_lv(cv, pressure, temperature, dd=dd_vol_fluid):
+
+        index = 408
+        print_stuff = False
+        # we need a reasonable guess for temperature, use the element
+        # average when the incoming temperature is negative
+        # remove any negative values from the average, to ensure positivity
+        safe_temp = actx.np.where(actx.np.less(temperature, 0.),
+                                      1., temperature)
+        tseed_avg = element_average(dcoll, safe_temp, dd)
+        tseed = actx.np.where(actx.np.less(temperature, 0.),
+                              tseed_avg, temperature)
+
+        # 1.0 limit the density to be above 0.
+        elem_avg_cv = _element_average_cv(cv, dd)
+        rho_lim = elem_avg_cv.mass*0.1
+
+        mass_lim = bound_preserving_limiter_lv(dcoll=dcoll, dd=dd,
+                                            field=cv.mass,
+                                            mmin=rho_lim, mmax=None,
+                                            modify_average=True)
+
+        # 2.0 limit the species mass fractions
+        spec_lim = cv.species_mass_fractions
+        if nspecies > 0:
+            spec_lim = make_obj_array([
+                bound_preserving_limiter_lv(dcoll=dcoll, dd=dd,
+                                         field=cv.species_mass_fractions[i],
+                                         mmin=0., mmax=1.0, modify_average=True)
+                for i in range(nspecies)
+            ])
+
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+            spec_lim = spec_lim/aux
+        spec_lim_sav = spec_lim
+
+        # 3.0 reconstruct cv and find the average element cv and pressure
+        cv_updated = make_conserved(dim=dim, mass=mass_lim, energy=cv.energy,
+                                    momentum=cv.momentum,
+                                    species_mass=mass_lim*spec_lim)
+
+        temperature_updated = gas_model.eos.temperature(cv=cv_updated,
+                                                        temperature_seed=tseed)
+        pressure_updated = gas_model.eos.pressure(cv=cv_updated,
+                                                  temperature=temperature_updated)
+
+        elem_avg_cv = _element_average_cv(cv_updated, dd)
+        #
+        elem_avg_temp = gas_model.eos.temperature(
+            cv=elem_avg_cv, temperature_seed=tseed_avg)
+        elem_avg_pres = gas_model.eos.pressure(
+            cv=elem_avg_cv, temperature=elem_avg_temp)
+
+        mmin_i = op.elementwise_min(dcoll, dd, pressure_updated)
+        mmin = 1.
+
+        _theta = actx.np.maximum(0.,
+            actx.np.where(actx.np.less(mmin_i, mmin),
+                          (mmin-mmin_i)/(elem_avg_pres - mmin_i),
+                          0.)
+        )
+
+        if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+            np.set_printoptions(threshold=sys.maxsize, precision=16)
+            # initial state
+            print("limit pressure")
+            data = actx.to_numpy(_theta)
+            print(f"_theta \n {data[0][index]}")
+            data = actx.to_numpy(pressure_updated)
+            print(f"pressure_updated \n {data[0][index]}")
+            data = actx.to_numpy(mmin_i)
+            print(f"mmin_i \n {data[0][index]}")
+            data = actx.to_numpy(elem_avg_pres)
+            print(f"elem_avg_pres \n {data[0][index]}")
+            data = actx.to_numpy(elem_avg_temp)
+            print(f"elem_avg_temp \n {data[0][index]}")
+            data = actx.to_numpy(tseed_avg)
+            print(f"tseed_avg \n {data[0][index]}")
+
+        # 4.0 limit cv where the pressure is negative
+        #     this is turn keeps the pressure positive
+        mass_lim = cv_updated.mass + _theta*(elem_avg_cv.mass - cv_updated.mass)
+        mom_lim = make_obj_array([cv_updated.momentum[i] +
+            _theta*(elem_avg_cv.momentum[i] - cv_updated.momentum[i])
+            for i in range(dim)
+        ])
+        energy_lim = (cv_updated.energy +
+                      _theta*(elem_avg_cv.energy - cv_updated.energy))
+        spec_lim = make_obj_array([cv_updated.species_mass[i] +
+            _theta*(elem_avg_cv.species_mass[i] - cv_updated.species_mass[i])
+            for i in range(0, nspecies)
+        ])
+
+        cv_updated2 = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                     momentum=mom_lim,
+                                     species_mass=spec_lim)
+                                     #species_mass=spec_lim_sav*mass_lim)
+
+        # we need a reasonable guess for temperature, use the element
+        # average when the incoming temperature is negative
+        temperature_updated2 = gas_model.eos.temperature(
+            cv=cv_updated2, temperature_seed=tseed)
+        pressure_updated2 = gas_model.eos.pressure(cv=cv_updated2,
+                                                   temperature=temperature_updated2)
+
+        # 5.0 one more time for good measure sake
+        #     sometimes the above limit can fail to raise the pressure sufficiently
+        #     for thermally perfect gases
+
+        elem_avg_cv = _element_average_cv(cv_updated2, dd)
+        elem_avg_temp = gas_model.eos.temperature(
+            cv=elem_avg_cv, temperature_seed=tseed_avg)
+        elem_avg_pres = gas_model.eos.pressure(
+            cv=elem_avg_cv, temperature=elem_avg_temp)
+
+        mmin_i = op.elementwise_min(dcoll, dd, pressure_updated2)
+        mmin = 1.
+
+        _theta = actx.np.maximum(0.,
+            actx.np.where(actx.np.less(mmin_i, mmin),
+                          (mmin-mmin_i)/(elem_avg_pres - mmin_i),
+                          0.)
+        )
+
+        # 4.0 limit cv where the pressure is negative
+        #     this is turn keeps the pressure positive
+        mass_lim = cv_updated2.mass + _theta*(elem_avg_cv.mass - cv_updated2.mass)
+        mom_lim = make_obj_array([cv_updated2.momentum[i] +
+            _theta*(elem_avg_cv.momentum[i] - cv_updated2.momentum[i])
+            for i in range(dim)
+        ])
+        energy_lim = (cv_updated2.energy +
+                      _theta*(elem_avg_cv.energy - cv_updated2.energy))
+        spec_lim = make_obj_array([cv_updated2.species_mass[i] +
+            _theta*(elem_avg_cv.species_mass[i] - cv_updated2.species_mass[i])
+            for i in range(0, nspecies)
+        ])
+
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=spec_lim)
+                                #species_mass=spec_lim_sav*mass_lim)
+        temperature_lim = gas_model.eos.temperature(
+            cv=cv_lim, temperature_seed=tseed)
+        pressure_lim = gas_model.eos.pressure(cv=cv_lim, temperature=temperature_lim)
+
+        if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+            np.set_printoptions(threshold=sys.maxsize, precision=16)
+            #print(f"({pressure_lim=})")
+            # initial state
+            print("initial state")
+            data = actx.to_numpy(pressure)
+            print(f"pressure \n {data[0][index]}")
+            data = actx.to_numpy(temperature)
+            print(f"temperature \n {data[0][index]}")
+            data = actx.to_numpy(cv.mass)
+            print(f"rho \n {data[0][index]}")
+            data = actx.to_numpy(cv.energy)
+            print(f"energy \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv.momentum)
+                print(f"momentum[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y[{i}] \n {data[i][0][index]}")
+
+            # updated limited state
+            print("updated state")
+            data = actx.to_numpy(pressure_updated)
+            print(f"pressure_updated \n {data[0][index]}")
+            data = actx.to_numpy(temperature_updated)
+            print(f"temperature_updated \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated.mass)
+            print(f"rho_updated \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated.energy)
+            print(f"energy_updated \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_updated.momentum)
+                print(f"momentum_updated[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_updated.species_mass_fractions)
+                print(f"Y_updated[{i}] \n {data[i][0][index]}")
+
+            # second updated2 limited state
+            print("updated2 state")
+            data = actx.to_numpy(pressure_updated2)
+            print(f"pressure_updated2 \n {data[0][index]}")
+            data = actx.to_numpy(temperature_updated2)
+            print(f"temperature_updated2 \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated2.mass)
+            print(f"rho_updated2 \n {data[0][index]}")
+            data = actx.to_numpy(cv_updated2.energy)
+            print(f"energy_updated2 \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_updated2.momentum)
+                print(f"momentum_updated2[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_updated2.species_mass_fractions)
+                print(f"Y_updated2[{i}] \n {data[i][0][index]}")
+
+            # final limited state
+            print("limited state")
+            data = actx.to_numpy(pressure_lim)
+            print(f"pressure_lim \n {data[0][index]}")
+            data = actx.to_numpy(temperature_lim)
+            print(f"temperature_lim \n {data[0][index]}")
+            data = actx.to_numpy(cv_lim.mass)
+            print(f"rho_lim \n {data[0][index]}")
+            data = actx.to_numpy(cv_lim.energy)
+            print(f"energy_lim \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_lim.momentum)
+                print(f"momentum_lim[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_lim.species_mass_fractions)
+                print(f"Y_lim[{i}] \n {data[i][0][index]}")
+
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
+
+    #
+    # limit the fluid state based on globally defined parameters
+    #
+    def limit_fluid_state_global(cv, pressure, temperature, dd=dd_vol_fluid):
+
+        pres_min = 5.e3
+        density_min = 1.e-2
+
+        spec_lim = cv.species_mass_fractions
+        if nspecies > 0:
+            spec_lim = make_obj_array([
+                bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                         field=cv.species_mass_fractions[i],
+                                         mmin=0., mmax=1.0, modify_average=True)
+                for i in range(nspecies)
+            ])
+
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+            spec_lim = spec_lim/aux
+
+        mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                            field=cv.mass,
+                                            mmin=density_min, mmax=None,
+                                            modify_average=True)
+
+        # should recompute the pressure here with the limited mass?
+        pressure_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                                field=pressure,
+                                                mmin=pres_min,
+                                                #mmax=pres_max,
+                                                mmax=None,
+                                                modify_average=True)
+
+        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+
+        # limit on pressure, instead of temperature
+        gas_const = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
+        temperature_lim = pressure_lim/gas_const/mass_lim
+
+        energy_lim = mass_lim*(
+            gas_model.eos.get_internal_energy(temperature_lim,
+                                              species_mass_fractions=spec_lim)
+            + kin_energy
+        )
+
+        mom_lim = mass_lim*cv.velocity
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=mass_lim*spec_lim)
+
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
+
+    from grudge.dof_desc import DISCR_TAG_MODAL
+    from meshmode.transform_metadata import FirstAxisIsElementsTag
+    from meshmode.dof_array import DOFArray
+
+    #
+    # limit the fluid state based on the min/max values of the neighboring
+    # elements
+    #
+    def limit_fluid_state_neighbors(cv, pressure, temperature, dd=dd_vol_fluid):
+
+        elem_average_rho = element_average(dcoll, cv.mass, dd)
+        elem_average_velocity = make_obj_array([
+            element_average(dcoll, cv.momentum[i]/cv.mass, dd)
+            for i in range(dim)])
+        elem_average_pres = element_average(dcoll, pressure, dd)
+        if isinstance(dd.domain_tag, VolumeDomainTag):
+            #print("Volume dd")
+            neighbor_min_avg_rho = _neighbor_minimum(elem_average_rho)
+            neighbor_max_avg_rho = _neighbor_maximum(elem_average_rho)
+
+            neighbor_min_avg_velocity = make_obj_array([
+                _neighbor_minimum(elem_average_velocity[i])
+                for i in range(dim)])
+            neighbor_max_avg_velocity = make_obj_array([
+                _neighbor_maximum(elem_average_velocity[i])
+                for i in range(dim)])
+
+            neighbor_min_avg_pres = _neighbor_minimum(elem_average_pres)
+            neighbor_max_avg_pres = _neighbor_maximum(elem_average_pres)
+
+            rho_min = neighbor_min_avg_rho
+            rho_max = neighbor_max_avg_rho
+            vel_min = neighbor_min_avg_velocity
+            vel_max = neighbor_max_avg_velocity
+            pres_min = neighbor_min_avg_pres
+            pres_max = neighbor_max_avg_pres
+
+        else:
+            # on boundaries, use just the element average
+            rho_min = elem_average_rho
+            rho_max = elem_average_rho
+            vel_min = elem_average_velocity
+            vel_max = elem_average_velocity
+            pres_min = elem_average_pres
+            pres_max = elem_average_pres
+
+        spec_lim = cv.species_mass_fractions
+        if nspecies > 0:
+            spec_lim = make_obj_array([
+                bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                         field=cv.species_mass_fractions[i],
+                                         mmin=0., mmax=1.0, modify_average=True)
+                for i in range(nspecies)
+            ])
+
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+            spec_lim = spec_lim/aux
+
+        mass_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                            field=cv.mass,
+                                            mmin=rho_min, mmax=rho_max,
+                                            modify_average=True)
+
+        vel_lim = make_obj_array([
+            bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                     field=cv.momentum[i]/cv.mass,
+                                     mmin=vel_min[i], mmax=vel_max[i],
+                                     modify_average=True)
+            for i in range(dim)
+        ])
+
+        # should recompute the pressure here with the limited mass?
+        pressure_lim = bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                                field=pressure,
+                                                mmin=pres_min,
+                                                mmax=pres_max,
+                                                modify_average=True)
+
+        kin_energy = 0.5*np.dot(vel_lim, vel_lim)
+
+        # limit on pressure, instead of temperature
+        gas_const = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
+        temperature_lim = pressure_lim/gas_const/mass_lim
+
+        energy_lim = mass_lim*(
+            gas_model.eos.get_internal_energy(temperature_lim,
+                                              species_mass_fractions=spec_lim)
+            + kin_energy
+        )
+
+        mom_lim = mass_lim*vel_lim
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=mass_lim*spec_lim)
+
+        return make_obj_array([temperature_lim, pressure_lim, cv_lim])
+
+    def drop_order(dcoll, field, theta, dd=dd_vol_fluid,
+                   positivity_preserving=False):
+        # Compute cell averages of the state
+        def cancel_polynomials(grp):
+            return actx.from_numpy(
+                np.asarray([1 if sum(mode_id) == 0
+                            else 0 for mode_id in grp.mode_ids()]))
+
+        dd_nodal = dd
+        dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
+
+        modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
+        nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
+
+        modal_discr = dcoll.discr_from_dd(dd_modal)
+        modal_field = modal_map(field)
+
+        # cancel the ``high-order"" polynomials p > 0 and keep the average
+        filtered_modal_field = DOFArray(
+            actx,
+            tuple(actx.einsum("ej,j->ej",
+                              vec_i,
+                              cancel_polynomials(grp),
+                              arg_names=("vec", "filter"),
+                              tagged=(FirstAxisIsElementsTag(),))
+                  for grp, vec_i in zip(modal_discr.groups, modal_field))
+        )
+
+        # convert back to nodal to have the average at all points
+        cell_avgs = nodal_map(filtered_modal_field)
+
+        if positivity_preserving:
+            cell_avgs = actx.np.where(actx.np.greater(cell_avgs, 1e-5),
+                                                      cell_avgs, 1e-5)
+
+        return theta*(field - cell_avgs) + cell_avgs
+
+    def _drop_order_cv(cv, flipped_smoothness, theta_factor, dd=None):
+
+        smoothness = 1.0 - theta_factor*flipped_smoothness
+
+        density_lim = drop_order(dcoll, cv.mass, smoothness)
+        momentum_lim = make_obj_array([
+            drop_order(dcoll, cv.momentum[0], smoothness),
+            drop_order(dcoll, cv.momentum[1], smoothness)])
+        energy_lim = drop_order(dcoll, cv.energy, smoothness)
+
+        # make a new CV with the limited variables
+        return make_conserved(dim=dim, mass=density_lim, energy=energy_lim,
+                              momentum=momentum_lim, species_mass=cv.species_mass)
+
+    drop_order_cv = actx.compile(_drop_order_cv)
+
+    def element_average(dcoll, field, dd=dd_vol_fluid,
+                        positivity_preserving=False):
+        # Compute cell averages of the state
+        def cancel_polynomials(grp):
+            return actx.from_numpy(
+                np.asarray([1 if sum(mode_id) == 0
+                            else 0 for mode_id in grp.mode_ids()]))
+
+        dd_nodal = dd
+        dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
+
+        modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
+        nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
+
+        modal_discr = dcoll.discr_from_dd(dd_modal)
+        modal_field = modal_map(field)
+
+        # cancel the ``high-order"" polynomials p > 0 and keep the average
+        filtered_modal_field = DOFArray(
+            actx,
+            tuple(actx.einsum("ej,j->ej",
+                              vec_i,
+                              cancel_polynomials(grp),
+                              arg_names=("vec", "filter"),
+                              tagged=(FirstAxisIsElementsTag(),))
+                  for grp, vec_i in zip(modal_discr.groups, modal_field))
+        )
+
+        # convert back to nodal to have the average at all points
+        cell_avgs = nodal_map(filtered_modal_field)
+
+        return cell_avgs
+
+    def _element_average_cv(cv, dd=dd_vol_fluid):
+
+        density = element_average(dcoll, cv.mass, dd)
+        momentum = make_obj_array([
+            element_average(dcoll, cv.momentum[i], dd)
+            for i in range(dim)])
+        energy = element_average(dcoll, cv.energy, dd)
+
+        species_mass = None
+        if nspecies > 0:
+            species_mass = make_obj_array([
+                element_average(dcoll, cv.species_mass[i], dd)
+                for i in range(0, nspecies)])
+
+        # make a new CV with the limited variables
+        return make_conserved(dim=dim, mass=density, energy=energy,
+                              momentum=momentum, species_mass=species_mass)
+
+    def element_minimum(dcoll, field, dd=dd_vol_fluid,
+                        positivity_preserving=False):
+
+        # convert back to nodal to have the average at all points
+        cell_min = op.elementwise_min(dcoll, dd, field)
+
+        return cell_min
+
+    def element_maximum(dcoll, field, dd=dd_vol_fluid,
+                        positivity_preserving=False):
+
+        # convert back to nodal to have the average at all points
+        cell_max = op.elementwise_max(dcoll, dd, field)
+
+        return cell_max
+
+    def _neighbor_maximum(field):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, field, volume_dd=dd_vol_fluid,
+                                   comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., -np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.max(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.max(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    def _neighbor_minimum(field):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, field, volume_dd=dd_vol_fluid,
+                                          comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.min(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.min(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    def _neighbor_maximum_cv(cv):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, cv, volume_dd=dd_vol_fluid,
+                                   comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., -np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.max(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.max(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
+
+    def _neighbor_minimum_cv(cv):
+
+        from grudge.trace_pair import interior_trace_pairs
+        itp = interior_trace_pairs(dcoll, cv, volume_dd=dd_vol_fluid,
+                                          comm_tag=_FluidAvgCVTag)
+
+        from meshmode.discretization.connection import FACE_RESTR_ALL
+        dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
+        is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
+
+        for tpair in itp:
+            is_int_face = is_int_face + op.project(
+                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+
+        face_data = actx.np.where(is_int_face, 0., np.inf)
+
+        for tpair in itp:
+            face_data = face_data + op.project(
+                dcoll, tpair.dd, dd_allfaces, tpair.ext)
+
+            # Make sure MPI communication happens, ugh
+            face_data = face_data + (
+                0*op.project(dcoll, tpair.dd, dd_allfaces, tpair.int))
+
+        def function(face_data):
+            # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+            # to get per-element data
+            node_data_per_group = []
+            for igrp, group in enumerate(
+                    dcoll.discr_from_dd(dd_vol_fluid).mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_data[igrp].reshape(nfaces, nelements,
+                                                       face_data[igrp].shape[1])
+                if actx.supports_nonscalar_broadcasting:
+                    el_data = actx.np.min(el_face_data, axis=0)[:, 0:1]
+                    node_data = actx.np.broadcast_to(
+                        el_data, dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape)
+                else:
+                    el_data_np = np.min(actx.to_numpy(el_face_data), axis=0)[:, 0:1]
+                    node_data_np = np.ascontiguousarray(np.broadcast_to(el_data_np,
+                        dcoll.zeros(actx, dd=dd_vol_fluid)[igrp].shape))
+                    node_data = actx.from_numpy(node_data_np)
+
+                node_data_per_group.append(node_data)
+            return DOFArray(actx, node_data_per_group)
+
+        from arraycontext import rec_map_array_container
+        el_data = rec_map_array_container(function, face_data, leaf_class=DOFArray)
+
+        return el_data
 
     if soln_filter_cutoff < 0:
         soln_filter_cutoff = int(soln_filter_frac * order)
     if rhs_filter_cutoff < 0:
         rhs_filter_cutoff = int(rhs_filter_frac * order)
 
-    if soln_filter_cutoff >= order:
+    if soln_filter_cutoff >= order and soln_nfilter > 0:
         raise ValueError("Invalid setting for solution filter (cutoff >= order).")
-    if rhs_filter_cutoff >= order:
+    if rhs_filter_cutoff >= order and use_rhs_filter:
         raise ValueError("Invalid setting for RHS filter (cutoff >= order).")
 
     from mirgecom.filter import (
@@ -2138,7 +3024,12 @@ def main(actx_class,
 
     limiter_func = None
     if use_species_limiter:
-        limiter_func = limit_fluid_state
+        #limiter_func = limit_fluid_state_new
+        #limiter_func = limit_fluid_state_average_pressure
+        #limiter_func = limit_fluid_state_neighbors_tulio
+        #limiter_func = limit_fluid_state_neighbors
+        #limiter_func = limit_fluid_state_global
+        limiter_func = limit_fluid_state_lv
 
     ########################################
     # Helper functions for building states #
@@ -3590,10 +4481,40 @@ def main(actx_class,
                              ("velocity", cv.velocity)]
             fluid_viz_fields.extend(fluid_viz_ext)
 
+            internal_energy_density = cv.energy - 0.5*cv.mass*np.dot(
+                cv.velocity, cv.velocity)
+            internal_energy = internal_energy_density/cv.mass
+            enthalpy = internal_energy + dv.pressure/cv.mass
+
+            fluid_viz_ext = [("internal_energy", internal_energy),
+                             ("internal_energy_density", internal_energy_density),
+                             ("enthalpy", enthalpy)]
+            fluid_viz_fields.extend(fluid_viz_ext)
+
             # species mass fractions
             fluid_viz_fields.extend(
                 ("Y_"+species_names[i], cv.species_mass_fractions[i])
                 for i in range(nspecies))
+
+            # entropy
+            gamma = gas_model.eos.gamma(cv, dv.temperature)
+            if eos_type == 1:
+
+                species_entropy = np.zeros(nspecies, dtype=object)
+                entropy = actx.zeros_like(cv.mass)
+                for i in range(nspecies):
+                    species_entropy[i] = \
+                        pyro_mech.get_species_entropies_r(dv.temperature)
+                    entropy = entropy +\
+                        species_entropy[i]*cv.species_mass_fractions[i]
+                entropy = entropy*pyro_mech.get_specific_gas_constant(
+                    cv.species_mass_fractions)
+            else:
+                entropy = actx.np.log(dv.pressure/(cv.mass**gamma))
+
+            fluid_viz_ext = [("entropy", entropy),
+                             ("gamma", gamma)]
+            fluid_viz_fields.extend(fluid_viz_ext)
 
             if eos_type == 1:
                 temp_resid = get_temperature_update_compiled(
@@ -3713,6 +4634,12 @@ def main(actx_class,
                        ("smoothness_d", av_sd)]
             fluid_viz_fields.extend(viz_ext)
 
+            if use_drop_order:
+                smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
+                                                  kappa=kappa_sc, s0=s0_sc)
+                viz_ext = [("smoothness", smoothness)]
+                fluid_viz_fields.extend(viz_ext)
+
             #viz_ext = [("rhs", ns_rhs),
             viz_ext = [("grad_temperature", grad_fluid_t),
                        ("grad_v_x", grad_v[0]),
@@ -3727,6 +4654,33 @@ def main(actx_class,
             if use_wall:
                 viz_ext = [("grad_temperature", grad_wall_t)]
                 wall_viz_fields.extend(viz_ext)
+
+            """
+            elem_average = element_average_cv(cv)
+            elem_minimum = element_minimum_cv(cv)
+            elem_maximum = element_maximum_cv(cv)
+            neighbor_min_avg_cv = neighbor_minimum_cv(elem_average)
+            neighbor_min_min_cv = neighbor_minimum_cv(elem_minimum)
+            neighbor_max_avg_cv = neighbor_maximum_cv(elem_average)
+            neighbor_max_max_cv = neighbor_maximum_cv(elem_maximum)
+
+            elem_average_pres = element_average(dcoll, dv.pressure)
+            elem_minimum_pres = element_minimum(dcoll, dv.pressure)
+            elem_maximum_pres = element_maximum(dcoll, dv.pressure)
+            neighbor_min_avg_pres = _neighbor_minimum(elem_average_pres)
+            neighbor_min_min_pres = _neighbor_minimum(elem_minimum_pres)
+            neighbor_max_avg_pres = _neighbor_maximum(elem_average_pres)
+            neighbor_max_max_pres = _neighbor_maximum(elem_maximum_pres)
+
+            viz_ext = [("element_average", elem_average),
+                       ("element_minimum", elem_minimum),
+                       ("element_maximum", elem_maximum),
+                       ("neighbor_min_min_pres", neighbor_min_min_pres),
+                       ("neighbor_max_max_pres", neighbor_max_max_pres),
+                       ("neighbor_min_avg_pres", neighbor_min_avg_pres),
+                       ("neighbor_max_avg_pres", neighbor_max_avg_pres)]
+            fluid_viz_fields.extend(viz_ext)
+        """
 
         write_visfile(
             dcoll, fluid_viz_fields, fluid_visualizer,
@@ -4074,6 +5028,15 @@ def main(actx_class,
             cv = filter_cv_compiled(stepper_state.cv)
             stepper_state = stepper_state.replace(cv=cv)
 
+        if use_drop_order:
+            # this limits the solution at the shock front,
+            smoothness = smoothness_indicator(dcoll, stepper_state.cv.mass,
+                                              dd=dd_vol_fluid,
+                                              kappa=kappa_sc, s0=s0_sc)
+            #smoothness = actx.zeros_like(stepper_state.cv.mass) + 1.0
+            cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
+            stepper_state = stepper_state.replace(cv=cv)
+
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
@@ -4081,9 +5044,16 @@ def main(actx_class,
                                          smoothness_kappa=stepper_state.av_skappa,
                                          smoothness_d=stepper_state.av_sd)
 
+        #print("my_pre_step after create_fluid_state")
+
         if use_wall:
             wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
         cv = fluid_state.cv  # reset cv to limited version
+        tseed = fluid_state.temperature
+
+        # This re-creation of the state resets *tseed* to current temp and forces the
+        # limited cv into state
+        stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
 
         try:
             if logmgr:
@@ -4097,9 +5067,6 @@ def main(actx_class,
             do_health = check_step(step=step, interval=nhealth)
             do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
-
-            # This re-creation of the state forces the limited cv into state
-            stepper_state = stepper_state.replace(cv=cv)
 
             if any([do_viz, do_restart, do_health, do_status]):
 
@@ -4239,9 +5206,6 @@ def main(actx_class,
             comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
 
-        # This re-creation of the state resets *tseed* to current temp
-        stepper_state = stepper_state.replace(tseed=fluid_state.temperature)
-
         return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
@@ -4271,6 +5235,12 @@ def main(actx_class,
         av_sbeta = stepper_state.av_sbeta
         av_skappa = stepper_state.av_skappa
         av_sd = stepper_state.av_sd
+
+        if use_drop_order:
+            smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
+                                              kappa=kappa_sc, s0=s0_sc)
+            #smoothness = actx.zeros_like(cv.mass) + 1.0
+            cv = _drop_order_cv(cv, smoothness, drop_order_strength)
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
