@@ -406,7 +406,8 @@ def update_coupled_boundaries(
 def main(actx_class,
          restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
-         casename=None, log_path="log_data", use_esdg=False):
+         casename=None, log_path="log_data", use_esdg=False,
+         use_tpe=False):
     # control log messages
     logger = logging.getLogger(__name__)
     logger.propagate = False
@@ -456,13 +457,8 @@ def main(actx_class,
 
     use_gmsh = configurate("use_gmsh", input_data, True)
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
-    use_tensor_product_elements = configurate("use_tensor_product_elements",
-                                              input_data, False)
-    if use_tensor_product_elements:
-        from grudge.array_context import TensorProductMPIFusionContractorArrayContext
-        actx = initialize_actx(TensorProductMPIFusionContractorArrayContext, comm)
-    else:
-        actx = initialize_actx(actx_class, comm)
+
+    actx = initialize_actx(actx_class, comm)
     queue = getattr(actx, "queue", None)
     use_profiling = actx_class_is_profiling(actx_class)
     alloc = getattr(actx, "allocator", None)
@@ -1708,7 +1704,7 @@ def main(actx_class,
                     dim=dim, angle=0.*mesh_angle, size=mesh_size,
                     bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                     transfinite=transfinite, use_wall=use_wall,
-                    use_quads=use_tensor_product_elements, use_gmsh=use_gmsh)()
+                    use_quads=use_tpe, use_gmsh=use_gmsh)()
 
                 volume_to_tags = {"fluid": ["fluid"]}
                 if use_wall:
@@ -1845,7 +1841,7 @@ def main(actx_class,
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
         order=order,
         quadrature_order=quadrature_order,
-        tensor_product_elements=use_tensor_product_elements)
+        tensor_product_elements=use_tpe)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
