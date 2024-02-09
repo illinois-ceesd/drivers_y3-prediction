@@ -2083,6 +2083,8 @@ def main(actx_class,
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
 
+
+    """
     def compute_smoothed_char_length_wall(href_wall, comm_ind):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
@@ -2105,6 +2107,7 @@ def main(actx_class,
     if use_wall:
         compute_smoothed_char_length_wall_compiled = \
             actx.compile(compute_smoothed_char_length_wall)
+    """
 
     smoothed_char_length_fluid = char_length_fluid
 
@@ -2115,6 +2118,7 @@ def main(actx_class,
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
+        """
         if use_wall:
             smoothed_char_length_wall = char_length_wall
             for i in range(smooth_char_length):
@@ -2123,12 +2127,16 @@ def main(actx_class,
                         smoothed_char_length_wall, i)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
+        """
 
         smoothed_char_length_fluid = force_evaluation(actx,
                                                       smoothed_char_length_fluid)
+
+        """
         if use_wall:
             smoothed_char_length_wall = force_evaluation(actx,
                                                          smoothed_char_length_wall)
+        """
 
     if rank == 0:
         logger.info("Before restart/init")
