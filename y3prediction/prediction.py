@@ -5770,9 +5770,9 @@ def main(actx_class,
 
     # we can't get the limited viz data back from create_fluid_state
     # so call the limiter directly first, basically doing the limiting twice
-    theta_rho = actx.zeros_like(cv.mass)
-    theta_Y = actx.zeros_like(cv.species_mass_fractions)
-    theta_pres = actx.zeros_like(cv.mass)
+    theta_rho = actx.zeros_like(current_cv.mass)
+    theta_Y = actx.zeros_like(current_cv.species_mass_fractions)
+    theta_pres = actx.zeros_like(current_cv.mass)
     if viz_level == 3:
         temperature_unlimited = gas_model.eos.temperature(
             cv=current_cv, temperature_seed=tseed)
