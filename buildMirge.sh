@@ -3,7 +3,7 @@
 # default branch for building mirgecom for this driver
 mirge_branch="prediction"
 # conda environment name
-conda_env="mirgeDriver.Y3prediction-quads"
+conda_env="mirgeDriver.Y3prediction"
 
 usage()
 {
