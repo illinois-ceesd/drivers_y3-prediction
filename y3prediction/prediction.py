@@ -406,7 +406,8 @@ def update_coupled_boundaries(
 def main(actx_class,
          restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
-         casename=None, log_path="log_data", use_esdg=False):
+         casename=None, log_path="log_data", use_esdg=False,
+         use_tpe=False):
     # control log messages
     logger = logging.getLogger(__name__)
     logger.propagate = False
@@ -449,16 +450,18 @@ def main(actx_class,
     logmgr = initialize_logmgr(True,
         filename=logname, mode="wu", mpi_comm=comm)
 
-    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
-    actx = initialize_actx(actx_class, comm)
-    queue = getattr(actx, "queue", None)
-    use_profiling = actx_class_is_profiling(actx_class)
-    alloc = getattr(actx, "allocator", None)
-
     # set up driver parameters
     from mirgecom.simutil import configurate
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
+
+    use_gmsh = configurate("use_gmsh", input_data, True)
+    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
+
+    actx = initialize_actx(actx_class, comm)
+    queue = getattr(actx, "queue", None)
+    use_profiling = actx_class_is_profiling(actx_class)
+    alloc = getattr(actx, "allocator", None)
 
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
@@ -687,7 +690,7 @@ def main(actx_class,
     mesh_size = configurate("mesh_size", input_data, 0.001)
     bl_ratio = configurate("bl_ratio", input_data, 3)
     interface_ratio = configurate("interface_ratio", input_data, 2)
-    transfinite = configurate("transfinit", input_data, False)
+    transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
     # ACTII flow properties
@@ -1294,7 +1297,7 @@ def main(actx_class,
         vel_cross[1] = 0
 
         plane_normal = np.zeros(shape=(dim,))
-        theta = mesh_angle/180.*np.pi/2.
+        theta = mesh_angle/180.*np.pi
         plane_normal[0] = np.cos(theta)
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
@@ -1698,9 +1701,10 @@ def main(actx_class,
             def get_mesh_data():
                 from y3prediction.shock1d import get_mesh
                 mesh, tag_to_elements = get_mesh(
-                    dim=dim, angle=mesh_angle, size=mesh_size,
+                    dim=dim, angle=0.*mesh_angle, size=mesh_size,
                     bl_ratio=bl_ratio, interface_ratio=interface_ratio,
-                    transfinite=transfinite, use_wall=use_wall)()
+                    transfinite=transfinite, use_wall=use_wall,
+                    use_quads=use_tpe, use_gmsh=use_gmsh)()
 
                 volume_to_tags = {"fluid": ["fluid"]}
                 if use_wall:
@@ -1738,6 +1742,10 @@ def main(actx_class,
 
                     mesh = glue_mesh_boundaries(mesh, bdry_pair_mappings_and_tols)
                     """
+                # print(f"{mesh=}")
+                from meshmode.mesh.processing import rotate_mesh_around_axis
+                if mesh_angle > 0:
+                    mesh = rotate_mesh_around_axis(mesh, theta=theta)
 
                 return mesh, tag_to_elements, volume_to_tags
         elif init_case == "y3prediction":
@@ -1832,7 +1840,8 @@ def main(actx_class,
             vol: mesh
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
         order=order,
-        quadrature_order=quadrature_order)
+        quadrature_order=quadrature_order,
+        tensor_product_elements=use_tpe)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -1935,6 +1944,7 @@ def main(actx_class,
     from grudge.dt_utils import characteristic_lengthscales
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
+    # char_length_fluid = 1.e-4
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
@@ -1949,10 +1959,8 @@ def main(actx_class,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
         char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
-        """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
-        """
 
     def compute_smoothed_char_length(href_fluid, comm_ind):
         # regular boundaries
@@ -1991,7 +1999,6 @@ def main(actx_class,
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
 
-    """
     def compute_smoothed_char_length_wall(href_wall, comm_ind):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
@@ -2014,7 +2021,6 @@ def main(actx_class,
     if use_wall:
         compute_smoothed_char_length_wall_compiled = \
             actx.compile(compute_smoothed_char_length_wall)
-    """
 
     smoothed_char_length_fluid = char_length_fluid
 
@@ -2025,7 +2031,6 @@ def main(actx_class,
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
-        """
         if use_wall:
             smoothed_char_length_wall = char_length_wall
             for i in range(smooth_char_length):
@@ -2034,15 +2039,12 @@ def main(actx_class,
                         smoothed_char_length_wall, i)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
-        """
 
         smoothed_char_length_fluid = force_evaluation(actx,
                                                       smoothed_char_length_fluid)
-        """
         if use_wall:
             smoothed_char_length_wall = force_evaluation(actx,
                                                          smoothed_char_length_wall)
-                                                         """
 
     if rank == 0:
         logger.info("Before restart/init")
