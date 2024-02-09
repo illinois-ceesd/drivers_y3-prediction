@@ -1,0 +1,55 @@
+init_case: shock1d
+#
+# parameters to control the mesh
+#
+use_tensor_product_elements: True
+use_gmsh: True
+mesh_size: 0.001
+bl_ratio: 1
+interface_ratio: 1
+# transfinite: True
+mesh_angle: 32
+#
+# parameters to control the initialization
+#
+pres_bkrnd: 100.
+temp_bkrnd: 300.
+mach: 2.0
+shock_loc_x: 0.05
+fuel_loc_x: 0.07
+#
+# boundary condition setup
+#
+use_outflow_boundary: "none"
+use_inflow_boundary: "prescribed"
+use_flow_boundary: "none"
+use_wall_boundary: "isothermal_noslip"
+use_interface_boundary: "pressure_outflow"
+use_injection_boundary: "none"
+#
+nviz: 100
+viz_level: 2
+viz_interval_type: 0
+#use_wall: True
+use_wall: False
+use_sponge: False
+use_injection: False
+nrestart: 100
+nhealth: 1
+nstatus: 1
+#constant_cfl: 1
+# smooth_char_length: 5
+smooth_char_length: 0
+use_av: 0
+constant_cfl: 0
+current_dt: 1e-8
+#t_final: 1.e-4
+t_final: 3.e-5
+vel_sigma: 250
+temp_sigma: 250
+nspecies:  0
+order:  1
+#integrator: euler
+integrator: compiled_lsrk54
+#health_pres_min: 2828
+#health_pres_max: 274259
