@@ -1845,7 +1845,7 @@ def main(actx_class,
             for vol, (mesh, _) in volume_to_local_mesh_data.items()},
         order=order,
         quadrature_order=quadrature_order,
-        use_tensor_product_elements=use_tensor_product_elements)
+        tensor_product_elements=use_tensor_product_elements)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -1945,12 +1945,10 @@ def main(actx_class,
 
         wall_ffld_bnd = dd_vol_wall.trace("wall_farfield")
 
-    """
     from grudge.dt_utils import characteristic_lengthscales
     char_length_fluid = force_evaluation(actx,
         characteristic_lengthscales(actx, dcoll, dd=dd_vol_fluid))
-        """
-    char_length_fluid = 1.e-4
+    # char_length_fluid = 1.e-4
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
@@ -1961,17 +1959,12 @@ def main(actx_class,
 
     if use_wall:
         xpos_wall = wall_nodes[0]
-        """
         char_length_wall = force_evaluation(actx,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
-            """
-        char_length_wall = 0.0001
         xpos_wall = wall_nodes[0]
         char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
-        """
         smoothness_diffusivity_wall = \
             smooth_char_length_alpha*char_length_wall**2/current_dt
-        """
 
     def compute_smoothed_char_length(href_fluid, comm_ind):
         # regular boundaries
@@ -1999,9 +1992,15 @@ def main(actx_class,
                  for dd_bdry in filter_part_boundaries(
                      dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
 
+        # smooth_href_fluid_rhs = diffusion_operator(
+        #    dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
+        #    href_fluid, char_length_fluid,
+        #    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+        #    comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
+
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
-            href_fluid, char_length_fluid,
+            href_fluid,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
             comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
 
@@ -2010,7 +2009,6 @@ def main(actx_class,
     compute_smoothed_char_length_compiled = \
         actx.compile(compute_smoothed_char_length)
 
-    """
     def compute_smoothed_char_length_wall(href_wall, comm_ind):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
@@ -2033,7 +2031,6 @@ def main(actx_class,
     if use_wall:
         compute_smoothed_char_length_wall_compiled = \
             actx.compile(compute_smoothed_char_length_wall)
-    """
 
     smoothed_char_length_fluid = char_length_fluid
 
@@ -2044,7 +2041,6 @@ def main(actx_class,
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
-        """
         if use_wall:
             smoothed_char_length_wall = char_length_wall
             for i in range(smooth_char_length):
@@ -2053,15 +2049,12 @@ def main(actx_class,
                         smoothed_char_length_wall, i)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
-        """
 
         smoothed_char_length_fluid = force_evaluation(actx,
                                                       smoothed_char_length_fluid)
-        """
         if use_wall:
             smoothed_char_length_wall = force_evaluation(actx,
                                                          smoothed_char_length_wall)
-                                                         """
 
     if rank == 0:
         logger.info("Before restart/init")
@@ -2409,7 +2402,6 @@ def main(actx_class,
                 kappa=wdv.thermal_conductivity,
                 boundaries=updated_wall_boundaries,
                 u=wdv.temperature,
-                lengthscales=char_length_wall,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
@@ -3460,7 +3452,6 @@ def main(actx_class,
             kappa=wdv.thermal_conductivity,
             boundaries=updated_wall_boundaries,
             u=wdv.temperature,
-            lengthscales=char_length_wall,
             quadrature_tag=quadrature_tag,
             dd=dd_vol_wall,
             grad_u=grad_wall_t,
@@ -4387,7 +4378,6 @@ def main(actx_class,
                 kappa=wdv.thermal_conductivity,
                 boundaries=updated_wall_boundaries,
                 u=wdv.temperature,
-                lengthscales=char_length_wall,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
@@ -4432,7 +4422,6 @@ def main(actx_class,
             av_smu_rhs = (
                 diffusion_operator(
                     dcoll, epsilon_diff, fluid_av_boundaries, av_smu,
-                    lengthscales=char_length_fluid,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_MuDiffFluidCommTag
                 ) + 1/tau * (smoothness_mu - av_smu)
@@ -4442,7 +4431,6 @@ def main(actx_class,
                 av_sbeta_rhs = (
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_sbeta,
-                        lengthscales=char_length_fluid,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                         comm_tag=_BetaDiffFluidCommTag
                     ) + 1/tau * (smoothness_beta - av_sbeta)
@@ -4451,7 +4439,6 @@ def main(actx_class,
                 av_skappa_rhs = (
                     diffusion_operator(
                         dcoll, epsilon_diff, fluid_av_boundaries, av_skappa,
-                        lengthscales=char_length_fluid,
                         quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                         comm_tag=_KappaDiffFluidCommTag
                     ) + 1/tau * (smoothness_kappa - av_skappa)
@@ -4507,7 +4494,6 @@ def main(actx_class,
                 wall_ox_mass_rhs = diffusion_operator(
                     dcoll, wall_model.oxygen_diffusivity,
                     wall_ox_boundaries, wv.ox_mass,
-                    lengthscales=char_length_wall,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
                     comm_tag=_WallOxDiffCommTag)
@@ -4535,7 +4521,6 @@ def main(actx_class,
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
                     dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
-                    lengthscales=char_length_wall,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
