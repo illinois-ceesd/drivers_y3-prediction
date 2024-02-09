@@ -1988,12 +1988,6 @@ def main(actx_class,
                  for dd_bdry in filter_part_boundaries(
                      dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
 
-        # smooth_href_fluid_rhs = diffusion_operator(
-        #    dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
-        #    href_fluid, char_length_fluid,
-        #    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-        #    comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
-
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
             href_fluid,
