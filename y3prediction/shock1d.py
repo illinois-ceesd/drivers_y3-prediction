@@ -416,13 +416,13 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             """)
 
             if use_quads:
-            my_string += ("""
+                my_string += ("""
                 // Convert the triangles back to quads
                 Mesh.Algorithm = 8;
                 Mesh.RecombinationAlgorithm = 2;
                 Mesh.RecombineAll = 1;
                 Recombine Surface {1, 2};
-            """)
+                """)
 
         #print(my_string)
         return partial(generate_gmsh, ScriptSource(my_string, "geo"),
