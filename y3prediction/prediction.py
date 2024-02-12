@@ -2277,19 +2277,23 @@ def main(actx_class,
     # then computes an average fluid state and uses the averge pressure
     # to limit the entire cv in regions with very small pressures
     #
-    def limit_fluid_state_lv(cv, pressure, temperature, temperature_seed,
-                             dd=dd_vol_fluid, viz_theta=False):
+    def limit_fluid_state_lv(cv, pressure, temperature, dd=dd_vol_fluid,
+                             temperature_seed=None, viz_theta=False):
 
         index = 935
         print_stuff = False
         # we need a reasonable guess for temperature, use the element
         # average when the incoming temperature is negative
         # remove any negative values from the average, to ensure positivity
-        safe_temp = actx.np.where(actx.np.less(temperature, 0.),
-                                      1., temperature)
-        tseed_avg = element_average(dcoll, safe_temp, dd)
-        tseed = actx.np.where(actx.np.less(temperature_seed, 0.),
-                              tseed_avg, temperature_seed)
+        if temperature_seed is not None:
+            safe_temp = actx.np.where(actx.np.less(temperature, 0.),
+                                          1., temperature)
+            tseed_avg = element_average(dcoll, safe_temp, dd)
+            tseed = actx.np.where(actx.np.less(temperature_seed, 0.),
+                                  tseed_avg, temperature_seed)
+        else:
+            tseed = None
+            tseed_avg = None
 
         # 1.0 limit the density to be above 0.
         elem_avg_cv = _element_average_cv(cv, dd)
@@ -2317,6 +2321,7 @@ def main(actx_class,
                                                   temperature=temperature_update_rho)
 
         # 2.0 limit the species mass fractions
+        theta_spec = None
         if nspecies > 0:
             theta_spec = actx.zeros_like(spec_lim)
             for i in range(nspecies):
@@ -5237,7 +5242,7 @@ def main(actx_class,
         theta_rho = actx.zeros_like(stepper_state.cv.mass)
         theta_Y = actx.zeros_like(stepper_state.cv.species_mass_fractions)
         theta_pres = actx.zeros_like(stepper_state.cv.mass)
-        if viz_level == 3:
+        if viz_level == 3 and use_species_limiter:
             temperature_unlimited = gas_model.eos.temperature(
                 cv=stepper_state.cv, temperature_seed=stepper_state.tseed)
             pressure_unlimited = gas_model.eos.pressure(
@@ -5773,7 +5778,7 @@ def main(actx_class,
     theta_rho = actx.zeros_like(current_cv.mass)
     theta_Y = actx.zeros_like(current_cv.species_mass_fractions)
     theta_pres = actx.zeros_like(current_cv.mass)
-    if viz_level == 3:
+    if viz_level == 3 and use_species_limiter:
         temperature_unlimited = gas_model.eos.temperature(
             cv=current_cv, temperature_seed=tseed)
         pressure_unlimited = gas_model.eos.pressure(
