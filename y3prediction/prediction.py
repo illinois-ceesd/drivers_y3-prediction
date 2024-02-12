@@ -412,8 +412,8 @@ def update_coupled_boundaries(
 def main(actx_class,
          restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
-         casename=None, log_path="log_data", use_esdg=False,
-         use_tpe=False):
+         casename=None, log_path="log_data", use_esdg=False):
+
     # control log messages
     logger = logging.getLogger(__name__)
     logger.propagate = False
@@ -463,6 +463,7 @@ def main(actx_class,
 
     use_gmsh = configurate("use_gmsh", input_data, True)
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
+    use_tpe = configurate("use_tensor_product_elements", input_data, False)
 
     actx = initialize_actx(actx_class, comm)
     queue = getattr(actx, "queue", None)
@@ -3569,7 +3570,7 @@ def main(actx_class,
                 volume_meshes={
                     vol: mesh
                     for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-                order=restart_order)
+                order=restart_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
                 actx,
@@ -3758,7 +3759,7 @@ def main(actx_class,
                 volume_meshes={
                     vol: mesh
                     for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-                order=target_order)
+                order=target_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
                 actx,
