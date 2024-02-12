@@ -47,8 +47,7 @@ if __name__ == "__main__":
 
     from mirgecom.array_context import get_reasonable_array_context_class
     actx_class = get_reasonable_array_context_class(
-        lazy=args.lazy, distributed=True, profiling=args.profile, numpy=args.numpy,
-        tensor_product_elements=args.tpe)
+        lazy=args.lazy, distributed=True, profiling=args.profile, numpy=args.numpy)
 
     restart_filename = None
     if args.restart_file:
