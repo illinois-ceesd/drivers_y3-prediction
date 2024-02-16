@@ -23,6 +23,12 @@ Else
     boundratiocavity=1.0;
 EndIf
 
+If(Exists(blratiocorner))
+    boundratiocorner=blratiocorner;
+Else
+    boundratiocorner=1.0;
+EndIf
+
 If(Exists(blratiocomb))
     boundratiocomb=blratiocomb;
 Else
@@ -80,7 +86,7 @@ EndIf
 If(Exists(nozzlefac))
     nozzle_factor=nozzlefac;
 Else
-    nozzle_factor=12.0;
+    nozzle_factor=3.0;
 EndIf
 
 If(Exists(samplefac))
@@ -228,11 +234,11 @@ Field[3001].CurvesList = {
 Field[3001].Sampling = 1000;
 ////
 //Create threshold field that varrries element size near boundaries
-blratiocorner = boundratio/4.;
+cornerfac = boundratio/boundratiocorner;
 Field[3002] = Threshold;
 Field[3002].InField = 3001;
-Field[3002].SizeMin = isosize/blratiocorner;
-Field[3002].SizeMax = isosize/blratiocorner*(2.-1./blratiocorner);
+Field[3002].SizeMin = isosize/cornerfac;
+Field[3002].SizeMax = isosize/cornerfac*(2.-1./cornerfac);
 Field[3002].DistMin = 0.02;
 Field[3002].DistMax = 6.0;
 Field[3002].StopAtDistMax = 1;
@@ -302,22 +308,22 @@ Field[4001].CurvesList = {
 Field[4001].Sampling = 1000;
 ////
 //Create threshold field that varrries element size near boundaries
-blratiocorner = boundratioinjector;
+cornerfac = boundratioinjector;
 //blratiocorner = boundratioinjector;
 Field[4002] = Threshold;
 Field[4002].InField = 4001;
-Field[4002].SizeMin = injectorsize/blratiocorner;
-Field[4002].SizeMax = injectorsize/blratiocorner*(2.-1./blratiocorner);
+Field[4002].SizeMin = injectorsize/cornerfac;
+Field[4002].SizeMax = injectorsize/cornerfac*(2.-1./cornerfac);
 Field[4002].DistMin = 0.02;
 Field[4002].DistMax = 2.0;
 Field[4002].StopAtDistMax = 1;
 
 // a smaller region right at the corner
-blratiocorner = boundratioinjector;
+cornerfac = boundratioinjector;
 Field[4003] = Threshold;
 Field[4003].InField = 4001;
-Field[4003].SizeMin = injectorsize/blratiocorner;
-Field[4003].SizeMax = injectorsize/blratiocorner*(2.-1./blratiocorner);
+Field[4003].SizeMin = injectorsize/cornerfac;
+Field[4003].SizeMax = injectorsize/cornerfac*(2.-1./cornerfac);
 Field[4003].DistMin = 0.02;
 Field[4003].DistMax = 1.0;
 Field[4003].StopAtDistMax = 1;
