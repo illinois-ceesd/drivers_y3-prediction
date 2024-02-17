@@ -3569,7 +3569,7 @@ def main(actx_class,
                 volume_meshes={
                     vol: mesh
                     for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-                order=restart_order)
+                order=restart_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
                 actx,
@@ -3758,7 +3758,7 @@ def main(actx_class,
                 volume_meshes={
                     vol: mesh
                     for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-                order=target_order)
+                order=target_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
                 actx,
