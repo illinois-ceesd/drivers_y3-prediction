@@ -11,8 +11,9 @@ use_injection: False
 nrestart: 10
 nhealth: 1
 nstatus: 1
+use_tensor_product_elements: True
 #constant_cfl: 1
-smooth_char_length: 5
+smooth_char_length: 0
 use_av: 0
 constant_cfl: 0
 current_cfl: 0.05
