@@ -567,6 +567,8 @@ def main(actx_class,
         "use_wall_boundary", input_data, "isothermal_noslip")
     use_interface_boundary = configurate(
         "use_interface_boundary", input_data, "none")
+    use_axis_boundary = configurate(
+        "use_axis_boundary", input_data, "none")
 
     outflow_pressure = configurate("outflow_pressure", input_data, 100.0)
 
@@ -581,6 +583,7 @@ def main(actx_class,
                     "injection": use_injection_boundary,
                     "upstream_injection": use_upstream_injection_boundary,
                     "isothermal_wall": use_wall_boundary,
+                    "axis": use_axis_boundary,
                     "wall_interface": use_interface_boundary}
 
     # list of strings that are allowed to defined boundary conditions
@@ -907,11 +910,18 @@ def main(actx_class,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "unstart":
+            print("\tInitializing flow to unstart")
+            print(f"\tInflow stagnation pressure {total_pres_inflow}")
+            print(f"\tInflow stagnation temperature {total_temp_inflow}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
         else:
             raise SimulationConfigurationError(
                 "Invalid initialization configuration specified"
                 "Currently supported options are: "
                 "\t y3prediction"
+                "\t unstart"
                 "\t shock1d"
             )
         print("#### Simluation initialization data: ####")
@@ -1417,6 +1427,117 @@ def main(actx_class,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
+    if init_case == "unstart":
+
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        fuel_location = np.zeros(shape=(dim,))
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = 10000.
+        plane_normal = np.zeros(shape=(dim,))
+
+        # parameters to adjust the shape of the initialization
+        temp_wall = 300
+
+        #
+        # isentropic expansion based on the area ratios between the
+        # inlet (r=54e-3m) and the throat (r=3.167e-3)
+        #
+        vel_inflow = np.zeros(shape=(dim,))
+        vel_outflow = np.zeros(shape=(dim,))
+
+        throat_height = 6.3028e-3
+        inlet_height = 13.0e-3
+        inlet_area_ratio = inlet_height/throat_height
+
+        inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                          gamma=gamma,
+                                          mach_guess=0.01)
+        pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                            P0=total_pres_inflow,
+                                            gamma=gamma)
+        temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                               T0=total_temp_inflow,
+                                               gamma=gamma)
+
+        if eos_type == 0:
+            rho_inflow = pres_inflow/temp_inflow/r
+            sos = math.sqrt(gamma*pres_inflow/rho_inflow)
+            inlet_gamma = gamma
+        else:
+            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                              temperature=temp_inflow,
+                                              mass_fractions=y)
+            inlet_gamma = (
+                pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+
+            gamma_error = (gamma - inlet_gamma)
+            gamma_guess = inlet_gamma
+            toler = 1.e-6
+            # iterate over the gamma/mach since gamma = gamma(T)
+            while gamma_error > toler:
+
+                inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                                  gamma=gamma_guess,
+                                                  mach_guess=0.01)
+                pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                                    P0=total_pres_inflow,
+                                                    gamma=gamma_guess)
+                temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                                       T0=total_temp_inflow,
+                                                       gamma=gamma_guess)
+
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                                  temperature=temp_inflow,
+                                                  mass_fractions=y)
+                inlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+                gamma_error = (gamma_guess - inlet_gamma)
+                gamma_guess = inlet_gamma
+
+            sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
+
+        vel_inflow[0] = inlet_mach*sos
+        plane_normal = np.zeros(shape=(dim,))
+        theta = mesh_angle/180.*np.pi
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {inlet_mach}")
+            print(f"\tinlet gamma {inlet_gamma}")
+            print(f"\tinlet temperature {temp_inflow}")
+            print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet rho {rho_inflow}")
+            print(f"\tinlet velocity {vel_inflow[0]}")
+            #print(f"final inlet pressure {pres_inflow_final}")
+
+        bulk_init = PlanarDiscontinuityMulti(
+            dim=dim,
+            nspecies=nspecies,
+            disc_location=disc_location,
+            disc_location_species=fuel_location,
+            normal_dir=plane_normal,
+            sigma=0.002,
+            pressure_left=pres_inflow,
+            pressure_right=pres_bkrnd,
+            temperature_left=temp_inflow,
+            temperature_right=temp_bkrnd,
+            velocity_left=vel_inflow,
+            velocity_right=vel_outflow,
+            velocity_cross=vel_outflow,
+            species_mass_left=y,
+            species_mass_right=y_fuel,
+            temp_wall=temp_bkrnd,
+            y_top=0.013,
+            y_bottom=-0.013,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+
     elif init_case == "y3prediction":
         #
         # stagnation tempertuare 2076.43 K
@@ -1833,7 +1954,7 @@ def main(actx_class,
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
 
                 return mesh, tag_to_elements, volume_to_tags
-        elif init_case == "y3prediction":
+        else:
             if rank == 0:
                 print(f"Reading mesh from {mesh_filename}")
 
@@ -4361,6 +4482,33 @@ def main(actx_class,
         def _sponge_sigma(sponge_field, x_vec):
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            return sponge_field
+
+    elif init_case == "unstart":
+
+        inlet_sponge_x0 = -0.315
+        inlet_sponge_thickness = 0.010
+        outlet_sponge_x0 = 0.666
+        outlet_sponge_thickness = 0.100
+        top_sponge_y0 = 0.1
+        top_sponge_thickness = 0.100
+
+        sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                       thickness=inlet_sponge_thickness,
+                                       amplitude=sponge_amp,
+                                       direction=-1.0)
+        sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                        thickness=outlet_sponge_thickness,
+                                        amplitude=sponge_amp)
+        sponge_init_top = InitSponge(x0=top_sponge_y0,
+                                     thickness=top_sponge_thickness,
+                                     amplitude=sponge_amp,
+                                     direction=2.0)
+
+        def _sponge_sigma(sponge_field, x_vec):
+            sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
     get_sponge_sigma = actx.compile(_sponge_sigma)

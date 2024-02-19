@@ -28,7 +28,7 @@ class PlanarDiscontinuityMulti:
             velocity_cross=None,
             species_mass_left=None, species_mass_right=None,
             convective_velocity=None, sigma=0.5,
-            temp_sigma=0., vel_sigma=0., temp_wall=300.
+            temp_sigma=0., vel_sigma=0., temp_wall=300., y_top=0.01, y_bottom=-0.01
     ):
         r"""Initialize mixture parameters.
 
@@ -101,6 +101,8 @@ class PlanarDiscontinuityMulti:
         self._temp_sigma = temp_sigma
         self._vel_sigma = vel_sigma
         self._temp_wall = temp_wall
+        self._y_top = y_top
+        self._y_bottom = y_bottom
 
     def __call__(self, dcoll, x_vec, eos, *, time=0.0):
         """Create the mixture state at locations *x_vec*.
@@ -153,8 +155,8 @@ class PlanarDiscontinuityMulti:
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
-        y_top = 0.01
-        y_bottom = -0.01
+        y_top = self._y_top
+        y_bottom = self._y_bottom
         sigma = self._temp_sigma
         if sigma > 0:
             wall_temperature = self._temp_wall
