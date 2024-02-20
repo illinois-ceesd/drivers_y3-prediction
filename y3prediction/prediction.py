@@ -571,6 +571,10 @@ def main(actx_class,
         "use_axis_boundary", input_data, "none")
 
     outflow_pressure = configurate("outflow_pressure", input_data, 100.0)
+    ramp_beginP = configurate("ramp_beginP", input_data, 100.0)
+    ramp_endP = configurate("ramp_endP", input_data, 1000.0)
+    ramp_time_start = configurate("ramp_time_start", input_data, 0.0)
+    ramp_time_interval = configurate("ramp_time_interval", input_data, 1.e-4)
 
     # for each tagged boundary surface, what are they assigned to be
     # isothermal wall -> wall when current running simulation support is not needed
@@ -595,7 +599,8 @@ def main(actx_class,
         "adiabatic_slip",
         "pressure_outflow",
         "riemann_outflow",
-        "prescribed"
+        "prescribed",
+        "isentropic_pressure_ramp"
     ]
 
     # boundary sanity check
@@ -1364,19 +1369,6 @@ def main(actx_class,
             gamma2 = (pyro_mech.get_mixture_specific_heat_cp_mass(temperature2, y1) /
                       pyro_mech.get_mixture_specific_heat_cv_mass(temperature2, y1))
 
-            print(f"{error=}")
-            print(f"{pressure1=}")
-            print(f"{temperature1=}")
-            print(f"{rho1=}")
-            print(f"{velocity1=}")
-            print(f"{gamma1=}")
-            print(f"{pressure2=}")
-            print(f"{temperature2=}")
-            print(f"{rho2=}")
-            print(f"{velocity2=}")
-            print(f"{gamma2=}")
-            print(f"{density_ratio=}")
-
         # convert to shock moving frame
         velocity2 = velocity2 - velocity1
         velocity1 = 0.
@@ -1394,6 +1386,13 @@ def main(actx_class,
 
         vel_left = (velocity2 - velocity1)*plane_normal
 
+        pressure1_total = pres_bkrnd*(1 + (gamma-1)/2*mach**2)**(gamma/(gamma-1))
+        temperature1_total = temp_bkrnd*(1 + (gamma-1)/2*mach**2)
+
+        mach2 = vel_left[0]/np.sqrt(gamma2*pressure2/rho2)
+        pressure2_total = pressure2*(1 + (gamma-1)/2*mach2**2)**(gamma/(gamma-1))
+        temperature2_total = temperature2*(1 + (gamma-1)/2*mach2**2)
+
         if rank == 0:
             print("#### Simluation initialization data: ####")
             print(f"\tshock Mach number {mach}")
@@ -1402,11 +1401,17 @@ def main(actx_class,
             print(f"\tpre-shock pressure {pressure1}")
             print(f"\tpre-shock rho {rho1}")
             print(f"\tpre-shock velocity {velocity1}")
+            print(f"\tpre-shock total pressure {pressure1_total}")
+            print(f"\tpre-shock total temperature {temperature1_total}")
+
             print(f"\tpost-shock gamma {gamma2}")
             print(f"\tpost-shock temperature {temperature2}")
             print(f"\tpost-shock pressure {pressure2}")
             print(f"\tpost-shock rho {rho2}")
             print(f"\tpost-shock velocity {velocity2}")
+            print(f"\tpost-shock total pressure {pressure2_total}")
+            print(f"\tpost-shock total temperature {temperature2_total}")
+            print(f"\tpost-shock mach {mach2}")
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -2446,12 +2451,6 @@ def main(actx_class,
         pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
                                                   temperature=temperature_update_rho)
 
-
-
-
-
-
-
         # 2.0 limit the species mass fractions
         theta_spec = None
         if nspecies > 0:
@@ -2521,15 +2520,12 @@ def main(actx_class,
                                         momentum=mom_lim,
                                         species_mass=mass_lim*spec_lim)
             """
-            cv_update_y = make_conserved(dim=dim, mass=cv_update_rho.mass, energy=cv_update_rho.energy,
-                                        momentum=cv_update_rho.momentum,
-                                        species_mass=cv_update_rho.mass*spec_lim)
+            cv_update_y = make_conserved(dim=dim, mass=cv_update_rho.mass,
+                                         energy=cv_update_rho.energy,
+                                         momentum=cv_update_rho.momentum,
+                                         species_mass=cv_update_rho.mass*spec_lim)
         else:
             cv_update_y = cv_update_rho
-
-
-
-
 
         """
         # 2.0 limit the species mass fractions
@@ -2554,7 +2550,6 @@ def main(actx_class,
             spec_lim = spec_lim/aux
 
             """
-
 
         # 3.0 find the average element cv and pressure
         cv_updated = cv_update_y
@@ -2583,8 +2578,6 @@ def main(actx_class,
                                                   temperature=temperature_updated_test2)
                                                   """
 
-
-
         elem_avg_cv = _element_average_cv(cv_updated, dd)
         #
         elem_avg_temp = gas_model.eos.temperature(
@@ -2603,7 +2596,7 @@ def main(actx_class,
         )
         """
 
-        # use an entropy function to keep pressure positive and entropy 
+        # use an entropy function to keep pressure positive and entropy
         # above some minimum value
         gamma = gas_model.eos.gamma(cv_updated, temperature_updated)
         smin = 10
@@ -2615,7 +2608,6 @@ def main(actx_class,
 
         _theta = actx.np.maximum(0.,
             actx.np.where(actx.np.less(theta_smin_i, theta_savg),
-            #(mmin - theta_s_i)/(elem_avg_pres - math.exp(smin)*elem_avg_cv.mass**gamma - theta_s_i + 1.e-12))
                           (mmin - theta_smin_i)/(theta_savg - theta_smin_i),
                           0.)
         )
@@ -2671,7 +2663,6 @@ def main(actx_class,
         cv_updated2 = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                      momentum=mom_lim,
                                      species_mass=spec_lim)
-                                     #species_mass=mass_lim*cv_updated.species_mass_fractions)
 
         # we need a reasonable guess for temperature, use the element
         # average when the incoming temperature is negative
@@ -2754,19 +2745,17 @@ def main(actx_class,
             data = actx.to_numpy(cv.energy)
             print(f"energy \n {data[0][index]}")
 
-            internal_energy = gas_model.eos.get_internal_energy(temperature,
-                                                                cv.species_mass_fractions)
+            internal_energy = gas_model.eos.get_internal_energy(
+                temperature, cv.species_mass_fractions)
             data = actx.to_numpy(internal_energy)
             print(f"internal_energy \n {data[0][index]}")
-            enthalpy = gas_model.eos.get_enthalpy(temperature, cv.species_mass_fractions)
+            enthalpy = gas_model.eos.get_enthalpy(temperature,
+                                                  cv.species_mass_fractions)
             data = actx.to_numpy(enthalpy)
             print(f"enthalpy \n {data[0][index]}")
             heat_capacity_cv = gas_model.eos.heat_capacity_cv(cv, temperature)
             data = actx.to_numpy(heat_capacity_cv)
             print(f"heat_capacity_cv \n {data[0][index]}")
-
-
-
 
             for i in range(dim):
                 data = actx.to_numpy(cv.momentum)
@@ -4214,7 +4203,164 @@ def main(actx_class,
     # Set up the boundary conditions #
     ##################################
 
+    # pressure ramp function
+    # linearly ramp the pressure from beginP to finalP over t_ramp_interval seconds
+    # provides an offset to start the ramping after t_ramp_start
+    #
+    inlet_mach = configurate("inlet_mach", input_data, 0.1)
+    ramp_beginP = configurate("ramp_beginP", input_data, 100.0)
+    ramp_endP = configurate("ramp_endP", input_data, 1000.0)
+    ramp_time_start = configurate("ramp_time_start", input_data, 0.0)
+    ramp_time_interval = configurate("ramp_time_interval", input_data, 1.e-4)
+
+    def inflow_ramp_pressure(t):
+        #print(f"{t=}")
+        return actx.np.where(
+            actx.np.greater(t, ramp_time_start),
+            actx.np.minimum(
+                ramp_endP,
+                ramp_beginP + ((t - ramp_time_start) / ramp_time_interval
+                    * (ramp_endP - ramp_beginP))),
+            ramp_beginP)
+
     from mirgecom.gas_model import project_fluid_state
+
+    class IsentropicInflow:
+        def __init__(self, *, dim, T0, P0, mass_frac, mach, gamma,
+                     temp_wall, temp_sigma=0., vel_sigma=0.,
+                     nspecies=0, normal_dir=None, p_fun=None):
+
+            self._P0 = P0
+            self._T0 = T0
+            self._dim = dim
+            self._mach = mach
+            self._gamma = gamma
+            self._temp_wall = temp_wall
+            self._temp_sigma = temp_sigma
+            self._vel_sigma = vel_sigma
+            self._nspecies = nspecies
+
+            if normal_dir is None:
+                normal_dir = np.zeros(shape=(dim,))
+                normal_dir[0] = 1
+            if mass_frac is None:
+                mass_frac = np.zeros(shape=(nspecies,))
+            if p_fun is not None:
+                self._p_fun = p_fun
+
+            self._mass_frac = mass_frac
+
+        def __call__(self,  x_vec, gas_model, *, time=0, **kwargs):
+
+            xpos = x_vec[0]
+            ypos = x_vec[1]
+            #if self._dim == 3:
+                #zpos = x_vec[2]
+            ytop = 0*x_vec[0]
+            actx = xpos.array_context
+            zeros = 0*xpos
+            ones = zeros + 1.0
+
+            if self._p_fun is not None:
+                P0 = self._p_fun(time)
+            else:
+                P0 = self._P0
+            T0 = self._T0
+
+            mach = ones*self._mach
+            pressure = getIsentropicPressure(
+                mach=mach,
+                P0=P0,
+                gamma=gamma
+            )
+            temperature = getIsentropicTemperature(
+                mach=mach,
+                T0=T0,
+                gamma=gamma
+            )
+            print(f"{pressure=} {temperature=}")
+
+            from y3prediction.utils import smooth_step
+
+            # modify the temperature in the near wall region to match the
+            # isothermal boundaries
+            wall_temperature = self._temp_wall
+            ytop = 0.013
+            ypos = x_vec[1]
+            if self._temp_sigma > 0:
+                sigma = self._temp_sigma
+                smoothing_top = smooth_step(actx, -sigma*(ypos-ytop))
+                #z0 = -0.0175
+                #z1 = 0.0175
+                #if self._dim == 3:
+                    #smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
+                    #smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
+
+                temperature = (wall_temperature +
+                    (temperature - wall_temperature)*smoothing_top)
+
+            y = ones*self._mass_frac
+            mass = gas_model.eos.get_density(pressure=pressure,
+                                             temperature=temperature,
+                                             species_mass_fractions=y)
+            energy = mass*gas_model.eos.get_internal_energy(temperature=temperature,
+                                                            species_mass_fractions=y)
+
+            velocity = np.zeros(self._dim, dtype=object)
+            mom = mass*velocity
+            cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                                energy=energy, species_mass=mass*y)
+
+            velocity[0] = mach*gas_model.eos.sound_speed(cv, temperature)
+
+            # modify the velocity in the near-wall region to have a smooth profile
+            # this approximates the BL velocity profile
+            if self._vel_sigma > 0:
+                sigma = self._vel_sigma
+                smoothing_top = smooth_step(actx, -sigma*(ypos-ytop))
+                #smoothing_fore = ones
+                #smoothing_aft = ones
+                #if self._dim == 3:
+                    #smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
+                    #smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
+                velocity[0] = (velocity[0]*smoothing_top)
+
+            mom = mass*velocity
+            energy = (energy + np.dot(mom, mom)/(2.0*mass))
+
+            cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                                energy=energy, species_mass=mass*y)
+
+            av_smu = actx.np.zeros_like(cv.mass)
+            av_sbeta = actx.np.zeros_like(cv.mass)
+            av_skappa = actx.np.zeros_like(cv.mass)
+            av_sd = actx.np.zeros_like(cv.mass)
+            fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
+                                           temperature_seed=temperature,
+                                           smoothness_mu=av_smu,
+                                           smoothness_beta=av_sbeta,
+                                           smoothness_kappa=av_skappa,
+                                           smoothness_d=av_sd,
+                                           limiter_func=None,
+                                           limiter_dd=None)
+            return fluid_state
+
+    inflow_state = IsentropicInflow(
+        dim=dim,
+        temp_wall=temp_wall,
+        gamma=gamma,
+        nspecies=nspecies,
+        mass_frac=y,
+        T0=total_temp_inflow,
+        P0=ramp_beginP,
+        mach=inlet_mach,
+        p_fun=inflow_ramp_pressure)
+
+    def get_inflow_boundary_solution(dcoll, dd_bdry, gas_model, state_minus, time, **kwargs):
+        actx = state_minus.array_context
+        bnd_discr = dcoll.discr_from_dd(dd_bdry)
+        nodes = actx.thaw(bnd_discr.nodes())
+        return inflow_state(x_vec=nodes, gas_model=gas_model, time=time, **kwargs)
 
     def get_target_state_on_boundary(btag):
         return project_fluid_state(
@@ -4225,7 +4371,13 @@ def main(actx_class,
         )
 
     # is there a way to generalize this?
-    #if use_flow_boundary:
+    if bndry_config["inflow"] == "isentropic_pressure_ramp":
+        prescribed_inflow_boundary = PrescribedFluidBoundary(
+            boundary_state_func=get_inflow_boundary_solution)
+
+        bndry_config["inflow"] = "isentropic_pressure_ramp"
+        bndry_mapping["isentropic_pressure_ramp"] = prescribed_inflow_boundary
+
     if bndry_config["flow"] == "prescribed":
         flow_ref_state = \
             get_target_state_on_boundary("flow")
@@ -4241,7 +4393,6 @@ def main(actx_class,
         bndry_config["flow"] = "prescribed_flow"
         bndry_mapping["prescribed_flow"] = prescribed_flow_boundary
 
-    #if use_inflow_boundary:
     if bndry_config["inflow"] == "prescribed":
         inflow_ref_state = \
             get_target_state_on_boundary("inflow")
@@ -4257,7 +4408,6 @@ def main(actx_class,
         bndry_config["inflow"] = "prescribed_inflow"
         bndry_mapping["prescribed_inflow"] = prescribed_inflow_boundary
 
-    #if use_outflow_boundary:
     if bndry_config["outflow"] == "prescribed":
         outflow_ref_state = \
             get_target_state_on_boundary("outflow")

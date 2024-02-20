@@ -314,7 +314,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     Transfinite Surface {{1, 2, 16, 20, 24, 28, 29,42,46, 50, 51}};
                     Transfinite Volume {{1, 2}};
                 """)
-    
+
         else:
             if dim == 2:
                 my_string += (f"""
@@ -394,7 +394,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     Field[4] = Distance;
                     Field[4].SurfacesList = {{fluid_surface_vector[4]}};
                     Field[4].Sampling = 1000;
-    
+
                     //Create threshold field that varrries element size near boundaries
                     Field[5] = Threshold;
                     Field[5].InField = 4;
@@ -430,7 +430,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Recombine Surface {1, 2};
             """)
 
-        print(my_string)
+        #print(my_string)
         return partial(generate_gmsh, ScriptSource(my_string, "geo"),
                        force_ambient_dim=dim, dimensions=dim, target_unit="M",
                        return_tag_to_elements_map=True)
