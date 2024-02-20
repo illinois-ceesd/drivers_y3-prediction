@@ -302,17 +302,28 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 my_string += (f"""
                     Transfinite Curve {{1, 3}} = {0.1} / {size};
                     Transfinite Curve {{5, 6}} = {0.02} / {size};
-                    Transfinite Curve {{-2, 4, 7}}={0.02}/{size} Using Bump 1/{bl_ratio};
-                    Transfinite Surface {{1, 2}} Right;
                 """)
+                my_string += (
+                    "Transfinite Curve {-2, 4, 7}"
+                    f"={0.02}/{size} Using Bump 1/{bl_ratio};\n"
+                    "Transfinite Surface {{1, 2}} Right;"
+                )
             else:
                 my_string += (f"""
                     Transfinite Curve {{1, 3, 10, 12}} = {0.1} / {size};
                     Transfinite Curve {{5, 6, 32, 34}} = {0.02} / {size};
-                    Transfinite Curve {{2, 4, 7, 9, 11, 33}}={0.02}/{size} Using Bump 1/{bl_ratio};
-                    Transfinite Curve {{14, 23, 45, 15, 19, 41}}={0.02}/{size} Using Bump 1/{bl_ratio};
-                    Transfinite Surface {{1, 2, 16, 20, 24, 28, 29,42,46, 50, 51}};
-                    Transfinite Volume {{1, 2}};
+                """)
+                my_string += (
+                    "Transfinite Curve {2, 4, 7, 9, 11, 33}"
+                    f"={0.02}/{size} Using Bump 1/{bl_ratio};"
+                )
+                my_string += (
+                    "Transfinite Curve {14, 23, 45, 15, 19, 41}"
+                    f"={0.02}/{size} Using Bump 1/{bl_ratio};"
+                )
+                my_string += ("""
+                    Transfinite Surface {1, 2, 16, 20, 24, 28, 29,42,46, 50, 51};
+                    Transfinite Volume {1, 2};
                 """)
 
         else:
@@ -323,7 +334,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     Field[1].CurvesList = {{1,3}};
                     Field[1].NumPointsPerCurve = 100000;
 
-                    //Create threshold field that varrries element size near boundaries
+                    //Create threshold field that varies element size near boundaries
                     Field[2] = Threshold;
                     Field[2].InField = 1;
                     Field[2].SizeMin = {size} / {bl_ratio};
@@ -345,7 +356,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     Field[4].CurvesList = {{2}};
                     Field[4].NumPointsPerCurve = 100000;
 
-                    //Create threshold field that varrries element size near boundaries
+                    //Create threshold field that varies element size near boundaries
                     Field[5] = Threshold;
                     Field[5].InField = 4;
                     Field[5].SizeMin = {size} / {interface_ratio};
@@ -371,7 +382,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     }};
                     Field[1].Sampling = 1000;
 
-                    //Create threshold field that varrries element size near boundaries
+                    //Create threshold field that varies element size near boundaries
                     Field[2] = Threshold;
                     Field[2].InField = 1;
                     Field[2].SizeMin = {size} / {bl_ratio};
@@ -395,7 +406,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     Field[4].SurfacesList = {{fluid_surface_vector[4]}};
                     Field[4].Sampling = 1000;
 
-                    //Create threshold field that varrries element size near boundaries
+                    //Create threshold field that varies element size near boundaries
                     Field[5] = Threshold;
                     Field[5].InField = 4;
                     Field[5].SizeMin = {size} / {interface_ratio};

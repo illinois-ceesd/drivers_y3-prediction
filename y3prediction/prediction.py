@@ -2799,30 +2799,6 @@ def main(actx_class,
             data = actx.to_numpy(temperature_update_rho)
             print(f"temperature_update_rho \n {data[0][index]}")
 
-
-            """
-            data = actx.to_numpy(pressure_updated_test1)
-            print(f"pressure_updated_test1 \n {data[0][index]}")
-            data = actx.to_numpy(pressure_updated_test2)
-            print(f"pressure_updated_test2 \n {data[0][index]}")
-
-            data = actx.to_numpy(temperature_updated_test1)
-            print(f"temperature_updated_test1 \n {data[0][index]}")
-
-            data = actx.to_numpy(temp_resid_updated1)
-            print(f"temperature_resid_updated1 \n {data[0][index]}")
-
-            data = actx.to_numpy(temperature_updated_test2)
-            print(f"temperature_updated_test2 \n {data[0][index]}")
-
-            data = actx.to_numpy(temp_resid_updated2)
-            print(f"temperature_resid_updated2 \n {data[0][index]}")
-            """
-
-
-            #data = actx.to_numpy(temp_resid_updated)
-            #print(f"temperature_resid_updated \n {data[0][index]}")
-
             data = actx.to_numpy(cv_updated.mass)
             print(f"rho_updated \n {data[0][index]}")
             data = actx.to_numpy(cv_updated.energy)
@@ -2873,7 +2849,6 @@ def main(actx_class,
                                    theta_spec, theta_pressure])
         else:
             return make_obj_array([temperature_lim, pressure_lim, cv_lim])
-
 
     #
     # limit the fluid state based on globally defined parameters
@@ -4214,7 +4189,6 @@ def main(actx_class,
     ramp_time_interval = configurate("ramp_time_interval", input_data, 1.e-4)
 
     def inflow_ramp_pressure(t):
-        #print(f"{t=}")
         return actx.np.where(
             actx.np.greater(t, ramp_time_start),
             actx.np.minimum(
@@ -4225,6 +4199,7 @@ def main(actx_class,
 
     from mirgecom.gas_model import project_fluid_state
 
+    # MJA, move this whole thing to utils
     class IsentropicInflow:
         def __init__(self, *, dim, T0, P0, mass_frac, mach, gamma,
                      temp_wall, temp_sigma=0., vel_sigma=0.,
@@ -4254,8 +4229,11 @@ def main(actx_class,
 
             xpos = x_vec[0]
             ypos = x_vec[1]
-            #if self._dim == 3:
-                #zpos = x_vec[2]
+            """
+            # update this for 3d
+            if self._dim == 3:
+                zpos = x_vec[2]
+            """
             ytop = 0*x_vec[0]
             actx = xpos.array_context
             zeros = 0*xpos
@@ -4278,7 +4256,6 @@ def main(actx_class,
                 T0=T0,
                 gamma=gamma
             )
-            print(f"{pressure=} {temperature=}")
 
             from y3prediction.utils import smooth_step
 
@@ -4290,11 +4267,13 @@ def main(actx_class,
             if self._temp_sigma > 0:
                 sigma = self._temp_sigma
                 smoothing_top = smooth_step(actx, -sigma*(ypos-ytop))
-                #z0 = -0.0175
-                #z1 = 0.0175
-                #if self._dim == 3:
-                    #smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
-                    #smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
+                """
+                z0 = -0.0175
+                z1 = 0.0175
+                if self._dim == 3:
+                    smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
+                    smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
+                """
 
                 temperature = (wall_temperature +
                     (temperature - wall_temperature)*smoothing_top)
@@ -4318,11 +4297,13 @@ def main(actx_class,
             if self._vel_sigma > 0:
                 sigma = self._vel_sigma
                 smoothing_top = smooth_step(actx, -sigma*(ypos-ytop))
-                #smoothing_fore = ones
-                #smoothing_aft = ones
-                #if self._dim == 3:
-                    #smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
-                    #smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
+                """
+                smoothing_fore = ones
+                smoothing_aft = ones
+                if self._dim == 3:
+                    smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
+                    smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
+                """
                 velocity[0] = (velocity[0]*smoothing_top)
 
             mom = mass*velocity
@@ -4356,7 +4337,8 @@ def main(actx_class,
         mach=inlet_mach,
         p_fun=inflow_ramp_pressure)
 
-    def get_inflow_boundary_solution(dcoll, dd_bdry, gas_model, state_minus, time, **kwargs):
+    def get_inflow_boundary_solution(dcoll, dd_bdry, gas_model,
+                                     state_minus, time, **kwargs):
         actx = state_minus.array_context
         bnd_discr = dcoll.discr_from_dd(dd_bdry)
         nodes = actx.thaw(bnd_discr.nodes())
@@ -6207,7 +6189,6 @@ def main(actx_class,
     else:
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
-
 
     if nviz > 0:
         # pack things up
