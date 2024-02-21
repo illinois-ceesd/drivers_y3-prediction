@@ -102,7 +102,8 @@ from mirgecom.transport import (SimpleTransport,
 from mirgecom.gas_model import (
     GasModel,
     make_fluid_state,
-    make_operator_fluid_states
+    make_operator_fluid_states,
+    project_fluid_state
 )
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     add_interface_boundaries_no_grad,
@@ -116,6 +117,7 @@ from mirgecom.navierstokes import (
 from mirgecom.artificial_viscosity import smoothness_indicator
 # driver specific utilties
 from y3prediction.utils import (
+    IsentropicInflow,
     getIsentropicPressure,
     getIsentropicTemperature,
     getMachFromAreaRatio
@@ -4200,7 +4202,6 @@ def main(actx_class,
     normal_dir = np.zeros(shape=(dim,))
     normal_dir[0] = 1
 
-    from utils import IsentropicInflow
     inflow_state = IsentropicInflow(
         dim=dim,
         temp_wall=temp_wall,
@@ -4222,8 +4223,6 @@ def main(actx_class,
         bnd_discr = dcoll.discr_from_dd(dd_bdry)
         nodes = actx.thaw(bnd_discr.nodes())
         return inflow_state(x_vec=nodes, gas_model=gas_model, time=time, **kwargs)
-
-    from mirgecom.gas_model import project_fluid_state
 
     def get_target_state_on_boundary(btag):
         return project_fluid_state(

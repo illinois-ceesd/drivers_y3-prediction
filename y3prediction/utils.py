@@ -372,164 +372,165 @@ class InitSponge:
 
         return sponge_field
 
-    class IsentropicInflow:
-        r"""Fluid state initializer for isentropic inflow""
 
-        Creates a flow solution from mach, total pressure and total temperature
-        Optionally smooths the solution near walls to account for noslip, isothermal
-        boundary conditions.
+class IsentropicInflow:
+    r"""Fluid state initializer for isentropic inflow""
 
-        Optionally takes a pressure function that allows the total pressure
-        to vary with time
+    Creates a flow solution from mach, total pressure and total temperature
+    Optionally smooths the solution near walls to account for noslip, isothermal
+    boundary conditions.
 
-        .. automethod:: __init__
-        .. automethod:: __call__
-        """
+    Optionally takes a pressure function that allows the total pressure
+    to vary with time
 
-        def __init__(self, *, dim, T0, P0, mass_frac, mach, gamma,
-                     temp_wall, temp_sigma=0., vel_sigma=0.,
-                     smooth_x0=-1000., smooth_x1=1000.,
-                     smooth_y0=-1000., smooth_y1=1000.,
-                     smooth_z0=-1000., smooth_z1=1000.,
-                     smooth_r0=None, smooth_r1=1000.,
-                     nspecies=0, normal_dir=None, p_fun=None):
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
 
-            self._P0 = P0
-            self._T0 = T0
-            self._dim = dim
-            self._mach = mach
-            self._gamma = gamma
-            self._nspecies = nspecies
+    def __init__(self, *, dim, T0, P0, mass_frac, mach, gamma,
+                 temp_wall, temp_sigma=0., vel_sigma=0.,
+                 smooth_x0=-1000., smooth_x1=1000.,
+                 smooth_y0=-1000., smooth_y1=1000.,
+                 smooth_z0=-1000., smooth_z1=1000.,
+                 smooth_r0=None, smooth_r1=1000.,
+                 nspecies=0, normal_dir=None, p_fun=None):
 
-            # wall smoothing parameters
-            self._temp_wall = temp_wall
-            self._temp_sigma = temp_sigma
-            self._vel_sigma = vel_sigma
+        self._P0 = P0
+        self._T0 = T0
+        self._dim = dim
+        self._mach = mach
+        self._gamma = gamma
+        self._nspecies = nspecies
 
-            # wall edges for smoothing
-            self._x0 = smooth_x0
-            self._y0 = smooth_y0
-            self._z0 = smooth_z0
-            self._x1 = smooth_x1
-            self._y1 = smooth_y1
-            self._z1 = smooth_z1
-            self._r1 = smooth_r1
+        # wall smoothing parameters
+        self._temp_wall = temp_wall
+        self._temp_sigma = temp_sigma
+        self._vel_sigma = vel_sigma
 
-            if smooth_r0 is None:
-                self._r0 = np.zeros(shape=(dim,))
-                self._r0[0] = 1
+        # wall edges for smoothing
+        self._x0 = smooth_x0
+        self._y0 = smooth_y0
+        self._z0 = smooth_z0
+        self._x1 = smooth_x1
+        self._y1 = smooth_y1
+        self._z1 = smooth_z1
+        self._r1 = smooth_r1
 
-            if normal_dir is None:
-                self._normal_dir = np.zeros(shape=(dim,))
-                self._normal_dir[0] = 1
+        if smooth_r0 is None:
+            self._r0 = np.zeros(shape=(dim,))
+            self._r0[0] = 1
 
-            if self._normal_dir.shape != (dim,):
-                raise ValueError(f"Expected {dim}-dimensional normal_dir")
+        if normal_dir is None:
+            self._normal_dir = np.zeros(shape=(dim,))
+            self._normal_dir[0] = 1
 
-            if self._r0.shape != (dim,):
-                raise ValueError(f"Expected {dim}-dimensional r0")
+        if self._normal_dir.shape != (dim,):
+            raise ValueError(f"Expected {dim}-dimensional normal_dir")
 
-            if mass_frac is None:
-                mass_frac = np.zeros(shape=(nspecies,))
-            if p_fun is not None:
-                self._p_fun = p_fun
+        if self._r0.shape != (dim,):
+            raise ValueError(f"Expected {dim}-dimensional r0")
 
-            self._mass_frac = mass_frac
+        if mass_frac is None:
+            mass_frac = np.zeros(shape=(nspecies,))
+        if p_fun is not None:
+            self._p_fun = p_fun
 
-        def __call__(self,  x_vec, gas_model, *, time=0, **kwargs):
+        self._mass_frac = mass_frac
 
+    def __call__(self,  x_vec, gas_model, *, time=0, **kwargs):
+
+        actx = x_vec[0].array_context
+        zeros = 0*x_vec[0]
+        ones = zeros + 1.0
+
+        if self._p_fun is not None:
+            P0 = self._p_fun(time)
+        else:
+            P0 = self._P0
+        T0 = self._T0
+
+        mach = ones*self._mach
+        pressure = getIsentropicPressure(
+            mach=mach,
+            P0=P0,
+            gamma=self._gamma
+        )
+        temperature = getIsentropicTemperature(
+            mach=mach,
+            T0=T0,
+            gamma=self._gamma
+        )
+
+        def smoothing_func(dim, x_vec, sigma):
             actx = x_vec[0].array_context
-            zeros = 0*x_vec[0]
-            ones = zeros + 1.0
+            radial_pos = actx.np.sqrt(
+                np.dot(x_vec - self._r0, x_vec - self._r0))
 
-            if self._p_fun is not None:
-                P0 = self._p_fun(time)
+            smoothing_left = smooth_step(actx, sigma*(x_vec[0]-self._x0))
+            smoothing_right = smooth_step(actx, -sigma*(x_vec[0]-self._x1))
+            smoothing_bottom = smooth_step(actx, sigma*(x_vec[1]-self._y0))
+            smoothing_top = smooth_step(actx, -sigma*(x_vec[1]-self._y1))
+            smoothing_radius = smooth_step(actx, sigma*(
+                actx.np.abs(radial_pos - self._r1)))
+            if self._dim == 3:
+                smoothing_fore = smooth_step(actx, sigma*(x_vec[2]-self._z0))
+                smoothing_aft = smooth_step(actx, -sigma*(x_vec[2]-self._z1))
             else:
-                P0 = self._P0
-            T0 = self._T0
+                smoothing_fore = ones
+                smoothing_aft = ones
 
-            mach = ones*self._mach
-            pressure = getIsentropicPressure(
-                mach=mach,
-                P0=P0,
-                gamma=self._gamma
-            )
-            temperature = getIsentropicTemperature(
-                mach=mach,
-                T0=T0,
-                gamma=self._gamma
-            )
+            return (smoothing_left*smoothing_right*smoothing_bottom *
+                    smoothing_top*smoothing_aft*smoothing_fore *
+                    smoothing_radius)
 
-            def smoothing_func(dim, x_vec, sigma):
-                actx = x_vec[0].array_context
-                radial_pos = actx.np.sqrt(
-                    np.dot(x_vec - self._r0, x_vec - self._r0))
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+        wall_temperature = self._temp_wall
+        if self._temp_sigma > 0:
+            sigma = self._temp_sigma
 
-                smoothing_left = smooth_step(actx, sigma*(x_vec[0]-self._x0))
-                smoothing_right = smooth_step(actx, -sigma*(x_vec[0]-self._x1))
-                smoothing_bottom = smooth_step(actx, sigma*(x_vec[1]-self._y0))
-                smoothing_top = smooth_step(actx, -sigma*(x_vec[1]-self._y1))
-                smoothing_radius = smooth_step(actx, sigma*(
-                    actx.np.abs(radial_pos - self._r1)))
-                if self._dim == 3:
-                    smoothing_fore = smooth_step(actx, sigma*(x_vec[2]-self._z0))
-                    smoothing_aft = smooth_step(actx, -sigma*(x_vec[2]-self._z1))
-                else:
-                    smoothing_fore = ones
-                    smoothing_aft = ones
+            sfunc = smoothing_func(self._dim, x_vec, sigma)
+            temperature = (wall_temperature +
+                (temperature - wall_temperature)*sfunc)
 
-                return (smoothing_left*smoothing_right*smoothing_bottom *
-                        smoothing_top*smoothing_aft*smoothing_fore *
-                        smoothing_radius)
+        y = ones*self._mass_frac
+        mass = gas_model.eos.get_density(pressure=pressure,
+                                         temperature=temperature,
+                                         species_mass_fractions=y)
+        energy = mass*gas_model.eos.get_internal_energy(temperature=temperature,
+                                                        species_mass_fractions=y)
 
-            # modify the temperature in the near wall region to match the
-            # isothermal boundaries
-            wall_temperature = self._temp_wall
-            if self._temp_sigma > 0:
-                sigma = self._temp_sigma
+        velocity = np.zeros(self._dim, dtype=object)
+        mom = mass*velocity
+        cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                            energy=energy, species_mass=mass*y)
 
-                sfunc = smoothing_func(self._dim, x_vec, sigma)
-                temperature = (wall_temperature +
-                    (temperature - wall_temperature)*sfunc)
+        vmag = mach*gas_model.eos.sound_speed(cv, temperature)
 
-            y = ones*self._mass_frac
-            mass = gas_model.eos.get_density(pressure=pressure,
-                                             temperature=temperature,
-                                             species_mass_fractions=y)
-            energy = mass*gas_model.eos.get_internal_energy(temperature=temperature,
-                                                            species_mass_fractions=y)
+        # modify the velocity in the near-wall region to have a smooth profile
+        # this approximates the BL velocity profile
+        if self._vel_sigma > 0:
+            sigma = self._vel_sigma
+            sfunc = smoothing_func(self._dim, x_vec, sigma)
+            vmag = (vmag*sfunc)
 
-            velocity = np.zeros(self._dim, dtype=object)
-            mom = mass*velocity
-            cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
-                                energy=energy, species_mass=mass*y)
+        velocity = vmag*self._normal_dir
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
 
-            vmag = mach*gas_model.eos.sound_speed(cv, temperature)
+        cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                            energy=energy, species_mass=mass*y)
 
-            # modify the velocity in the near-wall region to have a smooth profile
-            # this approximates the BL velocity profile
-            if self._vel_sigma > 0:
-                sigma = self._vel_sigma
-                sfunc = smoothing_func(self._dim, x_vec, sigma)
-                vmag = (vmag*sfunc)
-
-            velocity = vmag*self._normal_dir
-            mom = mass*velocity
-            energy = (energy + np.dot(mom, mom)/(2.0*mass))
-
-            cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
-                                energy=energy, species_mass=mass*y)
-
-            av_smu = actx.np.zeros_like(cv.mass)
-            av_sbeta = actx.np.zeros_like(cv.mass)
-            av_skappa = actx.np.zeros_like(cv.mass)
-            av_sd = actx.np.zeros_like(cv.mass)
-            fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
-                                           temperature_seed=temperature,
-                                           smoothness_mu=av_smu,
-                                           smoothness_beta=av_sbeta,
-                                           smoothness_kappa=av_skappa,
-                                           smoothness_d=av_sd,
-                                           limiter_func=None,
-                                           limiter_dd=None)
-            return fluid_state
+        av_smu = actx.np.zeros_like(cv.mass)
+        av_sbeta = actx.np.zeros_like(cv.mass)
+        av_skappa = actx.np.zeros_like(cv.mass)
+        av_sd = actx.np.zeros_like(cv.mass)
+        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
+                                       temperature_seed=temperature,
+                                       smoothness_mu=av_smu,
+                                       smoothness_beta=av_sbeta,
+                                       smoothness_kappa=av_skappa,
+                                       smoothness_d=av_sd,
+                                       limiter_func=None,
+                                       limiter_dd=None)
+        return fluid_state
