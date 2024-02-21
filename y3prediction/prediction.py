@@ -4203,6 +4203,10 @@ def main(actx_class,
     class IsentropicInflow:
         def __init__(self, *, dim, T0, P0, mass_frac, mach, gamma,
                      temp_wall, temp_sigma=0., vel_sigma=0.,
+                     smooth_x0=-1000., smooth_x1=1000.,
+                     smooth_y0=-1000., smooth_y1=1000.,
+                     smooth_z0=-1000., smooth_z1=1000.,
+                     smooth_r0=None, smooth_r1=1000.,
                      nspecies=0, normal_dir=None, p_fun=None):
 
             self._P0 = P0
@@ -4210,14 +4214,36 @@ def main(actx_class,
             self._dim = dim
             self._mach = mach
             self._gamma = gamma
+            self._nspecies = nspecies
+
+            # wall smoothing parameters
             self._temp_wall = temp_wall
             self._temp_sigma = temp_sigma
             self._vel_sigma = vel_sigma
-            self._nspecies = nspecies
+
+            # wall edges for smoothing
+            self._x0 = smooth_x0
+            self._y0 = smooth_y0
+            self._z0 = smooth_z0
+            self._x1 = smooth_x1
+            self._y1 = smooth_y1
+            self._z1 = smooth_z1
+            self._r1 = smooth_r1
+
+            if smooth_r0 is None:
+                self._r0 = np.zeros(shape=(dim,))
+                self._r0[0] = 1
 
             if normal_dir is None:
-                normal_dir = np.zeros(shape=(dim,))
-                normal_dir[0] = 1
+                self._normal_dir = np.zeros(shape=(dim,))
+                self._normal_dir[0] = 1
+
+            if self._normal_dir.shape != (dim,):
+                raise ValueError(f"Expected {dim}-dimensional normal_dir")
+
+            if self._r0.shape != (dim,):
+                raise ValueError(f"Expected {dim}-dimensional r0")
+
             if mass_frac is None:
                 mass_frac = np.zeros(shape=(nspecies,))
             if p_fun is not None:
@@ -4227,16 +4253,7 @@ def main(actx_class,
 
         def __call__(self,  x_vec, gas_model, *, time=0, **kwargs):
 
-            xpos = x_vec[0]
-            ypos = x_vec[1]
-            """
-            # update this for 3d
-            if self._dim == 3:
-                zpos = x_vec[2]
-            """
-            ytop = 0*x_vec[0]
-            actx = xpos.array_context
-            zeros = 0*xpos
+            zeros = 0*x_vec[0]
             ones = zeros + 1.0
 
             if self._p_fun is not None:
@@ -4257,26 +4274,39 @@ def main(actx_class,
                 gamma=gamma
             )
 
-            from y3prediction.utils import smooth_step
+            def smoothing_func(dim, x_vec, sigma):
+                from y3prediction.utils import smooth_step
+
+                actx = x_vec[0].array_context
+                radial_pos = actx.np.sqrt(
+                    np.dot(x_vec - self._r0, x_vec - self._r0))
+
+                smoothing_left = smooth_step(actx, sigma*(x_vec[0]-self._x0))
+                smoothing_right = smooth_step(actx, -sigma*(x_vec[0]-self._x1))
+                smoothing_bottom = smooth_step(actx, sigma*(x_vec[1]-self._y0))
+                smoothing_top = smooth_step(actx, -sigma*(x_vec[1]-self._y1))
+                smoothing_radius = smooth_step(actx, sigma*(
+                    actx.np.abs(radial_pos - self._r1)))
+                if self._dim == 3:
+                    smoothing_fore = smooth_step(actx, sigma*(x_vec[2]-self._z0))
+                    smoothing_aft = smooth_step(actx, -sigma*(x_vec[2]-self._z1))
+                else:
+                    smoothing_fore = ones
+                    smoothing_aft = ones
+
+                return (smoothing_left*smoothing_right*smoothing_bottom *
+                        smoothing_top*smoothing_aft*smoothing_fore *
+                        smoothing_radius)
 
             # modify the temperature in the near wall region to match the
             # isothermal boundaries
             wall_temperature = self._temp_wall
-            ytop = 0.013
-            ypos = x_vec[1]
             if self._temp_sigma > 0:
                 sigma = self._temp_sigma
-                smoothing_top = smooth_step(actx, -sigma*(ypos-ytop))
-                """
-                z0 = -0.0175
-                z1 = 0.0175
-                if self._dim == 3:
-                    smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
-                    smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
-                """
 
+                sfunc = smoothing_func(dim, x_vec, sigma)
                 temperature = (wall_temperature +
-                    (temperature - wall_temperature)*smoothing_top)
+                    (temperature - wall_temperature)*sfunc)
 
             y = ones*self._mass_frac
             mass = gas_model.eos.get_density(pressure=pressure,
@@ -4290,22 +4320,16 @@ def main(actx_class,
             cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
                                 energy=energy, species_mass=mass*y)
 
-            velocity[0] = mach*gas_model.eos.sound_speed(cv, temperature)
+            vmag = mach*gas_model.eos.sound_speed(cv, temperature)
 
             # modify the velocity in the near-wall region to have a smooth profile
             # this approximates the BL velocity profile
             if self._vel_sigma > 0:
                 sigma = self._vel_sigma
-                smoothing_top = smooth_step(actx, -sigma*(ypos-ytop))
-                """
-                smoothing_fore = ones
-                smoothing_aft = ones
-                if self._dim == 3:
-                    smoothing_fore = smooth_step(actx, sigma*(zpos-z0))
-                    smoothing_aft = smooth_step(actx, -sigma*(zpos-z1))
-                """
-                velocity[0] = (velocity[0]*smoothing_top)
+                sfunc = smoothing_func(dim, x_vec, sigma)
+                vmag = (vmag*sfunc)
 
+            velocity = vmag*self._normal_dir
             mom = mass*velocity
             energy = (energy + np.dot(mom, mom)/(2.0*mass))
 
@@ -4326,9 +4350,16 @@ def main(actx_class,
                                            limiter_dd=None)
             return fluid_state
 
+    normal_dir = np.zeros(shape=(dim,))
+    normal_dir[0] = 1
+
     inflow_state = IsentropicInflow(
         dim=dim,
         temp_wall=temp_wall,
+        temp_sigma=temp_sigma,
+        vel_sigma=vel_sigma,
+        smooth_y0=-0.01,
+        smooth_y1=0.01,
         gamma=gamma,
         nspecies=nspecies,
         mass_frac=y,
