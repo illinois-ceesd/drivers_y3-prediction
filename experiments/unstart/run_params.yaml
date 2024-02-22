@@ -96,13 +96,21 @@ mass_fraction_o2: 0.23
 ######################
 outflow_pressure: 100
 use_outflow_boundary: "pressure_outflow"
-use_inflow_boundary: "prescribed"
+#use_inflow_boundary: "prescribed"
+use_inflow_boundary: "isentropic_pressure_ramp"
+inlet_mach: 0.2955
+total_temp_inflow: 2450
+ramp_beginP: 117.8e1
+ramp_endP: 117.8e3
+ramp_time_start: 7.5e-4
+ramp_time_interval: 5.e-4
+
 use_injection_boundary: "none"
 use_upstream_injection_boundary: "none"
 use_flow_boundary: "none"
 use_wall_boundary: "isothermal_noslip"
 use_interface_boundary: "none"
-use_axis_boundary: "adiabatic_slip"
+use_symmetry_boundary: "adiabatic_slip"
 
 ####################
 # status bounds
