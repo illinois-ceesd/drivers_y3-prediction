@@ -7,7 +7,8 @@ use_tensor_product_elements: True
 #use_tensor_product_elements: False
 use_1d_part: True
 #nviz: 100
-nviz: 1000
+nviz: 500
+#nviz: 1000
 #nviz: 1000
 nrestart: 1000
 nhealth: 1
@@ -15,7 +16,8 @@ nstatus: 1
 viz_level: 2
 viz_interval_type: 0
 constant_cfl: 0
-current_dt: 1.0e-8
+#current_dt: 1.0e-8
+current_dt: 2.0e-8
 t_final: 1e-2
 
 ##############
