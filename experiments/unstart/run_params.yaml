@@ -5,9 +5,11 @@ mesh_filename: data_quads/actii_2d.msh
 use_tensor_product_elements: True
 #mesh_filename: data/actii_2d.msh
 #use_tensor_product_elements: False
+use_axisymmetric: True
 use_1d_part: True
-#nviz: 100
-nviz: 500
+#nviz: 1
+nviz: 100
+#nviz: 500
 #nviz: 1000
 #nviz: 1000
 nrestart: 1000
@@ -16,8 +18,9 @@ nstatus: 1
 viz_level: 2
 viz_interval_type: 0
 constant_cfl: 0
-#current_dt: 1.0e-8
-current_dt: 2.0e-8
+current_dt: 1.0e-8
+#current_dt: 2.0e-8
+#current_dt: 5.0e-8
 t_final: 1e-2
 
 ##############
@@ -78,10 +81,8 @@ shock_loc_x: -.315
 #temp_sigma: 750
 vel_sigma: 500
 temp_sigma: 500
-#sponge_sigma: 25
-sponge_sigma: 0
-sponge_x0: 0.89
-sponge_thickness: 0.04
+sponge_sigma: 25
+#sponge_sigma: 0
 
 #total_pres_inflow: 117.8e3
 #total_pres_inflow: 117.8e2
@@ -96,8 +97,9 @@ mass_fraction_o2: 0.23
 ######################
 outflow_pressure: 100
 use_outflow_boundary: "pressure_outflow"
-#use_inflow_boundary: "prescribed"
-use_inflow_boundary: "isentropic_pressure_ramp"
+
+use_inflow_boundary: "prescribed"
+#use_inflow_boundary: "isentropic_pressure_ramp"
 inlet_mach: 0.2955
 total_temp_inflow: 2450
 ramp_beginP: 117.8e1

@@ -68,23 +68,50 @@ Printf("spillsize = %f", spillsize);
 Printf("boundrationozzle = %f", boundrationozzle);
 Printf("boundratiomodel = %f", boundratiomodel);
 
-chamber_wall_surfaces[] = {6,7,9,10};
-chamber_outflow_surfaces[] = {101};
+// Delete edges in the positive y plane and rotate about z so that the model so our
+// symmetry axis is along y.
+//
+Recursive Delete{ Line{8:20, 30:34}; }
 
-nozzle_outside_surfaces[] = {5,11};
-nozzle_end_surfaces[] = {3, 4, 12, 13};
-nozzle_inside_surfaces[] = {14:19, 21:24, 1:2};
-nozzle_inflow_surfaces[] = {100};
+// remove the little cut at the end of the nozzle
+Delete { Line{3:5}; }
+Delete { Point{4}; }
+Translate {1.0, 0, 0} { Point{5}; }
+Line(90) = {5, 3};
+Line(91) = {6, 5};
+
+// make centerline
+Point(100) = {-324., 0., 0., 1.};
+Point(101) = {766., 0., 0., 1.};
+
+// inlet/outlet/symmetry edges
+Line(100) = {21, 100};
+Line(101) = {8, 101};
+Line(102) = {100, 101};
+
+Curve Loop(1) = {100, 102, 101, 7, 6, 91, 90, 2, 1, 24:21};
+Curve Loop(2) = {25:29};
+Plane Surface(1) = {1, 2};
+
+Rotate{{0, 0, 1.}, {0., 0., 0.}, Pi/2} { Surface{:}; }
+
+chamber_wall_surfaces[] = {4,5};
+chamber_outflow_surfaces[] = {3};
+
+nozzle_outside_surfaces[] = {6};
+nozzle_end_surfaces[] = {7};
+nozzle_inside_surfaces[] = {8:13};
+nozzle_inflow_surfaces[] = {1};
 nozzle_wall_surfaces[] = {
   nozzle_outside_surfaces[],
   nozzle_end_surfaces[],
   nozzle_inside_surfaces[]
 };
 
-scramjet_inlet_surfaces[] = {31, 32, 29, 25};
-scramjet_inside_surfaces[] = {26,30};
-scramjet_outlet_surfaces[] = {27, 34};
-scramjet_outside_surfaces[] = {28,33};
+scramjet_inlet_surfaces[] = {14, 18};
+scramjet_inside_surfaces[] = {15};
+scramjet_outlet_surfaces[] = {16};
+scramjet_outside_surfaces[] = {17};
 scramjet_wall_surfaces[] = {
   scramjet_inlet_surfaces[],
   scramjet_inside_surfaces[],
@@ -92,23 +119,10 @@ scramjet_wall_surfaces[] = {
   scramjet_outside_surfaces[]
 };
 
-// make centerline
-Point(100) = {-324., 0., 0., 1.};
-Point(101) = {766., 0., 0., 1.};
-
-// inlet/outlet/symmetry edges
-Line(100) = {20, 100};
-Line(101) = {9, 101};
-Line(102) = {100, 101};
-
-Curve Loop(1) = {100, 102, 101, 9:19};
-Curve Loop(2) = {30:34};
-Plane Surface(1) = {1, 2};
-
-Physical Surface("fluid") = {-1};
-Physical Curve("inflow") = {100 };
-Physical Curve("outflow") = {101};
-Physical Curve("axis") = {102};
+Physical Surface("fluid") = {1};
+Physical Curve("inflow") = {1};
+Physical Curve("outflow") = {3};
+Physical Curve("symmetry") = {2};
 Physical Curve("isothermal_wall") = {
   chamber_wall_surfaces[],
   nozzle_wall_surfaces[],
@@ -133,12 +147,12 @@ spill_radius = 100;
 
 //  background mesh size in the nozzle
 Field[30] = Box;
-Field[30].XMin = nozzle_begin;
-Field[30].XMax = nozzle_end;
+Field[30].YMin = nozzle_begin;
+Field[30].YMax = nozzle_end;
 //Field[30].XMin = -1000000;
 //Field[30].XMax = 1000000;
-Field[30].YMin = -nozzle_radius;
-Field[30].YMax = nozzle_radius;
+Field[30].XMin = -nozzle_radius;
+Field[30].XMax = nozzle_radius;
 //Field[30].YMin = -100000;
 //Field[30].YMax = 100000;
 Field[30].ZMin = -100000;
@@ -162,10 +176,10 @@ Field[32].DistMax = 200;
 
 //  background mesh size in the nozzle throat
 Field[33] = Box;
-Field[33].XMin = throat_begin;
-Field[33].XMax = throat_end;
-Field[33].YMin = -nozzle_radius;
-Field[33].YMax = nozzle_radius;
+Field[33].YMin = throat_begin;
+Field[33].YMax = throat_end;
+Field[33].XMin = -nozzle_radius;
+Field[33].XMax = nozzle_radius;
 Field[33].ZMin = -100000;
 Field[33].ZMax = 100000;
 Field[33].VIn = throatsize;
@@ -175,7 +189,7 @@ Field[33].Thickness = 25;
 // Inside and end surfaces of nozzle
 Field[34] = Distance;
 Field[34].Sampling = 1000;
-Field[34].CurvesList = {15, 16, 17, 18, 19};
+Field[34].CurvesList = {9:12};
 //Field[34].CurvesList = {16};
 Field[35] = Threshold;
 Field[35].InField = 34;
@@ -186,10 +200,10 @@ Field[35].DistMax = 200;
 
 //  background mesh size in the scramjet model (downstream of the nozzle)
 Field[40] = Box;
-Field[40].XMin = model_begin;
-Field[40].XMax = model_end;
-Field[40].YMin = -model_radius;
-Field[40].YMax = model_radius;
+Field[40].YMin = model_begin;
+Field[40].YMax = model_end;
+Field[40].XMin = -model_radius;
+Field[40].XMax = model_radius;
 Field[40].ZMin = -100000;
 Field[40].ZMax = 100000;
 Field[40].VIn = modelsize;
@@ -228,7 +242,7 @@ Field[44].StopAtDistMax = 1;
 // scramjet model tip meshing
 Field[45] = Distance;
 //Field[45].Sampling = 1000;
-Field[45].PointsList = {32};
+Field[45].PointsList = {15};
 Field[46] = Threshold;
 Field[46].InField = 45;
 Field[46].SizeMin = modelsize/boundratiomodel/4;
@@ -250,10 +264,10 @@ Field[48].DistMax = 250;
 
 //  background mesh size in the exhaust plume (downstream of the model)
 Field[50] = Box;
-Field[50].XMin = model_end;
-Field[50].XMax = 10000;
-Field[50].YMin = -plume_radius;
-Field[50].YMax = plume_radius;
+Field[50].YMin = model_end;
+Field[50].YMax = 10000;
+Field[50].XMin = -plume_radius;
+Field[50].XMax = plume_radius;
 Field[50].ZMin = -100000;
 Field[50].ZMax = 100000;
 Field[50].VIn = plumesize;
@@ -261,10 +275,10 @@ Field[50].VOut = bigsize;
 Field[50].Thickness = 100;
 
 Field[60] = Box;
-Field[60].XMin = spill_begin;
-Field[60].XMax = spill_end;
-Field[60].YMin = -spill_radius;
-Field[60].YMax = spill_radius;
+Field[60].YMin = spill_begin;
+Field[60].YMax = spill_end;
+Field[60].XMin = -spill_radius;
+Field[60].XMax = spill_radius;
 Field[60].ZMin = -100000;
 Field[60].ZMax = 100000;
 Field[60].VIn = spillsize;

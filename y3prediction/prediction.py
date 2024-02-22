@@ -1507,8 +1507,8 @@ def main(actx_class,
         # init params
         disc_location = np.zeros(shape=(dim,))
         fuel_location = np.zeros(shape=(dim,))
-        disc_location[0] = shock_loc_x
-        fuel_location[0] = 10000.
+        disc_location[1] = shock_loc_x
+        fuel_location[1] = 10000.
         plane_normal = np.zeros(shape=(dim,))
 
         # parameters to adjust the shape of the initialization
@@ -1574,9 +1574,9 @@ def main(actx_class,
 
             sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
-        vel_inflow[0] = inlet_mach*sos
+        vel_inflow[1] = inlet_mach*sos
         plane_normal = np.zeros(shape=(dim,))
-        theta = mesh_angle/180.*np.pi
+        theta = np.pi/2.
         plane_normal[0] = np.cos(theta)
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
@@ -1588,7 +1588,7 @@ def main(actx_class,
             print(f"\tinlet temperature {temp_inflow}")
             print(f"\tinlet pressure {pres_inflow}")
             print(f"\tinlet rho {rho_inflow}")
-            print(f"\tinlet velocity {vel_inflow[0]}")
+            print(f"\tinlet velocity {vel_inflow[1]}")
             #print(f"final inlet pressure {pres_inflow_final}")
 
         bulk_init = PlanarDiscontinuityMulti(
@@ -4146,6 +4146,7 @@ def main(actx_class,
     if use_av > 0:
         target_bndry_mapping = bndry_mapping
         target_bndry_mapping["prescribed"] = DummyBoundary()
+        target_bndry_mapping["isentropic_pressure_ramp"] = DummyBoundary()
 
         target_boundaries = {}
         target_boundaries = assign_fluid_boundaries(
@@ -4590,24 +4591,27 @@ def main(actx_class,
         inlet_sponge_thickness = 0.010
         outlet_sponge_x0 = 0.666
         outlet_sponge_thickness = 0.100
-        top_sponge_y0 = 0.1
+        top_sponge_x0 = 0.1
         top_sponge_thickness = 0.100
 
+        """
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
-                                       direction=-1.0)
+                                       direction=-2)
+        """
         sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
                                         thickness=outlet_sponge_thickness,
-                                        amplitude=sponge_amp)
-        sponge_init_top = InitSponge(x0=top_sponge_y0,
+                                        amplitude=sponge_amp,
+                                        direction=2)
+        sponge_init_top = InitSponge(x0=top_sponge_x0,
                                      thickness=top_sponge_thickness,
                                      amplitude=sponge_amp,
-                                     direction=2.0)
+                                     direction=1.0)
 
         def _sponge_sigma(sponge_field, x_vec):
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
-            sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            #sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
