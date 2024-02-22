@@ -42,6 +42,8 @@ from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE, DD_VOLUME_
 from grudge.op import nodal_max, nodal_min
 from grudge.trace_pair import inter_volume_trace_pairs
 from grudge.discretization import filter_part_boundaries
+from grudge.trace_pair import TracePair
+from grudge.geometry.metrics import normal as normal_vector
 from logpyle import IntervalTimer, set_dt
 from mirgecom.logging_quantities import (
     initialize_logmgr,
@@ -71,7 +73,11 @@ from mirgecom.viscous import (viscous_facial_flux_central,
                               viscous_facial_flux_harmonic)
 from grudge.shortcuts import compiled_lsrk45_step
 
-from mirgecom.fluid import make_conserved
+from mirgecom.fluid import (
+    make_conserved,
+    velocity_gradient,
+    species_mass_fraction_gradient
+)
 from mirgecom.limiter import (bound_preserving_limiter_lv,
                               bound_preserving_limiter)
 from mirgecom.steppers import advance_state
@@ -89,7 +95,7 @@ from mirgecom.diffusion import (
     DirichletDiffusionBoundary,
     NeumannDiffusionBoundary
 )
-#from mirgecom.initializers import (Uniform, PlanarDiscontinuity)
+from mirgecom.initializers import Uniform
 from mirgecom.eos import (
     IdealSingleGas, PyrometheusMixture,
     MixtureDependentVars, GasDependentVars
@@ -102,7 +108,8 @@ from mirgecom.transport import (SimpleTransport,
 from mirgecom.gas_model import (
     GasModel,
     make_fluid_state,
-    make_operator_fluid_states
+    make_operator_fluid_states,
+    project_fluid_state
 )
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
     add_interface_boundaries_no_grad,
@@ -116,6 +123,7 @@ from mirgecom.navierstokes import (
 from mirgecom.artificial_viscosity import smoothness_indicator
 # driver specific utilties
 from y3prediction.utils import (
+    IsentropicInflow,
     getIsentropicPressure,
     getIsentropicTemperature,
     getMachFromAreaRatio
@@ -321,6 +329,30 @@ class _UpdateCoupledBoundariesCommTag:
 
 
 class _FluidOpStatesCommTag:
+    pass
+
+
+class _MyGradTag1:
+    pass
+
+
+class _MyGradTag2:
+    pass
+
+
+class _MyGradTag3:
+    pass
+
+
+class _MyGradTag4:
+    pass
+
+
+class _MyGradTag5:
+    pass
+
+
+class _MyGradTag6:
     pass
 
 
@@ -567,10 +599,18 @@ def main(actx_class,
         "use_wall_boundary", input_data, "isothermal_noslip")
     use_interface_boundary = configurate(
         "use_interface_boundary", input_data, "none")
-    use_axis_boundary = configurate(
-        "use_axis_boundary", input_data, "none")
+    use_symmetry_boundary = configurate(
+        "use_symmetry_boundary", input_data, "none")
+    use_slip_wall_boundary = configurate(
+        "use_slip_wall_boundary", input_data, "none")
+    use_noslip_wall_boundary = configurate(
+        "use_noslip_wall_boundary", input_data, "none")
 
     outflow_pressure = configurate("outflow_pressure", input_data, 100.0)
+    ramp_beginP = configurate("ramp_beginP", input_data, 100.0)
+    ramp_endP = configurate("ramp_endP", input_data, 1000.0)
+    ramp_time_start = configurate("ramp_time_start", input_data, 0.0)
+    ramp_time_interval = configurate("ramp_time_interval", input_data, 1.e-4)
 
     # for each tagged boundary surface, what are they assigned to be
     # isothermal wall -> wall when current running simulation support is not needed
@@ -583,7 +623,10 @@ def main(actx_class,
                     "injection": use_injection_boundary,
                     "upstream_injection": use_upstream_injection_boundary,
                     "isothermal_wall": use_wall_boundary,
-                    "axis": use_axis_boundary,
+                    "wall": use_wall_boundary,
+                    "slip_wall": use_slip_wall_boundary,
+                    "noslip_wall": use_noslip_wall_boundary,
+                    "symmetry": use_symmetry_boundary,
                     "wall_interface": use_interface_boundary}
 
     # list of strings that are allowed to defined boundary conditions
@@ -595,7 +638,8 @@ def main(actx_class,
         "adiabatic_slip",
         "pressure_outflow",
         "riemann_outflow",
-        "prescribed"
+        "prescribed",
+        "isentropic_pressure_ramp"
     ]
 
     # boundary sanity check
@@ -629,6 +673,7 @@ def main(actx_class,
     fluid_mu = configurate("mu", input_data, -1.)
 
     # rhs control
+    use_axisymmetric = configurate("use_axisymmetric", input_data, False)
     use_combustion = configurate("use_combustion", input_data, True)
     use_wall = configurate("use_wall", input_data, True)
     use_wall_ox = configurate("use_wall_ox", input_data, True)
@@ -910,6 +955,11 @@ def main(actx_class,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "wedge":
+            print("\tInitializing flow to wedge")
+            print(f"Shock Mach number {mach}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
         elif init_case == "unstart":
             print("\tInitializing flow to unstart")
             print(f"\tInflow stagnation pressure {total_pres_inflow}")
@@ -923,6 +973,7 @@ def main(actx_class,
                 "\t y3prediction"
                 "\t unstart"
                 "\t shock1d"
+                "\t wedge"
             )
         print("#### Simluation initialization data: ####")
 
@@ -1364,19 +1415,6 @@ def main(actx_class,
             gamma2 = (pyro_mech.get_mixture_specific_heat_cp_mass(temperature2, y1) /
                       pyro_mech.get_mixture_specific_heat_cv_mass(temperature2, y1))
 
-            print(f"{error=}")
-            print(f"{pressure1=}")
-            print(f"{temperature1=}")
-            print(f"{rho1=}")
-            print(f"{velocity1=}")
-            print(f"{gamma1=}")
-            print(f"{pressure2=}")
-            print(f"{temperature2=}")
-            print(f"{rho2=}")
-            print(f"{velocity2=}")
-            print(f"{gamma2=}")
-            print(f"{density_ratio=}")
-
         # convert to shock moving frame
         velocity2 = velocity2 - velocity1
         velocity1 = 0.
@@ -1394,6 +1432,13 @@ def main(actx_class,
 
         vel_left = (velocity2 - velocity1)*plane_normal
 
+        pressure1_total = pres_bkrnd*(1 + (gamma-1)/2*mach**2)**(gamma/(gamma-1))
+        temperature1_total = temp_bkrnd*(1 + (gamma-1)/2*mach**2)
+
+        mach2 = vel_left[0]/np.sqrt(gamma2*pressure2/rho2)
+        pressure2_total = pressure2*(1 + (gamma-1)/2*mach2**2)**(gamma/(gamma-1))
+        temperature2_total = temperature2*(1 + (gamma-1)/2*mach2**2)
+
         if rank == 0:
             print("#### Simluation initialization data: ####")
             print(f"\tshock Mach number {mach}")
@@ -1402,11 +1447,17 @@ def main(actx_class,
             print(f"\tpre-shock pressure {pressure1}")
             print(f"\tpre-shock rho {rho1}")
             print(f"\tpre-shock velocity {velocity1}")
+            print(f"\tpre-shock total pressure {pressure1_total}")
+            print(f"\tpre-shock total temperature {temperature1_total}")
+
             print(f"\tpost-shock gamma {gamma2}")
             print(f"\tpost-shock temperature {temperature2}")
             print(f"\tpost-shock pressure {pressure2}")
             print(f"\tpost-shock rho {rho2}")
             print(f"\tpost-shock velocity {velocity2}")
+            print(f"\tpost-shock total pressure {pressure2_total}")
+            print(f"\tpost-shock total temperature {temperature2_total}")
+            print(f"\tpost-shock mach {mach2}")
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -1427,6 +1478,30 @@ def main(actx_class,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
+    elif init_case == "wedge":
+
+        velocity = np.zeros(shape=(dim,))
+        temperature = 300.
+        pressure = 100000.
+        rho = pressure/r/temperature
+        c = np.sqrt(gamma*pressure/rho)
+        velocity[1] = c*mach
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tshock Mach number {mach}")
+            print(f"\ttemperature {temperature}")
+            print(f"\tpressure {pressure}")
+            print(f"\trho {rho}")
+            print(f"\tvelocity {velocity}")
+
+        bulk_init = Uniform(
+            dim=dim,
+            velocity=velocity,
+            pressure=pressure,
+            temperature=temperature
+        )
+
     if init_case == "unstart":
 
         # init params
@@ -1954,6 +2029,27 @@ def main(actx_class,
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
 
                 return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "wedge":
+            if rank == 0:
+                print("Generating mesh from scratch")
+
+            def get_mesh_data():
+                from y3prediction.wedge import get_mesh
+                mesh, tag_to_elements = get_mesh(
+                    dim=dim, size=mesh_size, bl_ratio=bl_ratio,
+                    transfinite=transfinite, use_wall=use_wall,
+                    use_quads=use_tpe, use_gmsh=use_gmsh)()
+
+                volume_to_tags = {"fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
+
+                return mesh, tag_to_elements, volume_to_tags
         else:
             if rank == 0:
                 print(f"Reading mesh from {mesh_filename}")
@@ -2446,12 +2542,6 @@ def main(actx_class,
         pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
                                                   temperature=temperature_update_rho)
 
-
-
-
-
-
-
         # 2.0 limit the species mass fractions
         theta_spec = None
         if nspecies > 0:
@@ -2521,15 +2611,12 @@ def main(actx_class,
                                         momentum=mom_lim,
                                         species_mass=mass_lim*spec_lim)
             """
-            cv_update_y = make_conserved(dim=dim, mass=cv_update_rho.mass, energy=cv_update_rho.energy,
-                                        momentum=cv_update_rho.momentum,
-                                        species_mass=cv_update_rho.mass*spec_lim)
+            cv_update_y = make_conserved(dim=dim, mass=cv_update_rho.mass,
+                                         energy=cv_update_rho.energy,
+                                         momentum=cv_update_rho.momentum,
+                                         species_mass=cv_update_rho.mass*spec_lim)
         else:
             cv_update_y = cv_update_rho
-
-
-
-
 
         """
         # 2.0 limit the species mass fractions
@@ -2554,7 +2641,6 @@ def main(actx_class,
             spec_lim = spec_lim/aux
 
             """
-
 
         # 3.0 find the average element cv and pressure
         cv_updated = cv_update_y
@@ -2583,8 +2669,6 @@ def main(actx_class,
                                                   temperature=temperature_updated_test2)
                                                   """
 
-
-
         elem_avg_cv = _element_average_cv(cv_updated, dd)
         #
         elem_avg_temp = gas_model.eos.temperature(
@@ -2603,7 +2687,7 @@ def main(actx_class,
         )
         """
 
-        # use an entropy function to keep pressure positive and entropy 
+        # use an entropy function to keep pressure positive and entropy
         # above some minimum value
         gamma = gas_model.eos.gamma(cv_updated, temperature_updated)
         smin = 10
@@ -2615,7 +2699,6 @@ def main(actx_class,
 
         _theta = actx.np.maximum(0.,
             actx.np.where(actx.np.less(theta_smin_i, theta_savg),
-            #(mmin - theta_s_i)/(elem_avg_pres - math.exp(smin)*elem_avg_cv.mass**gamma - theta_s_i + 1.e-12))
                           (mmin - theta_smin_i)/(theta_savg - theta_smin_i),
                           0.)
         )
@@ -2671,7 +2754,6 @@ def main(actx_class,
         cv_updated2 = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                      momentum=mom_lim,
                                      species_mass=spec_lim)
-                                     #species_mass=mass_lim*cv_updated.species_mass_fractions)
 
         # we need a reasonable guess for temperature, use the element
         # average when the incoming temperature is negative
@@ -2754,19 +2836,17 @@ def main(actx_class,
             data = actx.to_numpy(cv.energy)
             print(f"energy \n {data[0][index]}")
 
-            internal_energy = gas_model.eos.get_internal_energy(temperature,
-                                                                cv.species_mass_fractions)
+            internal_energy = gas_model.eos.get_internal_energy(
+                temperature, cv.species_mass_fractions)
             data = actx.to_numpy(internal_energy)
             print(f"internal_energy \n {data[0][index]}")
-            enthalpy = gas_model.eos.get_enthalpy(temperature, cv.species_mass_fractions)
+            enthalpy = gas_model.eos.get_enthalpy(temperature,
+                                                  cv.species_mass_fractions)
             data = actx.to_numpy(enthalpy)
             print(f"enthalpy \n {data[0][index]}")
             heat_capacity_cv = gas_model.eos.heat_capacity_cv(cv, temperature)
             data = actx.to_numpy(heat_capacity_cv)
             print(f"heat_capacity_cv \n {data[0][index]}")
-
-
-
 
             for i in range(dim):
                 data = actx.to_numpy(cv.momentum)
@@ -2809,30 +2889,6 @@ def main(actx_class,
             print(f"pressure_update_rho \n {data[0][index]}")
             data = actx.to_numpy(temperature_update_rho)
             print(f"temperature_update_rho \n {data[0][index]}")
-
-
-            """
-            data = actx.to_numpy(pressure_updated_test1)
-            print(f"pressure_updated_test1 \n {data[0][index]}")
-            data = actx.to_numpy(pressure_updated_test2)
-            print(f"pressure_updated_test2 \n {data[0][index]}")
-
-            data = actx.to_numpy(temperature_updated_test1)
-            print(f"temperature_updated_test1 \n {data[0][index]}")
-
-            data = actx.to_numpy(temp_resid_updated1)
-            print(f"temperature_resid_updated1 \n {data[0][index]}")
-
-            data = actx.to_numpy(temperature_updated_test2)
-            print(f"temperature_updated_test2 \n {data[0][index]}")
-
-            data = actx.to_numpy(temp_resid_updated2)
-            print(f"temperature_resid_updated2 \n {data[0][index]}")
-            """
-
-
-            #data = actx.to_numpy(temp_resid_updated)
-            #print(f"temperature_resid_updated \n {data[0][index]}")
 
             data = actx.to_numpy(cv_updated.mass)
             print(f"rho_updated \n {data[0][index]}")
@@ -2884,7 +2940,6 @@ def main(actx_class,
                                    theta_spec, theta_pressure])
         else:
             return make_obj_array([temperature_lim, pressure_lim, cv_lim])
-
 
     #
     # limit the fluid state based on globally defined parameters
@@ -3497,7 +3552,6 @@ def main(actx_class,
     # smoothness used with av = 1
     def compute_smoothness(cv, dv, grad_cv):
 
-        from mirgecom.fluid import velocity_gradient
         div_v = np.trace(velocity_gradient(cv, grad_cv))
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
@@ -4214,7 +4268,49 @@ def main(actx_class,
     # Set up the boundary conditions #
     ##################################
 
-    from mirgecom.gas_model import project_fluid_state
+    # pressure ramp function
+    # linearly ramp the pressure from beginP to finalP over t_ramp_interval seconds
+    # provides an offset to start the ramping after t_ramp_start
+    #
+    inlet_mach = configurate("inlet_mach", input_data, 0.1)
+    ramp_beginP = configurate("ramp_beginP", input_data, 100.0)
+    ramp_endP = configurate("ramp_endP", input_data, 1000.0)
+    ramp_time_start = configurate("ramp_time_start", input_data, 0.0)
+    ramp_time_interval = configurate("ramp_time_interval", input_data, 1.e-4)
+
+    def inflow_ramp_pressure(t):
+        return actx.np.where(
+            actx.np.greater(t, ramp_time_start),
+            actx.np.minimum(
+                ramp_endP,
+                ramp_beginP + ((t - ramp_time_start) / ramp_time_interval
+                    * (ramp_endP - ramp_beginP))),
+            ramp_beginP)
+
+    normal_dir = np.zeros(shape=(dim,))
+    normal_dir[0] = 1
+
+    inflow_state = IsentropicInflow(
+        dim=dim,
+        temp_wall=temp_wall,
+        temp_sigma=temp_sigma,
+        vel_sigma=vel_sigma,
+        smooth_y0=-0.01,
+        smooth_y1=0.01,
+        gamma=gamma,
+        nspecies=nspecies,
+        mass_frac=y,
+        T0=total_temp_inflow,
+        P0=ramp_beginP,
+        mach=inlet_mach,
+        p_fun=inflow_ramp_pressure)
+
+    def get_inflow_boundary_solution(dcoll, dd_bdry, gas_model,
+                                     state_minus, time, **kwargs):
+        actx = state_minus.array_context
+        bnd_discr = dcoll.discr_from_dd(dd_bdry)
+        nodes = actx.thaw(bnd_discr.nodes())
+        return inflow_state(x_vec=nodes, gas_model=gas_model, time=time, **kwargs)
 
     def get_target_state_on_boundary(btag):
         return project_fluid_state(
@@ -4225,7 +4321,13 @@ def main(actx_class,
         )
 
     # is there a way to generalize this?
-    #if use_flow_boundary:
+    if bndry_config["inflow"] == "isentropic_pressure_ramp":
+        prescribed_inflow_boundary = PrescribedFluidBoundary(
+            boundary_state_func=get_inflow_boundary_solution)
+
+        bndry_config["inflow"] = "isentropic_pressure_ramp"
+        bndry_mapping["isentropic_pressure_ramp"] = prescribed_inflow_boundary
+
     if bndry_config["flow"] == "prescribed":
         flow_ref_state = \
             get_target_state_on_boundary("flow")
@@ -4241,7 +4343,6 @@ def main(actx_class,
         bndry_config["flow"] = "prescribed_flow"
         bndry_mapping["prescribed_flow"] = prescribed_flow_boundary
 
-    #if use_inflow_boundary:
     if bndry_config["inflow"] == "prescribed":
         inflow_ref_state = \
             get_target_state_on_boundary("inflow")
@@ -4257,7 +4358,6 @@ def main(actx_class,
         bndry_config["inflow"] = "prescribed_inflow"
         bndry_mapping["prescribed_inflow"] = prescribed_inflow_boundary
 
-    #if use_outflow_boundary:
     if bndry_config["outflow"] == "prescribed":
         outflow_ref_state = \
             get_target_state_on_boundary("outflow")
@@ -4511,11 +4611,12 @@ def main(actx_class,
             sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
-    get_sponge_sigma = actx.compile(_sponge_sigma)
+    if use_sponge:
+        get_sponge_sigma = actx.compile(_sponge_sigma)
 
-    sponge_sigma = actx.np.zeros_like(restart_cv.mass)
-    sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
-                                                           fluid_nodes))
+        sponge_sigma = actx.np.zeros_like(restart_cv.mass)
+        sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
+                                                               fluid_nodes))
 
     def _sponge_source(sigma, cv):
         """Create sponge source."""
@@ -5676,6 +5777,189 @@ def main(actx_class,
 
         return state, dt
 
+    from arraycontext import outer
+    from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
+    from meshmode.discretization.connection import FACE_RESTR_ALL
+    from mirgecom.flux import num_flux_central
+
+    def my_derivative_function(dcoll, field, field_bounds, dd_vol,
+                               bnd_cond, comm_tag):
+
+        dd_vol_quad = dd_vol.with_discr_tag(quadrature_tag)
+        dd_allfaces_quad = dd_vol_quad.trace(FACE_RESTR_ALL)
+
+        interp_to_surf_quad = partial(
+            tracepair_with_discr_tag, dcoll, quadrature_tag)
+
+        def interior_flux(field_tpair):
+            dd_trace_quad = field_tpair.dd.with_discr_tag(quadrature_tag)
+            #normal_quad = actx.thaw(dcoll.normal(dd_trace_quad))
+            normal_quad = normal_vector(actx, dcoll, dd_trace_quad)
+            bnd_tpair_quad = interp_to_surf_quad(field_tpair)
+            flux_int = outer(
+                num_flux_central(bnd_tpair_quad.int, bnd_tpair_quad.ext),
+                normal_quad)
+
+            return op.project(dcoll, dd_trace_quad, dd_allfaces_quad, flux_int)
+
+        def boundary_flux(bdtag, bdry):
+            dd_bdry_quad = dd_vol_quad.with_domain_tag(bdtag)
+            #normal_quad = actx.thaw(dcoll.normal(dd_bdry_quad))
+            normal_quad = normal_vector(actx, dcoll, dd_bdry_quad)
+            int_soln_quad = op.project(dcoll, dd_vol, dd_bdry_quad, field)
+
+            # MJA, not sure about this
+            if bnd_cond == "symmetry" and bdtag == "symmetry":
+                ext_soln_quad = 0.0*int_soln_quad
+            else:
+                ext_soln_quad = 1.0*int_soln_quad
+
+            bnd_tpair = TracePair(bdtag, interior=int_soln_quad,
+                                  exterior=ext_soln_quad)
+            flux_bnd = outer(
+                num_flux_central(bnd_tpair.int, bnd_tpair.ext), normal_quad)
+
+            return op.project(dcoll, dd_bdry_quad, dd_allfaces_quad, flux_bnd)
+
+        return -op.inverse_mass(
+            dcoll, dd_vol,
+            op.weak_local_grad(dcoll, dd_vol, field)
+            - op.face_mass(dcoll, dd_allfaces_quad,
+                (sum(interior_flux(u_tpair) for u_tpair in interior_trace_pairs(
+                    dcoll, field, volume_dd=dd_vol, comm_tag=comm_tag)) +
+                 sum(boundary_flux(bdtag, bdry)
+                     for bdtag, bdry in field_bounds.items()))
+            )
+        )
+
+    off_axis_x = 1e-7
+    fluid_nodes_are_off_axis = actx.np.greater(fluid_nodes[0], off_axis_x)
+    if use_wall:
+        wall_nodes_are_off_axis = actx.np.greater(wall_nodes[0], off_axis_x)
+
+    def axisym_source_fluid(dcoll, fluid_state, boundaries, grad_cv, grad_t):
+        cv = fluid_state.cv
+        dv = fluid_state.dv
+
+        mu = fluid_state.tv.viscosity
+        beta = gas_model.transport.volume_viscosity(cv, dv, eos)
+        kappa = fluid_state.tv.thermal_conductivity
+        d_ij = fluid_state.tv.species_diffusivity
+
+        grad_v = velocity_gradient(cv, grad_cv)
+        grad_y = species_mass_fraction_gradient(cv, grad_cv)
+
+        u = cv.velocity[0]
+        v = cv.velocity[1]
+
+        dudr = grad_v[0][0]
+        dudy = grad_v[0][1]
+        dvdr = grad_v[1][0]
+        dvdy = grad_v[1][1]
+
+        drhoudr = (grad_cv.momentum[0])[0]
+
+        #d2udr2 = my_derivative_function(dcoll,  dudr, boundaries, dd_vol_fluid,
+        #                                "replicate", comm_tag=_MyGradTag1)[0]
+        d2vdr2 = my_derivative_function(dcoll, dvdr, boundaries, dd_vol_fluid,
+                                        "replicate", comm_tag=_MyGradTag2)[0]
+        d2udrdy = my_derivative_function(dcoll, dudy, boundaries, dd_vol_fluid,
+                                         "replicate", comm_tag=_MyGradTag3)[0]
+        dmudr = my_derivative_function(dcoll, mu, boundaries, dd_vol_fluid,
+                                       "replicate", comm_tag=_MyGradTag4)[0]
+        dbetadr = my_derivative_function(dcoll, beta, boundaries, dd_vol_fluid,
+                                         "replicate", comm_tag=_MyGradTag5)[0]
+        dbetady = my_derivative_function(dcoll, beta, boundaries, dd_vol_fluid,
+                                         "replicate", comm_tag=_MyGradTag6)[1]
+
+        qr = -(kappa*grad_t)[0]
+        dqrdr = 0.0
+
+        dyidr = grad_y[:, 0]
+        #dyi2dr2 = my_derivative_function(dcoll, dyidr, 'replicate')[:,0]
+
+        tau_ry = 1.0*mu*(dudy + dvdr)
+        tau_rr = 2.0*mu*dudr + beta*(dudr + dvdy)
+        #tau_yy = 2.0*mu*dvdy + beta*(dudr + dvdy)
+        tau_tt = beta*(dudr + dvdy) + 2.0*mu*actx.np.where(
+            fluid_nodes_are_off_axis, u/fluid_nodes[0], dudr)
+
+        dtaurydr = dmudr*dudy + mu*d2udrdy + dmudr*dvdr + mu*d2vdr2
+
+        source_mass_dom = - cv.momentum[0]
+
+        source_rhoU_dom = - cv.momentum[0]*u \
+                          + tau_rr - tau_tt \
+                          + u*dbetadr + beta*dudr \
+                          + beta*actx.np.where(
+                              fluid_nodes_are_off_axis, -u/fluid_nodes[0], -dudr)
+
+        source_rhoV_dom = - cv.momentum[0]*v \
+                          + tau_ry \
+                          + u*dbetady + beta*dudy
+
+        # FIXME add species diffusion term
+        source_rhoE_dom = -((cv.energy+dv.pressure)*u + qr) \
+                          + u*tau_rr + v*tau_ry \
+                          + u**2*dbetadr + beta*2.0*u*dudr \
+                          + u*v*dbetady + u*beta*dvdy + v*beta*dudy
+
+        source_spec_dom = - cv.species_mass*u + cv.mass*d_ij*dyidr
+
+        source_mass_sng = - drhoudr
+        source_rhoU_sng = 0.0
+        source_rhoV_sng = - v*drhoudr + dtaurydr + beta*d2udrdy + dudr*dbetady
+        source_rhoE_sng = -((cv.energy + dv.pressure)*dudr + dqrdr) \
+                                + tau_rr*dudr + v*dtaurydr \
+                                + 2.0*beta*dudr**2 \
+                                + beta*dudr*dvdy \
+                                + v*dudr*dbetady \
+                                + v*beta*d2udrdy
+        #source_spec_sng = - cv.species_mass*dudr + d_ij*dyidr
+        source_spec_sng = - cv.species_mass*dudr
+
+        source_mass = actx.np.where(
+            fluid_nodes_are_off_axis, source_mass_dom/fluid_nodes[0],
+            source_mass_sng)
+        source_rhoU = actx.np.where(
+            fluid_nodes_are_off_axis, source_rhoU_dom/fluid_nodes[0],
+            source_rhoU_sng)
+        source_rhoV = actx.np.where(
+            fluid_nodes_are_off_axis, source_rhoV_dom/fluid_nodes[0],
+            source_rhoV_sng)
+        source_rhoE = actx.np.where(
+            fluid_nodes_are_off_axis, source_rhoE_dom/fluid_nodes[0],
+            source_rhoE_sng)
+
+        source_spec = make_obj_array([
+                      actx.np.where(
+                          fluid_nodes_are_off_axis,
+                          source_spec_dom[i]/fluid_nodes[0],
+                          source_spec_sng[i])
+                      for i in range(nspecies)])
+
+        return make_conserved(dim=2, mass=source_mass, energy=source_rhoE,
+                       momentum=make_obj_array([source_rhoU, source_rhoV]),
+                       species_mass=source_spec)
+
+    def axisym_source_wall(dcoll, wv, wdv,  boundaries, grad_t):
+        #dkappadr = 0.0*wall_nodes[0]
+
+        kappa = wdv.thermal_conductivity
+        qr = - (kappa*grad_t)[0]
+        #d2Tdr2  = my_derivative_function(dcoll, grad_t[0], boundaries,
+        #                                 dd_vol_wall, "symmetry")[0]
+        #dqrdr = - (dkappadr*grad_t[0] + kappa*d2Tdr2)
+
+        source_mass = wv.mass*0.0
+
+        source_rhoE_dom = - qr
+        source_rhoE_sng = 0.0
+        source_rhoE = actx.np.where(
+            wall_nodes_are_off_axis, source_rhoE_dom/wall_nodes[0], source_rhoE_sng)
+
+        return WallVars(mass=source_mass, energy=source_rhoE)
+
     def unfiltered_rhs(t, state):
 
         stepper_state = make_stepper_state_obj(state)
@@ -5794,6 +6078,12 @@ def main(actx_class,
                 comm_tag=_WallOperatorCommTag
                 )
 
+            if use_axisymmetric:
+                wall_energy_rhs = wall_energy_rhs + \
+                    axisym_source_wall(dcoll, wv, wdv,
+                                       updated_fluid_boundaries,
+                                       grad_wall_t)
+
         if use_combustion:
             fluid_rhs = fluid_rhs + \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
@@ -5802,6 +6092,12 @@ def main(actx_class,
             fluid_rhs = fluid_rhs + \
                 ignition_source(x_vec=fluid_nodes, state=fluid_state,
                                 eos=gas_model.eos, time=t)/current_dt
+
+        if use_axisymmetric:
+            fluid_rhs = fluid_rhs + \
+                axisym_source_fluid(dcoll, fluid_state,
+                                    updated_fluid_boundaries,
+                                    grad_fluid_cv, grad_fluid_t)
 
         av_smu_rhs = actx.np.zeros_like(cv.mass)
         av_sbeta_rhs = actx.np.zeros_like(cv.mass)
@@ -6057,7 +6353,6 @@ def main(actx_class,
     else:
         dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
             last_viz_interval)
-
 
     if nviz > 0:
         # pack things up

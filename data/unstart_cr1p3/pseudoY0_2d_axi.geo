@@ -217,6 +217,17 @@ Field[44].DistMin = 0;
 Field[44].DistMax = 100;
 Field[44].StopAtDistMax = 1;
 
+// scramjet model bl meshing
+Field[45] = Distance;
+//Field[45].Sampling = 1000;
+Field[45].PointsList = {32};
+Field[46] = Threshold;
+Field[46].InField = 45;
+Field[46].SizeMin = modelsize/boundratiomodel/4;
+Field[46].SizeMax = bigsize;
+Field[46].DistMin = 0;
+Field[46].DistMax = 150;
+
 //  background mesh size in the exhaust plume (downstream of the model)
 Field[50] = Box;
 Field[50].XMin = model_end;
@@ -244,7 +255,7 @@ Field[60].Thickness = 125;
 Field[100] = Min;
 //Field[9].FieldsList = {2,4,6,8};
 //Field[9].FieldsList = {30, 32, 40, 42};
-Field[100].FieldsList = {30, 32, 33, 35, 40, 42, 44, 50, 60};
+Field[100].FieldsList = {30, 32, 33, 35, 40, 42, 44, 46, 50, 60};
 
 Background Field = 100;
 
