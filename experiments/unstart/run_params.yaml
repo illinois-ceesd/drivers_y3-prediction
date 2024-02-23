@@ -8,7 +8,8 @@ use_tensor_product_elements: True
 use_axisymmetric: True
 use_1d_part: True
 #nviz: 1
-nviz: 100
+nviz: 10
+#nviz: 100
 #nviz: 500
 #nviz: 1000
 #nviz: 1000
@@ -81,6 +82,8 @@ shock_loc_x: -.315
 #temp_sigma: 750
 vel_sigma: 500
 temp_sigma: 500
+#vel_sigma: -1
+#temp_sigma: -1
 sponge_sigma: 25
 #sponge_sigma: 0
 
@@ -98,21 +101,24 @@ mass_fraction_o2: 0.23
 outflow_pressure: 100
 use_outflow_boundary: "pressure_outflow"
 
-use_inflow_boundary: "prescribed"
-#use_inflow_boundary: "isentropic_pressure_ramp"
-inlet_mach: 0.2955
+#use_inflow_boundary: "prescribed"
+use_inflow_boundary: "isentropic_pressure_ramp"
+inlet_mach: 0.13758
 total_temp_inflow: 2450
 ramp_beginP: 117.8e1
-ramp_endP: 117.8e3
-ramp_time_start: 7.5e-4
-ramp_time_interval: 5.e-4
+#ramp_endP: 117.8e3
+ramp_endP: 2000
+#ramp_time_start: 1.e-3
+#ramp_time_interval: 2.e-3
+ramp_time_start: 5.e-7
+ramp_time_interval: 5.e-7
 
+use_wall_boundary: "isothermal_noslip"
+use_symmetry_boundary: "adiabatic_slip"
 use_injection_boundary: "none"
 use_upstream_injection_boundary: "none"
 use_flow_boundary: "none"
-use_wall_boundary: "isothermal_noslip"
 use_interface_boundary: "none"
-use_symmetry_boundary: "adiabatic_slip"
 
 ####################
 # status bounds

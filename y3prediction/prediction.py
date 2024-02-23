@@ -431,6 +431,7 @@ def update_coupled_boundaries(
     fluid_grad_cv = grad_cv_operator(
         dcoll, gas_model, fluid_all_boundaries, fluid_state,
         dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
+        operator_states_quad=fluid_operator_states_quad,
         comm_tag=comm_tag)
 
     return (fluid_all_boundaries, wall_all_boundaries,
@@ -1524,6 +1525,8 @@ def main(actx_class,
         throat_height = 6.3028e-3
         inlet_height = 13.0e-3
         inlet_area_ratio = inlet_height/throat_height
+        if use_axisymmetric:
+            inlet_area_ratio *= inlet_area_ratio
 
         inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
                                           gamma=gamma,
@@ -4156,6 +4159,7 @@ def main(actx_class,
             target_fluid_state, time=0.)
         # the target is not used along the wall, so we won't jump
         # through all the hoops to get the proper gradient
+
         if use_av == 1:
             target_av_smu = compute_smoothness(
                 cv=target_cv, dv=target_fluid_state.dv, grad_cv=target_grad_cv)
@@ -4288,30 +4292,65 @@ def main(actx_class,
                     * (ramp_endP - ramp_beginP))),
             ramp_beginP)
 
-    normal_dir = np.zeros(shape=(dim,))
-    normal_dir[0] = 1
-
-    inflow_state = IsentropicInflow(
-        dim=dim,
-        temp_wall=temp_wall,
-        temp_sigma=temp_sigma,
-        vel_sigma=vel_sigma,
-        smooth_y0=-0.01,
-        smooth_y1=0.01,
-        gamma=gamma,
-        nspecies=nspecies,
-        mass_frac=y,
-        T0=total_temp_inflow,
-        P0=ramp_beginP,
-        mach=inlet_mach,
-        p_fun=inflow_ramp_pressure)
+    if init_case == "unstart":
+        normal_dir = np.zeros(shape=(dim,))
+        if use_axisymmetric:
+            normal_dir[1] = 1
+            inflow_state = IsentropicInflow(
+                dim=dim,
+                temp_wall=temp_wall,
+                temp_sigma=temp_sigma,
+                vel_sigma=vel_sigma,
+                smooth_x0=-0.013,
+                smooth_x1=0.013,
+                normal_dir=normal_dir,
+                gamma=gamma,
+                nspecies=nspecies,
+                mass_frac=y,
+                T0=total_temp_inflow,
+                P0=ramp_beginP,
+                mach=inlet_mach,
+                p_fun=inflow_ramp_pressure)
+        else:
+            normal_dir[0] = 1
+            inflow_state = IsentropicInflow(
+                dim=dim,
+                temp_wall=temp_wall,
+                temp_sigma=temp_sigma,
+                vel_sigma=vel_sigma,
+                smooth_y0=-0.013,
+                smooth_y1=0.013,
+                normal_dir=normal_dir,
+                gamma=gamma,
+                nspecies=nspecies,
+                mass_frac=y,
+                T0=total_temp_inflow,
+                P0=ramp_beginP,
+                mach=inlet_mach,
+                p_fun=inflow_ramp_pressure)
+    else:
+        inflow_state = IsentropicInflow(
+            dim=dim,
+            temp_wall=temp_wall,
+            temp_sigma=temp_sigma,
+            vel_sigma=vel_sigma,
+            smooth_y0=-0.01,
+            smooth_y1=0.01,
+            gamma=gamma,
+            nspecies=nspecies,
+            mass_frac=y,
+            T0=total_temp_inflow,
+            P0=ramp_beginP,
+            mach=inlet_mach,
+            p_fun=inflow_ramp_pressure)
 
     def get_inflow_boundary_solution(dcoll, dd_bdry, gas_model,
                                      state_minus, time, **kwargs):
         actx = state_minus.array_context
         bnd_discr = dcoll.discr_from_dd(dd_bdry)
         nodes = actx.thaw(bnd_discr.nodes())
-        return inflow_state(x_vec=nodes, gas_model=gas_model, time=time, **kwargs)
+        tmp = inflow_state(x_vec=nodes, gas_model=gas_model, time=time, **kwargs)
+        return tmp
 
     def get_target_state_on_boundary(btag):
         return project_fluid_state(
@@ -5593,8 +5632,6 @@ def main(actx_class,
                                          smoothness_kappa=stepper_state.av_skappa,
                                          smoothness_d=stepper_state.av_sd)
 
-        #print("my_pre_step after create_fluid_state")
-
         if use_wall:
             wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
         cv = fluid_state.cv  # reset cv to limited version
@@ -6021,20 +6058,22 @@ def main(actx_class,
                 comm_tag=_UpdateCoupledBoundariesCommTag)
         else:
             updated_fluid_boundaries = uncoupled_fluid_boundaries
-            grad_fluid_cv = grad_cv_operator(
-                dcoll, gas_model, updated_fluid_boundaries, fluid_state,
-                dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag)
-
-            grad_fluid_t = fluid_grad_t_operator(
-                dcoll, gas_model, uncoupled_fluid_boundaries, fluid_state,
-                dd=dd_vol_fluid,
-                time=t, quadrature_tag=quadrature_tag)
 
             # Get the operator fluid states
             fluid_operator_states_quad = make_operator_fluid_states(
-                dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
+                dcoll, fluid_state, gas_model, updated_fluid_boundaries,
                 quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+
+            grad_fluid_cv = grad_cv_operator(
+                dcoll, gas_model, updated_fluid_boundaries, fluid_state,
+                dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
+                time=t, quadrature_tag=quadrature_tag)
+
+            grad_fluid_t = fluid_grad_t_operator(
+                dcoll=dcoll, gas_model=gas_model,
+                boundaries=updated_fluid_boundaries, state=fluid_state,
+                dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
+                time=t, quadrature_tag=quadrature_tag)
 
         if use_av == 1:
             smoothness_mu = compute_smoothness(

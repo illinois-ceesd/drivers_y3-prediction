@@ -423,6 +423,8 @@ class IsentropicInflow:
         if normal_dir is None:
             self._normal_dir = np.zeros(shape=(dim,))
             self._normal_dir[0] = 1
+        else:
+            self._normal_dir = normal_dir
 
         if self._normal_dir.shape != (dim,):
             raise ValueError(f"Expected {dim}-dimensional normal_dir")
@@ -431,7 +433,9 @@ class IsentropicInflow:
             raise ValueError(f"Expected {dim}-dimensional r0")
 
         if mass_frac is None:
-            mass_frac = np.zeros(shape=(nspecies,))
+            if nspecies > 0:
+                mass_frac = np.zeros(shape=(nspecies,))
+
         if p_fun is not None:
             self._p_fun = p_fun
 
@@ -449,17 +453,19 @@ class IsentropicInflow:
             P0 = self._P0
         T0 = self._T0
 
-        mach = ones*self._mach
         pressure = getIsentropicPressure(
-            mach=mach,
+            mach=self._mach,
             P0=P0,
             gamma=self._gamma
         )
         temperature = getIsentropicTemperature(
-            mach=mach,
+            mach=self._mach,
             T0=T0,
             gamma=self._gamma
         )
+
+        pressure = pressure*ones
+        temperature = temperature*ones
 
         def smoothing_func(dim, x_vec, sigma):
             actx = x_vec[0].array_context
@@ -493,19 +499,22 @@ class IsentropicInflow:
             temperature = (wall_temperature +
                 (temperature - wall_temperature)*sfunc)
 
-        y = ones*self._mass_frac
+        y = np.zeros(self._nspecies, dtype=object)
+        for i in range(self._nspecies):
+            y[i] = self._mass_frac[i]
+
         mass = gas_model.eos.get_density(pressure=pressure,
                                          temperature=temperature,
                                          species_mass_fractions=y)
         energy = mass*gas_model.eos.get_internal_energy(temperature=temperature,
                                                         species_mass_fractions=y)
 
-        velocity = np.zeros(self._dim, dtype=object)
+        velocity = np.zeros(self._dim, dtype=float)
         mom = mass*velocity
         cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
                             energy=energy, species_mass=mass*y)
 
-        vmag = mach*gas_model.eos.sound_speed(cv, temperature)
+        vmag = self._mach*gas_model.eos.sound_speed(cv, temperature)
 
         # modify the velocity in the near-wall region to have a smooth profile
         # this approximates the BL velocity profile
@@ -525,12 +534,11 @@ class IsentropicInflow:
         av_sbeta = actx.np.zeros_like(cv.mass)
         av_skappa = actx.np.zeros_like(cv.mass)
         av_sd = actx.np.zeros_like(cv.mass)
-        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
-                                       temperature_seed=temperature,
-                                       smoothness_mu=av_smu,
-                                       smoothness_beta=av_sbeta,
-                                       smoothness_kappa=av_skappa,
-                                       smoothness_d=av_sd,
-                                       limiter_func=None,
-                                       limiter_dd=None)
-        return fluid_state
+        return make_fluid_state(cv=cv, gas_model=gas_model,
+                                temperature_seed=temperature,
+                                smoothness_mu=av_smu,
+                                smoothness_beta=av_sbeta,
+                                smoothness_kappa=av_skappa,
+                                smoothness_d=av_sd,
+                                limiter_func=None,
+                                limiter_dd=None)
