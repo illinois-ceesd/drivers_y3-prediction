@@ -956,6 +956,10 @@ def main(actx_class,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "flame1d":
+            print("\tInitializing flow to flame1d")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
         elif init_case == "wedge":
             print("\tInitializing flow to wedge")
             print(f"Shock Mach number {mach}")
@@ -974,6 +978,7 @@ def main(actx_class,
                 "\t y3prediction"
                 "\t unstart"
                 "\t shock1d"
+                "\t flame1d"
                 "\t wedge"
             )
         print("#### Simluation initialization data: ####")
@@ -1126,11 +1131,11 @@ def main(actx_class,
     if nspecies > 3:
         eos_type = 1
 
-    pyro_mech = configurate("pyro_mech", input_data, "uiuc_sharp")
-    pyro_mech_name = f"y3prediction.pyro_mechs.{pyro_mech}"
+    pyro_mech_name = configurate("pyro_mech", input_data, "uiuc_sharp")
+    pyro_mech_name_full = f"y3prediction.pyro_mechs.{pyro_mech_name}"
 
     import importlib
-    pyromechlib = importlib.import_module(pyro_mech_name)
+    pyromechlib = importlib.import_module(pyro_mech_name_full)
 
     if rank == 0:
         print("\n#### Simluation material properties: ####")
@@ -1158,7 +1163,7 @@ def main(actx_class,
             print("\tIdeal Gas EOS")
         elif eos_type == 1:
             print("\tPyrometheus EOS")
-            print(f"\tPyro mechanism {pyro_mech}")
+            print(f"\tPyro mechanism {pyro_mech_name}")
 
         if use_species_limiter == 1:
             print("\nSpecies mass fractions limited to [0:1]")
@@ -1344,7 +1349,6 @@ def main(actx_class,
 
         # init params
         disc_location = np.zeros(shape=(dim,))
-
         fuel_location = np.zeros(shape=(dim,))
 
         disc_location[0] = shock_loc_x
@@ -1476,6 +1480,108 @@ def main(actx_class,
             velocity_cross=vel_cross,
             species_mass_left=y,
             species_mass_right=y_fuel,
+            temp_wall=temp_bkrnd,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+    if init_case == "flame1d":
+
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        fuel_location = np.zeros(shape=(dim,))
+
+        # the init is set up to keep species constant across the shock, so put the
+        # fuel and shock discontinuities on top of each other
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = shock_loc_x
+
+        # parameters to adjust the shape of the initialization
+        temp_wall = 300
+
+        #mech_data = get_mechanism_input("uiuc_updated")
+        mech_file = (f"{pyro_mech_name}.yaml")
+
+        print(f"{mech_file=}")
+        import cantera
+        cantera_soln = cantera.Solution(f"{mech_file}", "gas")
+
+        # Initial temperature, pressure, and mixutre mole fractions are needed to
+        # set up the initial state in Cantera.
+        temp_unburned = 300.0
+        temp_ignition = 1500.0
+        # Parameters for calculating the amounts of fuel, oxidizer, and inert species
+        # for pure C2H4
+        stoich_ratio = 3.0
+        equiv_ratio = 1.0
+        ox_di_ratio = 0.21
+        # Grab the array indices for specific species
+        i_fu = cantera_soln.species_index("C2H4")
+        i_ox = cantera_soln.species_index("O2")
+        i_di = cantera_soln.species_index("N2")
+        x = np.zeros(nspecies)
+        # Set the species mole fractions according to our desired fuel/air mixture
+        x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+        x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+        x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+        pres_unburned = 101325.0
+
+        # Let the user know about how Cantera is being initilized
+        print(f"Input state (T,P,X) = ({temp_unburned}, {pres_unburned}, {x}")
+        # Set Cantera internal gas temperature, pressure, and mole fractios
+        cantera_soln.TPX = temp_unburned, pres_unburned, x
+        # Pull temperature, total density, mass fractions, and pressure from Cantera
+        # We need total density, and mass fractions to initialize the state.
+        y_unburned = np.zeros(nspecies)
+        can_t, rho_unburned, y_unburned = cantera_soln.TDY
+
+        # *can_t*, *can_p* should not differ (significantly) from user's initial data
+        # but we want to use exactly the same starting point as Cantera,
+        # so we use Cantera's version of these data.
+
+        # now find the conditions for the burned gas
+        cantera_soln.TP = temp_ignition, pres_unburned
+        cantera_soln.equilibrate("TP")
+        temp_burned, rho_burned, y_burned = cantera_soln.TDY
+        pres_burned = cantera_soln.P
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            #print(f"\tflame speed {mach}")
+            #print(f"\tunburned gamma {gamma1}")
+            print(f"\tunburned temperature {temp_unburned}")
+            print(f"\tunburned pressure {pres_burned}")
+            print(f"\tunburned rho {rho_unburned}")
+            for i in range(nspecies):
+                print(f"\tunburned Y[{species_names[i]}] {y_unburned[i]}")
+
+            #print(f"\tburned gamma {gamma2}")
+            print(f"\tburned temperature {temp_burned}")
+            print(f"\tburned pressure {pres_burned}")
+            print(f"\tburned rho {rho_burned}")
+            for i in range(nspecies):
+                print(f"\tburned Y[{species_names[i]}] {y_burned[i]}")
+
+        vel_burned = np.zeros(shape=(dim,))
+        vel_unburned = np.zeros(shape=(dim,))
+        plane_normal = np.zeros(shape=(dim,))
+        plane_normal[0] = 1
+
+        #return;
+
+        bulk_init = PlanarDiscontinuityMulti(
+            dim=dim,
+            nspecies=nspecies,
+            disc_location=disc_location,
+            disc_location_species=fuel_location,
+            normal_dir=plane_normal,
+            sigma=0.001,
+            pressure_left=pres_unburned,
+            pressure_right=pres_burned,
+            temperature_left=temp_unburned,
+            temperature_right=temp_burned,
+            velocity_left=vel_unburned,
+            velocity_right=vel_burned,
+            species_mass_left=y_unburned,
+            species_mass_right=y_burned,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
@@ -1978,7 +2084,7 @@ def main(actx_class,
     else:  # generate the grid from scratch
 
         # eventually encapsulate these inside a class for the respective inits
-        if init_case == "shock1d":
+        if init_case == "shock1d" or init_case == "flame1d":
             if rank == 0:
                 print("Generating mesh from scratch")
 
@@ -4605,7 +4711,7 @@ def main(actx_class,
                     sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
-    elif init_case == "shock1d":
+    elif init_case == "shock1d" or init_case == "flame1d":
 
         inlet_sponge_x0 = 0.015
         inlet_sponge_thickness = 0.015
@@ -5065,6 +5171,7 @@ def main(actx_class,
 
             # entropy
             gamma = gas_model.eos.gamma(cv, dv.temperature)
+            """
             if eos_type == 1:
 
                 species_entropy = np.zeros(nspecies, dtype=object)
@@ -5078,6 +5185,8 @@ def main(actx_class,
                     cv.species_mass_fractions)
             else:
                 entropy = actx.np.log(dv.pressure/(cv.mass**gamma))
+                """
+            entropy = actx.np.log(dv.pressure/(cv.mass**gamma))
 
             fluid_viz_ext = [("entropy", entropy),
                              ("gamma", gamma)]

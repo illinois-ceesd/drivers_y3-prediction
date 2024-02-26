@@ -14,31 +14,31 @@ EndIf
 If(Exists(blrationozzle))
     boundrationozzle=blrationozzle;
 Else
-    boundrationozzle=2.0;
+    boundrationozzle=8.0;
 EndIf
 
 If(Exists(blratiomodel))
     boundratiomodel=blratiomodel;
 Else
-    boundratiomodel=3.0;
+    boundratiomodel=4.0;
 EndIf
 
 If(Exists(nozzlefac))
     nozzle_factor=nozzlefac;
 Else
-    nozzle_factor=4.0;
+    nozzle_factor=10.0;
 EndIf
 
 If(Exists(throatfac))
     throat_factor=throatfac;
 Else
-    throat_factor=8.0;
+    throat_factor=18.0;
 EndIf
 
 If(Exists(modelfac))
     model_factor=modelfac;
 Else
-    model_factor=6.0;
+    model_factor=8.0;
 EndIf
 
 If(Exists(plumefac))
@@ -142,7 +142,7 @@ model_end = 510.0;
 model_radius = 28;
 plume_radius = 75;
 spill_begin = -40;
-spill_end = 50.0;
+spill_end = 150.0;
 spill_radius = 100;
 
 //  background mesh size in the nozzle
@@ -173,6 +173,7 @@ Field[32].SizeMin = nozzlesize/boundrationozzle;
 Field[32].SizeMax = bigsize;
 Field[32].DistMin = 0;
 Field[32].DistMax = 200;
+Field[32].StopAtDistMax = 1;
 
 //  background mesh size in the nozzle throat
 Field[33] = Box;
@@ -186,7 +187,7 @@ Field[33].VIn = throatsize;
 Field[33].VOut = bigsize;
 Field[33].Thickness = 25;
 
-// Inside and end surfaces of nozzle
+// Nozzle throat bl
 Field[34] = Distance;
 Field[34].Sampling = 1000;
 Field[34].CurvesList = {9:12};
@@ -197,6 +198,7 @@ Field[35].SizeMin = throatsize/boundrationozzle;
 Field[35].SizeMax = bigsize;
 Field[35].DistMin = 0;
 Field[35].DistMax = 200;
+Field[35].StopAtDistMax = 1;
 
 //  background mesh size in the scramjet model (downstream of the nozzle)
 Field[40] = Box;
@@ -214,8 +216,6 @@ Field[40].Thickness = 50;
 Field[41] = Distance;
 Field[41].Sampling = 1000;
 Field[41].CurvesList = {
-  scramjet_inlet_surfaces[],
-  scramjet_outlet_surfaces[],
   scramjet_inside_surfaces[]
  };
 Field[42] = Threshold;
@@ -224,6 +224,19 @@ Field[42].SizeMin = modelsize/boundratiomodel;
 Field[42].SizeMax = bigsize;
 Field[42].DistMin = 0;
 Field[42].DistMax = 200;
+
+// scramjet model bl meshing
+Field[141] = Distance;
+Field[141].Sampling = 1000;
+Field[141].CurvesList = {
+  scramjet_outlet_surfaces[]
+ };
+Field[142] = Threshold;
+Field[142].InField = 141;
+Field[142].SizeMin = modelsize/boundratiomodel;
+Field[142].SizeMax = bigsize;
+Field[142].DistMin = 0;
+Field[142].DistMax = 600;
 
 // outer scramjet model bl meshing
 Field[43] = Distance;
@@ -236,7 +249,7 @@ Field[44].InField = 43;
 Field[44].SizeMin = basesize/4;
 Field[44].SizeMax = bigsize;
 Field[44].DistMin = 0;
-Field[44].DistMax = 100;
+Field[44].DistMax = 200;
 Field[44].StopAtDistMax = 1;
 
 // scramjet model tip meshing
@@ -248,7 +261,7 @@ Field[46].InField = 45;
 Field[46].SizeMin = modelsize/boundratiomodel/4;
 Field[46].SizeMax = bigsize;
 Field[46].DistMin = 0;
-Field[46].DistMax = 150;
+Field[46].DistMax = 300;
 
 Field[47] = Distance;
 Field[47].Sampling = 1000;
@@ -260,7 +273,7 @@ Field[48].InField = 47;
 Field[48].SizeMin = modelsize/boundratiomodel/2;
 Field[48].SizeMax = bigsize;
 Field[48].DistMin = 0;
-Field[48].DistMax = 250;
+Field[48].DistMax = 800;
 
 //  background mesh size in the exhaust plume (downstream of the model)
 Field[50] = Box;
@@ -289,7 +302,8 @@ Field[60].Thickness = 125;
 Field[100] = Min;
 //Field[9].FieldsList = {2,4,6,8};
 //Field[9].FieldsList = {30, 32, 40, 42};
-Field[100].FieldsList = {30, 32, 33, 35, 40, 42, 44, 46, 48, 50, 60};
+Field[100].FieldsList = {30, 32, 33, 35, 40, 42, 142, 44, 46, 48, 50, 60};
+//Field[100].FieldsList = {30, 32, 33, 35, 40, 42, 142, 44, 46, 48, 50, 60};
 
 Background Field = 100;
 
