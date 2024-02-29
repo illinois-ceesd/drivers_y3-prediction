@@ -139,11 +139,17 @@ class PlanarDiscontinuityMulti:
         else:
             x0_species = self._disc_location_species
 
+        import sys
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
+
         # get the species mass fractions first
         dist = np.dot(x0_species - x_vec, self._normal)
+        print(f"{dist=}")
         xtanh = 1.0/self._sigma*dist
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
         y = self._yl + (self._yr - self._yl)*weight
+
+        print(f"{y=}")
 
         # now solve for T, P, velocity
         dist = np.dot(x0 - x_vec, self._normal)
@@ -152,6 +158,10 @@ class PlanarDiscontinuityMulti:
         pressure = self._pl + (self._pr - self._pl)*weight
         temperature = self._tl + (self._tr - self._tl)*weight
         velocity = self._ul + (self._ur - self._ul)*weight + self._ut
+
+        print(f"{self._pl=} {self._pr=}")
+        print(f"{temperature=}")
+        print(f"{pressure=}")
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
@@ -173,11 +183,8 @@ class PlanarDiscontinuityMulti:
             smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
             velocity = velocity*smoothing_top*smoothing_bottom
 
-        if self._nspecies:
-            mass = eos.get_density(pressure, temperature,
-                                   species_mass_fractions=y)
-        else:
-            mass = pressure/temperature/eos.gas_const()
+        mass = eos.get_density(pressure, temperature,
+                               species_mass_fractions=y)
 
         specmass = mass * y
         mom = mass * velocity

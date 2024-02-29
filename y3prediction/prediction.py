@@ -66,7 +66,7 @@ from mirgecom.restart import write_restart_file
 from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
-                                  euler_step)
+                                  euler_step, ssprk43_step)
 from mirgecom.inviscid import (inviscid_facial_flux_rusanov,
                                inviscid_facial_flux_hll)
 from mirgecom.viscous import (viscous_facial_flux_central,
@@ -78,8 +78,7 @@ from mirgecom.fluid import (
     velocity_gradient,
     species_mass_fraction_gradient
 )
-from mirgecom.limiter import (bound_preserving_limiter_lv,
-                              bound_preserving_limiter)
+from mirgecom.limiter import (bound_preserving_limiter)
 from mirgecom.steppers import advance_state
 from mirgecom.boundary import (
     PrescribedFluidBoundary,
@@ -819,7 +818,8 @@ def main(actx_class,
                                          input_data, -0.01753)
 
     # param sanity check
-    allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144", "compiled_lsrk54"]
+    allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144",
+                           "compiled_lsrk54", "ssprk43"]
     if integrator not in allowed_integrators:
         error_message = "Invalid time integrator: {}".format(integrator)
         raise RuntimeError(error_message)
@@ -1014,6 +1014,8 @@ def main(actx_class,
     timestepper = rk4_step
     if integrator == "euler":
         timestepper = euler_step
+    if integrator == "ssprk43":
+        timestepper = ssprk43_step
     if integrator == "lsrk54":
         timestepper = lsrk54_step
     if integrator == "lsrk144":
@@ -2607,7 +2609,8 @@ def main(actx_class,
     def limit_fluid_state_lv(cv, pressure, temperature, dd=dd_vol_fluid,
                              temperature_seed=None, viz_theta=False):
 
-        index = 916
+        toler = 1.e-13
+        index = 104
         print_stuff = False
         # we need a reasonable guess for temperature, use the element
         # average when the incoming temperature is negative
@@ -2630,10 +2633,17 @@ def main(actx_class,
         elem_avg_cv = _element_average_cv(cv, dd)
         rho_lim = elem_avg_cv.mass*0.1
 
-        (mass_lim, theta_rho) = bound_preserving_limiter_lv(dcoll=dcoll, dd=dd,
-                                            field=cv.mass,
-                                            mmin=rho_lim, mmax=None,
-                                            modify_average=True)
+        mmin_i = op.elementwise_min(dcoll, dd, cv.mass)
+        mmin = rho_lim
+
+        cell_avgs = elem_avg_cv.mass
+        theta_rho = actx.np.maximum(0.,
+            actx.np.where(actx.np.less(mmin_i + toler, mmin),
+                          (mmin-mmin_i)/(cell_avgs - mmin_i),
+                          0.)
+        )
+
+        mass_lim = (cv.mass + theta_rho*(elem_avg_cv.mass - cv.mass))
 
         # preserve internal energy, velocity, and mass fractions,
         # keeps pressure/temperature constant
@@ -2644,20 +2654,17 @@ def main(actx_class,
         spec_lim = cv.species_mass_fractions
 
         cv_update_rho = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                                    momentum=mom_lim,
-                                    species_mass=mass_lim*spec_lim)
+                                       momentum=mom_lim,
+                                       species_mass=mass_lim*spec_lim)
         temperature_update_rho = gas_model.eos.temperature(cv=cv_update_rho,
                                                         temperature_seed=tseed)
         pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
                                                   temperature=temperature_update_rho)
 
         # 2.0 limit the species mass fractions
-        theta_spec = None
+        theta_spec = actx.zeros_like(cv.mass)
         if nspecies > 0:
 
-            #_theta_min = actx.zeros_like(cv.mass)
-            #_theta_max = actx.zeros_like(cv.mass)
-            theta_spec = actx.zeros_like(cv.mass)
             # find theta for all the species
             for i in range(0, nspecies):
                 mmin_i = op.elementwise_min(dcoll, dd, cv.species_mass_fractions[i])
@@ -2665,8 +2672,8 @@ def main(actx_class,
 
                 cell_avgs = elem_avg_cv.species_mass_fractions[i]
                 _theta = actx.np.maximum(0.,
-                    actx.np.where(actx.np.less(mmin_i, mmin),
-                                  (mmin-mmin_i)/(cell_avgs - mmin_i + 1.e-16),
+                    actx.np.where(actx.np.less(mmin_i + toler, mmin),
+                                  (mmin-mmin_i)/(cell_avgs - mmin_i),
                                   0.)
                 )
 
@@ -2674,8 +2681,8 @@ def main(actx_class,
                 mmax = 1.0
 
                 _theta = actx.np.maximum(_theta,
-                    actx.np.where(actx.np.greater(mmax_i, mmax),
-                                  (mmax_i - mmax)/(mmax_i - cell_avgs + 1.e-16),
+                    actx.np.where(actx.np.greater(mmax_i - toler, mmax),
+                                  (mmax_i - mmax)/(mmax_i - cell_avgs),
                                   0.)
                 )
 
@@ -2807,7 +2814,7 @@ def main(actx_class,
         theta_savg = elem_avg_pres - math.exp(smin)*elem_avg_cv.mass**gamma
 
         _theta = actx.np.maximum(0.,
-            actx.np.where(actx.np.less(theta_smin_i, theta_savg),
+            actx.np.where(actx.np.less(theta_smin_i + toler, theta_savg),
                           (mmin - theta_smin_i)/(theta_savg - theta_smin_i),
                           0.)
         )
@@ -2823,8 +2830,8 @@ def main(actx_class,
             data = actx.to_numpy(theta_smin_i)
             print(f"_theta_s_i \n {data[0][index]}")
             data = actx.to_numpy(gamma)
-            print(f"gamma \n {data[0][index]}")
-            data = actx.to_numpy(pressure_updated)
+            #print(f"gamma \n {data[0][index]}")
+            #data = actx.to_numpy(pressure_updated)
             print(f"pressure_updated \n {data[0][index]}")
             data = actx.to_numpy(mmin_i)
             print(f"mmin_i \n {data[0][index]}")
@@ -2927,10 +2934,17 @@ def main(actx_class,
             np.set_printoptions(threshold=sys.maxsize, precision=16)
             #print(f"({pressure_lim=})")
             #print(f"({temperature_lim=})")
+            #print(f"({theta_spec=})")
             # initial state
             print("initial state")
             #data = actx.to_numpy(temp_resid_test)
             #print(f"temp_resid_test \n {data[0][index]}")
+            data = actx.to_numpy(theta_rho)
+            print(f"theta_rho \n {data[0][index]}")
+            data = actx.to_numpy(theta_spec)
+            print(f"theta_spec \n {data[0][index]}")
+            data = actx.to_numpy(theta_pressure)
+            print(f"theta_pressure \n {data[0][index]}")
 
             data = actx.to_numpy(tseed)
             print(f"tseed \n {data[0][index]}")
@@ -3043,6 +3057,25 @@ def main(actx_class,
             for i in range(0, nspecies):
                 data = actx.to_numpy(cv_lim.species_mass_fractions)
                 print(f"Y_lim[{i}] \n {data[i][0][index]}")
+
+            cv_diff = cv_lim - cv
+            data = actx.to_numpy(cv_diff.mass)
+            print(f"rho_diff \n {data[0][index]}")
+            data = actx.to_numpy(cv_diff.energy)
+            print(f"energy_diff \n {data[0][index]}")
+            for i in range(dim):
+                data = actx.to_numpy(cv_diff.momentum)
+                print(f"momentum_diff[{i}] \n {data[i][0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_diff.species_mass)
+                print(f"Y_diff[{i}] \n {data[i][0][index]}")
+
+            pres_diff = pressure_lim - pressure
+            data = actx.to_numpy(pres_diff)
+            print(f"pres_diff \n {data[0][index]}")
+            temp_diff = temperature_lim - temperature
+            data = actx.to_numpy(temp_diff)
+            print(f"temp_diff \n {data[0][index]}")
 
         if viz_theta:
             return make_obj_array([temperature_lim, pressure_lim, cv_lim, theta_rho,
@@ -5282,10 +5315,11 @@ def main(actx_class,
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
 
-            viz_ext = [("theta_rho", theta_rho),
-                       ("theta_Y", theta_Y),
-                       ("theta_pressure", theta_pres)]
-            fluid_viz_fields.extend(viz_ext)
+            if use_species_limiter:
+                viz_ext = [("theta_rho", theta_rho),
+                           ("theta_Y", theta_Y),
+                           ("theta_pressure", theta_pres)]
+                fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
                 viz_stuff = compute_viz_fields_coupled_compiled(
@@ -5721,7 +5755,7 @@ def main(actx_class,
         # we can't get the limited viz data back from create_fluid_state
         # so call the limiter directly first, basically doing the limiting twice
         theta_rho = actx.zeros_like(stepper_state.cv.mass)
-        theta_Y = actx.zeros_like(stepper_state.cv.species_mass_fractions)
+        theta_Y = actx.zeros_like(stepper_state.cv.mass)
         theta_pres = actx.zeros_like(stepper_state.cv.mass)
         if viz_level == 3 and use_species_limiter:
             temperature_unlimited = gas_model.eos.temperature(
@@ -6452,7 +6486,7 @@ def main(actx_class,
     # we can't get the limited viz data back from create_fluid_state
     # so call the limiter directly first, basically doing the limiting twice
     theta_rho = actx.zeros_like(current_cv.mass)
-    theta_Y = actx.zeros_like(current_cv.species_mass_fractions)
+    theta_Y = actx.zeros_like(current_cv.mass)
     theta_pres = actx.zeros_like(current_cv.mass)
     if viz_level == 3 and use_species_limiter:
         temperature_unlimited = gas_model.eos.temperature(
