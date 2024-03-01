@@ -444,8 +444,10 @@ def update_coupled_boundaries(
 def main(actx_class,
          restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
-         casename=None, log_path="log_data", use_esdg=False):
+         casename=None, log_path="log_data", use_esdg=False,
+         disable_fallbacks=False):
 
+    allow_fallbacks = not disable_fallbacks
     # control log messages
     logger = logging.getLogger(__name__)
     logger.propagate = False
@@ -497,7 +499,9 @@ def main(actx_class,
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
     use_tpe = configurate("use_tensor_product_elements", input_data, False)
 
-    actx = initialize_actx(actx_class, comm)
+    actx = initialize_actx(actx_class, comm,
+                           use_axis_tag_inference_fallback=allow_fallbacks,
+                           use_einsum_inference_fallback=allow_fallbacks)
     queue = getattr(actx, "queue", None)
     use_profiling = actx_class_is_profiling(actx_class)
     alloc = getattr(actx, "allocator", None)
