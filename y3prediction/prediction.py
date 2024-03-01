@@ -2694,6 +2694,39 @@ def main(actx_class,
                                theta_spec*(elem_avg_cv.species_mass_fractions[i] -
                                            cv.species_mass_fractions[i]))
 
+            # modify Temperature (energy) maintain pressure equilibrium
+            kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+            positive_pressure = actx.np.greater(pressure_update_rho, 1.e-12)
+
+            update_dv = positive_pressure
+
+            r = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
+            temperature_update_y = pressure_update_rho/r/mass_lim
+
+            energy_lim = actx.np.where(
+                update_dv,
+                mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
+                          species_mass_fractions=spec_lim)
+                + kin_energy),
+                cv_update_rho.energy
+            )
+
+            """
+            # modify the energy to account for change to species mass fractions
+            # use the species specific heat
+            #h_alpha = eos.species_enthalpies(cv, temperature)
+            h_alpha = eos.species_enthalpies(cv, 300.)
+            deltaY = spec_lim - cv.species_mass_fractions
+            np.set_printoptions(threshold=sys.maxsize, precision=16)
+            #print(f"{h_alpha.shape}")
+            #print(f"{deltaY.shape}")
+            #print(f"{deltaY=}")
+            #print(f"{h_alpha=}")
+            deltaE = -np.dot(h_alpha, deltaY)*cv_update_rho.mass
+            #deltaE = -np.dot(h_alpha, deltaY)
+            energy_lim = cv.energy - deltaE
+            """
+
             """
             # modify the density and energy to maintain pressure and temperature
             kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
@@ -2728,7 +2761,8 @@ def main(actx_class,
                                         species_mass=mass_lim*spec_lim)
             """
             cv_update_y = make_conserved(dim=dim, mass=cv_update_rho.mass,
-                                         energy=cv_update_rho.energy,
+                                         energy=energy_lim,
+                                         #energy=cv_update_rho.energy,
                                          momentum=cv_update_rho.momentum,
                                          species_mass=cv_update_rho.mass*spec_lim)
         else:
