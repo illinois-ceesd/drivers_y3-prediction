@@ -16,13 +16,15 @@ nviz: 1
 nrestart: 1000
 nhealth: 1
 nstatus: 1
-viz_level: 2
+viz_level: 3
+viz_order: 9
 viz_interval_type: 0
 constant_cfl: 0
 #current_dt: 1.0e-7
 #current_dt: 2.0e-8
 current_dt: 5.0e-8
-t_final: 1e-2
+#t_final: 1e-2
+t_final: 5.e-7
 
 ##############
 # wall model
@@ -38,8 +40,8 @@ nlimit: 1
 use_species_limiter: 1
 #drop_order_strength: 0.25
 
-smooth_char_length_alpha: 0.005
-smooth_char_length: 0
+smooth_char_length_alpha: 0.00001
+smooth_char_length: 1000
 use_av: 2
 av2_mu0: 0.1
 av2_beta0: 1

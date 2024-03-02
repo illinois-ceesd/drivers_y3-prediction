@@ -94,7 +94,7 @@ from mirgecom.diffusion import (
     DirichletDiffusionBoundary,
     NeumannDiffusionBoundary
 )
-from mirgecom.initializers import Uniform
+from mirgecom.initializers import Uniform, MulticomponentLump
 from mirgecom.eos import (
     IdealSingleGas, PyrometheusMixture,
     MixtureDependentVars, GasDependentVars
@@ -964,6 +964,10 @@ def main(actx_class,
             print("\tInitializing flow to flame1d")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "species_diffusion":
+            print("\tInitializing flow to species diffusion")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
         elif init_case == "wedge":
             print("\tInitializing flow to wedge")
             print(f"Shock Mach number {mach}")
@@ -984,6 +988,7 @@ def main(actx_class,
                 "\t shock1d"
                 "\t flame1d"
                 "\t wedge"
+                "\t species_diffusion"
             )
         print("#### Simluation initialization data: ####")
 
@@ -1591,6 +1596,33 @@ def main(actx_class,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
+    elif init_case == "species_diffusion":
+
+        velocity = np.zeros(shape=(dim,))
+        pressure = pres_bkrnd
+        temperature = temp_bkrnd
+        rho = pressure/r/temperature
+
+        centers = make_obj_array([np.zeros(shape=(dim,)) for i in range(nspecies)])
+        spec_y0s = np.zeros(shape=(nspecies,))
+        spec_amplitudes = .5*np.ones(shape=(nspecies,))
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\ttemperature {temperature}")
+            print(f"\tpressure {pressure}")
+            print(f"\trho {rho}")
+            print(f"\tvelocity {velocity}")
+
+        bulk_init = MulticomponentLump(
+            dim=dim, nspecies=nspecies,
+            rho0=rho, p0=pressure, velocity=velocity,
+            spec_centers=centers,
+            spec_y0s=spec_y0s,
+            spec_amplitudes=spec_amplitudes,
+            sigma=0.1
+        )
+
     elif init_case == "wedge":
 
         velocity = np.zeros(shape=(dim,))
@@ -2164,6 +2196,19 @@ def main(actx_class,
                         mesh, tag_to_elements, volume_to_tags["fluid"],
                         "wall_interface")
 
+                return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "species_diffusion":
+            if rank == 0:
+                print("Generating mesh from scratch")
+
+            def get_mesh_data():
+                from y3prediction.species_diffusion import get_mesh
+                mesh, tag_to_elements = get_mesh(
+                    dim=dim, size=mesh_size,
+                    transfinite=transfinite,
+                    use_quads=use_tpe)()
+
+                volume_to_tags = {"fluid": ["fluid"]}
                 return mesh, tag_to_elements, volume_to_tags
         else:
             if rank == 0:
