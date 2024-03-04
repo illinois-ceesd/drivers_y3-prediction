@@ -3,7 +3,7 @@
 # default branch for building mirgecom for this driver
 mirge_branch="production"
 # conda environment name
-conda_env="mirgeDriver.Y3prediction"
+conda_env="emirge-y3-prediction-functions1"
 
 usage()
 {

@@ -434,6 +434,9 @@ def main(actx_class,
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
+    from pytato.array import enable_traceback_tag
+    enable_traceback_tag()
+
     if casename is None:
         casename = "mirgecom"
 
@@ -532,7 +535,7 @@ def main(actx_class,
     mesh_partition_prefix = configurate("mesh_partition_prefix",
                                         input_data, "actii_2d")
     noslip = configurate("noslip", input_data, True)
-    use_1d_part = configurate("use_1d_part", input_data, True)
+    use_1d_part = configurate("use_1d_part", input_data, False)
 
     # setting these to none in the input file toggles the check for that
     # boundary off provides support for legacy runs only where you could
@@ -1940,16 +1943,21 @@ def main(actx_class,
 
     # put the lengths on the nodes vs elements
     xpos_fluid = fluid_nodes[0]
+    # char_length_fluid = force_evaluation(actx,
+    #     char_length_fluid + actx.np.zeros_like(xpos_fluid))
     char_length_fluid = char_length_fluid + actx.np.zeros_like(xpos_fluid)
 
-    smoothness_diffusivity = \
-        smooth_char_length_alpha*char_length_fluid**2/current_dt
+    # smoothness_diffusivity = force_evaluation(actx,
+    #     smooth_char_length_alpha*char_length_fluid**2/current_dt)
+    smoothness_diffusivity = smooth_char_length_alpha*char_length_fluid**2/current_dt
 
     if use_wall:
         xpos_wall = wall_nodes[0]
         char_length_wall = force_evaluation(actx,
             characteristic_lengthscales(actx, dcoll, dd=dd_vol_wall))
         xpos_wall = wall_nodes[0]
+        # char_length_wall = force_evaluation(actx,
+        #     char_length_wall + actx.np.zeros_like(xpos_wall))
         char_length_wall = char_length_wall + actx.np.zeros_like(xpos_wall)
         """
         smoothness_diffusivity_wall = \
@@ -1981,6 +1989,8 @@ def main(actx_class,
                  dd_bdry.domain_tag: NeumannDiffusionBoundary(0)
                  for dd_bdry in filter_part_boundaries(
                      dcoll, volume_dd=dd_vol_fluid, neighbor_volume_dd=dd_vol_wall)})
+
+        # print(f"{smoothness_diffusivity=}")
 
         smooth_href_fluid_rhs = diffusion_operator(
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
