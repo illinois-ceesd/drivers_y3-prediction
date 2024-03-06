@@ -5229,8 +5229,8 @@ def main(actx_class,
         local_fluid_viz_fields["smoothness_d"] = [av_sd]
 
         return make_obj_array([av_smu, av_sbeta, av_skappa, av_sd,
-                               grad_v, grad_y, grad_fluid_t,
-                               grad_wall_t, cv, wv])
+                               grad_v, grad_y, grad_fluid_t, grad_fluid_cv,
+                               grad_wall_t])
 
     compute_viz_fields_coupled_compiled = actx.compile(compute_viz_fields_coupled)
 
@@ -5278,7 +5278,7 @@ def main(actx_class,
         local_fluid_viz_fields["smoothness_d"] = [av_sd]
 
         return make_obj_array([av_smu, av_sbeta, av_skappa, av_sd,
-                               grad_v, grad_y, grad_fluid_t, cv])
+                               grad_v, grad_y, grad_fluid_t, grad_fluid_cv])
 
     compute_viz_fields_compiled = actx.compile(compute_viz_fields)
 
@@ -5485,9 +5485,10 @@ def main(actx_class,
             grad_v = viz_stuff[4]
             grad_y = viz_stuff[5]
             grad_fluid_t = viz_stuff[6]
+            grad_cv = viz_stuff[7]
 
             if use_wall:
-                grad_wall_t = viz_stuff[7]
+                grad_wall_t = viz_stuff[8]
 
             viz_ext = [("smoothness_mu", av_smu),
                        ("smoothness_beta", av_sbeta),
@@ -5501,7 +5502,18 @@ def main(actx_class,
                 viz_ext = [("smoothness", smoothness)]
                 fluid_viz_fields.extend(viz_ext)
 
-            #viz_ext = [("rhs", ns_rhs),
+            # write out grad_cv
+            viz_ext = [("grad_rho", grad_cv.mass),
+                       ("grad_e", grad_cv.energy),
+                       ("grad_rhou", grad_cv.momentum[0]),
+                       ("grad_rhov", grad_cv.momentum[1])]
+            if dim == 3:
+                viz_ext.extend([("grad_rhow", grad_cv.momentum[2])])
+
+            viz_ext.extend(("grad_rhoY_"+species_names[i], grad_cv.species_mass[i])
+                           for i in range(nspecies))
+            fluid_viz_fields.extend(viz_ext)
+
             viz_ext = [("grad_temperature", grad_fluid_t),
                        ("grad_v_x", grad_v[0]),
                        ("grad_v_y", grad_v[1])]
@@ -5513,7 +5525,7 @@ def main(actx_class,
             fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
-                viz_ext = [("grad_temperature", grad_wall_t)]
+                viz_ext = [("grad_temperature_wall", grad_wall_t)]
                 wall_viz_fields.extend(viz_ext)
 
             """
