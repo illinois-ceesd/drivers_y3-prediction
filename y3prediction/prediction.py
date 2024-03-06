@@ -1248,6 +1248,31 @@ def main(actx_class,
     else:
         species_names = pyro_mech.species_names
 
+    # initialize eos and species mass fractions
+    y = np.zeros(nspecies)
+    y_fuel = np.zeros(nspecies)
+    if nspecies == 2:
+        y[0] = 1
+        y_fuel[1] = 1
+    elif nspecies > 4:
+        # find name species indicies
+        for i in range(nspecies):
+            if species_names[i] == "C2H4":
+                i_c2h4 = i
+            if species_names[i] == "H2":
+                i_h2 = i
+            if species_names[i] == "O2":
+                i_ox = i
+            if species_names[i] == "N2":
+                i_di = i
+
+        # Set the species mass fractions to the free-stream flow
+        y[i_ox] = mf_o2
+        y[i_di] = 1. - mf_o2
+        # Set the species mass fractions to the free-stream flow
+        y_fuel[i_c2h4] = mf_c2h4
+        y_fuel[i_h2] = mf_h2
+
     # initialize the transport model
     transport_alpha = 0.6
     transport_beta = 4.093e-7
@@ -1272,6 +1297,9 @@ def main(actx_class,
     transport_le = None
     if use_lewis_transport:
         transport_le = np.ones(nspecies,)
+
+    if nspecies > 4:
+        transport_le[i_h2] = 0.2
 
     if rank == 0:
         if transport_type == 0:
@@ -1329,32 +1357,6 @@ def main(actx_class,
     # with transport and eos sorted out, build the gas model
     gas_model = GasModel(eos=eos, transport=transport_model)
 
-    # initialize eos and species mass fractions
-    y = np.zeros(nspecies)
-    y_fuel = np.zeros(nspecies)
-    if nspecies == 2:
-        y[0] = 1
-        y_fuel[1] = 1
-    elif nspecies > 4:
-        # find name species indicies
-        for i in range(nspecies):
-            if species_names[i] == "C2H4":
-                i_c2h4 = i
-            if species_names[i] == "H2":
-                i_h2 = i
-            if species_names[i] == "O2":
-                i_ox = i
-            if species_names[i] == "N2":
-                i_di = i
-
-        # Set the species mass fractions to the free-stream flow
-        # MJA take this out!!!
-        mf_o2 = 1
-        y[i_ox] = mf_o2
-        y[i_di] = 1. - mf_o2
-        # Set the species mass fractions to the free-stream flow
-        y_fuel[i_c2h4] = mf_c2h4
-        y_fuel[i_h2] = mf_h2
 
     # select the initialization case
     if init_case == "shock1d":

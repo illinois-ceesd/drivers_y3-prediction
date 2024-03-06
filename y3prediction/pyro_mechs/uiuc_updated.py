@@ -282,7 +282,7 @@ class Thermochemistry:
         return self._pyro_make_array([
             -0.17364695002734*temperature,
             g0_rt[2] + -1*(g0_rt[3] + 0.5*g0_rt[1]) + -1*-0.5*c0,
-            g0_rt[4] + -1*(g0_rt[5] + 0.5*g0_rt[1]) + -1*-0.5*c0,
+            -0.17364695002734*temperature,
             ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
@@ -311,9 +311,9 @@ class Thermochemistry:
     def get_fwd_rate_coefficients(self, temperature, concentrations):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
-            self.usr_np.exp(21.989687638093137 + 0.75*self.usr_np.log(temperature) + -1*(20128.78133995063 / temperature)) * ones,
-            self.usr_np.exp(12.693776813708796 + 0.7*self.usr_np.log(temperature) + -1*(5535.414868486423 / temperature)) * ones,
-            self.usr_np.exp(16.91271325351661 + -1*(4528.975801488891 / temperature)) * ones,
+            self.usr_np.exp(21.989687638093137 + -1*(18115.903205955565 / temperature)) * ones,
+            self.usr_np.exp(12.759528191271576 + 0.7*self.usr_np.log(temperature) + -1*(5535.414868486423 / temperature)) * ones,
+            self.usr_np.exp(18.639652073262145 + -1*(6038.634401985189 / temperature)) * ones,
         ]
         return self._pyro_make_array(k_fwd)
 
@@ -328,7 +328,7 @@ class Thermochemistry:
         return self._pyro_make_array([
             k_fwd[0]*concentrations[0]**0.5*concentrations[1]**0.65,
             k_fwd[1]*(concentrations[3]*concentrations[1]**0.5 + -1*self.usr_np.exp(log_k_eq[1])*concentrations[2]),
-            k_fwd[2]*(concentrations[5]*concentrations[1]**0.5 + -1*self.usr_np.exp(log_k_eq[2])*concentrations[4]),
+            k_fwd[2]*concentrations[5]**0.75*concentrations[1]**0.5,
             ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
