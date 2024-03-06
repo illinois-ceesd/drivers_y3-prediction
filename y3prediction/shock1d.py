@@ -297,26 +297,26 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         if transfinite:
             if dim == 2:
                 my_string += (f"""
-                    Transfinite Curve {{1, 3}} = {0.1} / {size};
-                    Transfinite Curve {{5, 6}} = {0.02} / {size};
+                    Transfinite Curve {{1, 3}} = {0.1} / {size} + 1;
+                    Transfinite Curve {{5, 6}} = {0.02} / {size} + 1;
                 """)
                 my_string += (
                     "Transfinite Curve {-2, 4, 7}"
-                    f"={0.02}/{size} Using Bump 1/{bl_ratio};\n"
-                    "Transfinite Surface {{1, 2}} Right;"
+                    f"={0.02}/{size} + 1 Using Bump 1/{bl_ratio};\n"
+                    "Transfinite Surface {1, 2} Right;"
                 )
             else:
                 my_string += (f"""
-                    Transfinite Curve {{1, 3, 10, 12}} = {0.1} / {size};
-                    Transfinite Curve {{5, 6, 32, 34}} = {0.02} / {size};
+                    Transfinite Curve {{1, 3, 10, 12}} = {0.1} / {size} + 1;
+                    Transfinite Curve {{5, 6, 32, 34}} = {0.02} / {size} + 1;
                 """)
                 my_string += (
                     "Transfinite Curve {2, 4, 7, 9, 11, 33}"
-                    f"={0.02}/{size} Using Bump 1/{bl_ratio};"
+                    f"={0.02}/{size} + 1 Using Bump 1/{bl_ratio};"
                 )
                 my_string += (
                     "Transfinite Curve {14, 23, 45, 15, 19, 41}"
-                    f"={0.02}/{size} Using Bump 1/{bl_ratio};"
+                    f"={0.02}/{size} + 1 Using Bump 1/{bl_ratio};"
                 )
                 my_string += ("""
                     Transfinite Surface {1, 2, 16, 20, 24, 28, 29,42,46, 50, 51};
@@ -438,7 +438,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Recombine Surface {1, 2};
             """)
 
-        #print(my_string)
+        print(my_string)
         return partial(generate_gmsh, ScriptSource(my_string, "geo"),
                        force_ambient_dim=dim, dimensions=dim, target_unit="M",
                        return_tag_to_elements_map=True)
