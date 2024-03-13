@@ -1298,8 +1298,8 @@ def main(actx_class,
     if use_lewis_transport:
         transport_le = np.ones(nspecies,)
 
-    if nspecies > 4:
-        transport_le[i_h2] = 0.2
+        if nspecies > 4:
+            transport_le[i_h2] = 0.2
 
     if rank == 0:
         if transport_type == 0:
