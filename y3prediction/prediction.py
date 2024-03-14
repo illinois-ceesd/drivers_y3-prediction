@@ -1964,7 +1964,7 @@ def main(actx_class,
             smooth_char_length_alpha*char_length_wall**2/current_dt
         """
 
-    def compute_smoothed_char_length(href_fluid, comm_ind):
+    def compute_smoothed_char_length(href_fluid):
         # regular boundaries
 
         smooth_neumann = NeumannDiffusionBoundary(0)
@@ -1996,7 +1996,7 @@ def main(actx_class,
             dcoll, smoothness_diffusivity, fluid_smoothness_boundaries,
             href_fluid,
             quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
-            comm_tag=(_SmoothCharDiffFluidCommTag, comm_ind))*current_dt
+            comm_tag=_SmoothCharDiffFluidCommTag)*current_dt
 
         return smooth_href_fluid_rhs
 
@@ -2004,7 +2004,7 @@ def main(actx_class,
         actx.compile(compute_smoothed_char_length)
 
     """
-    def compute_smoothed_char_length_wall(href_wall, comm_ind):
+    def compute_smoothed_char_length_wall(href_wall):
         smooth_neumann = NeumannDiffusionBoundary(0)
         wall_smoothness_boundaries = {
             wall_ffld_bnd.domain_tag: smooth_neumann,
@@ -2019,7 +2019,7 @@ def main(actx_class,
                 dcoll, smoothness_diffusivity_wall, wall_smoothness_boundaries,
                 href_wall,
                 quadrature_tag=quadrature_tag, dd=dd_vol_wall,
-                comm_tag=(_SmoothCharDiffWallCommTag, comm_ind))*current_dt
+                comm_tag=_SmoothCharDiffWallCommTag)*current_dt
 
         return smooth_href_wall_rhs
 
@@ -2031,9 +2031,9 @@ def main(actx_class,
     smoothed_char_length_fluid = char_length_fluid
 
     if use_smoothed_char_length:
-        for i in range(smooth_char_length):
+        for _ in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
-                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, i)
+                compute_smoothed_char_length_compiled(smoothed_char_length_fluid)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
@@ -2043,7 +2043,7 @@ def main(actx_class,
             for i in range(smooth_char_length):
                 smoothed_char_length_wall_rhs = \
                     compute_smoothed_char_length_wall_compiled(
-                        smoothed_char_length_wall, i)
+                        smoothed_char_length_wall)
                 smoothed_char_length_wall = smoothed_char_length_wall + \
                                             smoothed_char_length_wall_rhs
         """
