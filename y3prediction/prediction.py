@@ -480,7 +480,8 @@ def main(actx_class,
     current_dt = configurate("current_dt", input_data, 1.e-8)
     t_final = configurate("t_final", input_data, 1.e-7)
     t_viz_interval = configurate("t_viz_interval", input_data, 1.e-8)
-    current_cfl = configurate("current_cfl", input_data, 1.0)
+    current_cfl = configurate("current_cfl", input_data, 0.5)
+    current_cfl_visc = configurate("current_cfl_visc", input_data, current_cfl)
     constant_cfl = configurate("constant_cfl", input_data, False)
 
     # these are modified below for a restart
@@ -489,7 +490,8 @@ def main(actx_class,
     t_wall_start = 0.
     current_step = 0
     first_step = 0
-    last_viz_interval = 0
+    first_viz_number = 0
+    first_viz_time = 0.0
     force_eval = True
 
     # default health status bounds
@@ -830,7 +832,8 @@ def main(actx_class,
         print(f"\tnhealth = {nhealth}")
         print(f"\tnstatus = {nstatus}")
         if constant_cfl == 1:
-            print(f"\tConstant cfl mode, current_cfl = {current_cfl}")
+            print(f"\tConstant cfl mode, current_cfl = {current_cfl},"
+                  f"{current_cfl_visc} = {current_cfl_visc}")
         else:
             print(f"\tConstant dt mode, current_dt = {current_dt}")
         print(f"\tt_final = {t_final}")
@@ -1671,7 +1674,9 @@ def main(actx_class,
         current_step = restart_data["step"]
         first_step = current_step
         current_t = restart_data["t"]
-        last_viz_interval = restart_data["last_viz_interval"]
+        if viz_interval_type > 0:
+            first_viz_number = restart_data["last_viz_interval"]
+            first_viz_time = restart_data["last_viz_time"]
         t_start = current_t
         if use_wall:
             t_wall_start = restart_data["t_wall"]
@@ -3335,7 +3340,8 @@ def main(actx_class,
         dv = fluid_state.dv
 
         status_msg = (f"----   dt {dt:1.3e},"
-                      f" cfl_fluid {cfl_fluid:1.8f}")
+                      f" cfl_fluid_inv {cfl_fluid[0]:1.8f},"
+                      f" cfl_fluid_visc {cfl_fluid[1]:1.8f}")
 
         pmin = vol_min(dd_vol_fluid, dv.pressure)
         pmax = vol_max(dd_vol_fluid, dv.pressure)
@@ -3541,6 +3547,9 @@ def main(actx_class,
     def my_write_viz(step, t, t_wall, viz_state, viz_dv,
                      ts_field_fluid, ts_field_wall, dump_number):
 
+        if viz_interval_type > 0:
+            dump_number = dump_number + first_viz_number
+
         if rank == 0:
             print(f"******** Writing Fluid Visualization File {dump_number}"
                   f" at step {step},"
@@ -3562,8 +3571,11 @@ def main(actx_class,
         # basic viz quantities, things here are difficult (or impossible) to compute
         # in post-processing
         fluid_viz_fields = [("cv", cv),
-                            ("dv", dv),
-                            ("dt" if constant_cfl else "cfl", ts_field_fluid)]
+                            ("dv", dv)]
+        fluid_viz_ext = [("cfl_inv", ts_field_fluid[0]),
+                         ("cfl_visc", ts_field_fluid[1])]
+
+        fluid_viz_fields.extend(fluid_viz_ext)
 
         if use_wall:
             wall_kappa = wdv.thermal_conductivity
@@ -3743,7 +3755,13 @@ def main(actx_class,
             if rank == 0:
                 print("******** Done Writing Wall Visualization File ********")
 
-    def my_write_restart(step, t, t_wall, state):
+    def my_write_restart(step, num_viz_dumps, t, t_wall, state):
+
+        if viz_interval_type > 0:
+            nviz = num_viz_dumps + first_viz_number
+        else:
+            nviz = step
+
         if rank == 0:
             print(f"******** Writing Restart File at step {step}, "
                   f"sim time {t:1.6e} s ********")
@@ -3763,7 +3781,8 @@ def main(actx_class,
                 "t": t,
                 "step": step,
                 "order": order,
-                "last_viz_interval": last_viz_interval,
+                "last_viz_interval": nviz,
+                "last_viz_time": first_viz_time + t_viz_interval*num_viz_dumps,
                 "global_nelements": global_nelements,
                 "num_parts": nparts
             }
@@ -3930,24 +3949,38 @@ def main(actx_class,
 
         return health_error
 
-    def my_get_viscous_timestep(dcoll, fluid_state):
+    """
+    def _my_get_inviscid_timestep(fluid_state):
+        return (char_length_fluid/fluid_state.wavespeed)
+        """
+
+    def _my_get_inviscid_timestep(fluid_state):
+        return (char_length_fluid/fluid_state.wavespeed)
+
+    #my_get_inviscid_timestep = actx.compile(_my_get_inviscid_timestep)
+    my_get_inviscid_timestep = _my_get_inviscid_timestep
+
+    def _my_get_viscous_timestep(fluid_state):
 
         nu = 0
         d_alpha_max = 0
+        cv = fluid_state.cv
+        dv = fluid_state.dv
 
-        if fluid_state.is_viscous:
-            from mirgecom.viscous import get_local_max_species_diffusivity
-            nu = fluid_state.viscosity/fluid_state.mass_density
-            d_alpha_max = \
-                get_local_max_species_diffusivity(
-                    fluid_state.array_context,
-                    fluid_state.species_diffusivity
-                )
+        from mirgecom.viscous import get_local_max_species_diffusivity
+        nu = fluid_state.viscosity/fluid_state.mass_density
+        kappa = (fluid_state.thermal_conductivity/cv.mass /
+                 eos.heat_capacity_cp(cv, dv.temperature))
+        d_alpha_max = \
+            get_local_max_species_diffusivity(
+                fluid_state.array_context,
+                fluid_state.species_diffusivity
+            )
 
-        return (
-            char_length_fluid / (fluid_state.wavespeed
-            + ((nu + d_alpha_max) / char_length_fluid))
-        )
+        return (char_length_fluid**2 / (nu + kappa + d_alpha_max))
+
+    #my_get_viscous_timestep = actx.compile(_my_get_viscous_timestep)
+    my_get_viscous_timestep = _my_get_viscous_timestep
 
     if use_wall:
         def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
@@ -3969,7 +4002,7 @@ def main(actx_class,
             mydt = dt
             if constant_cfl:
                 from grudge.op import nodal_min
-                ts_field = cfl*my_get_wall_timestep(
+                ts_field = current_cfl_visc*my_get_wall_timestep(
                     dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
                     wall_temperature=wall_temperature)
                 mydt = actx.to_numpy(
@@ -3986,42 +4019,75 @@ def main(actx_class,
 
             return ts_field, cfl, mydt
 
-    #my_get_timestep = actx.compile(_my_get_timestep)
     if use_wall:
         my_get_timestep_wall = _my_get_timestep_wall
 
+    """
     def _my_get_timestep(
             dcoll, fluid_state, t, dt, cfl, t_final, constant_cfl=False,
             fluid_dd=DD_VOLUME_ALL):
+            """
+    def _my_get_timestep(state, t, dt):
 
-        mydt = dt
+        cv = state.cv
+        tseed = state.tseed
+        av_smu = state.av_smu
+        av_sbeta = state.av_sbeta
+        av_skappa = state.av_skappa
+
+        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
+                                       temperature_seed=tseed,
+                                       smoothness_mu=av_smu,
+                                       smoothness_beta=av_sbeta,
+                                       smoothness_kappa=av_skappa,
+                                       limiter_func=limiter_func,
+                                       limiter_dd=dd_vol_fluid)
+
+        mydt_inv = dt
+        mydt_visc = dt
+        cfl_inv = current_cfl
+        cfl_visc = current_cfl_visc
         if constant_cfl:
             from grudge.op import nodal_min
-            ts_field = cfl*my_get_viscous_timestep(
-                dcoll=dcoll, fluid_state=fluid_state)
-            mydt = fluid_state.array_context.to_numpy(nodal_min(
-                    dcoll, fluid_dd, ts_field, initial=np.inf))[()]
+            # maximum timestep at each point
+            ts_field_inv = cfl_inv*my_get_inviscid_timestep(fluid_state)
+            ts_field_visc = cfl_visc*my_get_viscous_timestep(fluid_state)
+            mydt_inv = actx.to_numpy(nodal_min(
+                dcoll, dd_vol_fluid, ts_field_inv, initial=np.inf))[()]
+            mydt_visc = actx.to_numpy(nodal_min(
+                dcoll, dd_vol_fluid, ts_field_visc, initial=np.inf))[()]
+
         else:
             from grudge.op import nodal_max
-            ts_field = mydt/my_get_viscous_timestep(
-                dcoll=dcoll, fluid_state=fluid_state)
-            cfl = fluid_state.array_context.to_numpy(nodal_max(
-                    dcoll, fluid_dd, ts_field, initial=0.))[()]
+            # cfl at each point
+            ts_field_inv = mydt_inv*my_get_inviscid_timestep(fluid_state)
+            ts_field_visc = mydt_visc/my_get_viscous_timestep(fluid_state)
+            cfl_inv = fluid_state.array_context.to_numpy(nodal_max(
+                dcoll, dd_vol_fluid, ts_field_inv, initial=0.))[()]
+            cfl_visc = fluid_state.array_context.to_numpy(nodal_max(
+                dcoll, dd_vol_fluid, ts_field_visc, initial=0.))[()]
+
+        ts_field = make_obj_array([ts_field_inv, ts_field_visc])
+        cfl = make_obj_array([cfl_inv, cfl_visc])
+        mydt = make_obj_array([mydt_inv, mydt_visc])
 
         return ts_field, cfl, mydt
 
+    # we need to remove the mpi communication to compile this
     #my_get_timestep = actx.compile(_my_get_timestep)
     my_get_timestep = _my_get_timestep
 
     def _check_time(time, dt, interval, interval_type):
         toler = 1.e-6
-        status = False
+        dump_now = False
 
-        dumps_so_far = math.floor((time-t_start)/interval)
+        # the number of dumps since program start
+        dumps_so_far = math.floor((time - first_viz_time)/interval)
+        #dumps_so_far = last_viz_interval + math.floor((time-t_start)/interval)
+        time_till_next = (dumps_so_far + 1)*interval - time
 
         # dump if we just passed a dump interval
         if interval_type == 2:
-            time_till_next = (dumps_so_far + 1)*interval - time
             steps_till_next = math.floor(time_till_next/dt)
 
             # reduce the timestep going into a dump to avoid a big variation in dt
@@ -4039,15 +4105,16 @@ def main(actx_class,
 
             time_from_last = time - t_start - (dumps_so_far)*interval
             if abs(time_from_last/dt) < toler:
-                status = True
+                dump_now = True
         else:
-            time_from_last = time - t_start - (dumps_so_far)*interval
+            #time_from_last = time - t_start - (dumps_so_far)*interval
+            time_from_last = time - (dumps_so_far)*interval
             if time_from_last < dt:
-                status = True
+                dump_now = True
 
-        return status, dt, dumps_so_far + last_viz_interval
+        return dump_now, dt, dumps_so_far
 
-    #check_time = _check_time
+    check_time = _check_time
 
     def my_pre_step(step, t, dt, state):
 
@@ -4099,7 +4166,7 @@ def main(actx_class,
             # This re-creation of the state forces the limited cv into state
             stepper_state = stepper_state.replace(cv=cv)
 
-            if any([do_viz, do_restart, do_health, do_status]):
+            if any([do_viz, do_restart, do_health, do_status, constant_cfl]):
 
                 # pass through, removes a bunch of tagging to avoid recomplie
                 if use_wall:
@@ -4113,10 +4180,10 @@ def main(actx_class,
 
                 dv = fluid_state.dv
 
+                fluid_state = force_evaluation(actx, fluid_state)
                 ts_field_fluid, cfl_fluid, dt_fluid = my_get_timestep(
-                    dcoll=dcoll, fluid_state=fluid_state,
-                    t=t, dt=dt, cfl=current_cfl, t_final=t_final,
-                    constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+                    state=stepper_state,
+                    t=t, dt=dt)
 
                 ts_field_wall = None
                 if use_wall:
@@ -4126,28 +4193,43 @@ def main(actx_class,
                         cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
                         wall_dd=dd_vol_wall)
                 else:
-                    cfl_wall = cfl_fluid
+                    cfl_wall = current_cfl_visc
 
-            """
+            #dt_fluid = force_evaluation(actx, dt_fluid)
+
             # adjust time for constant cfl, use the smallest timescale
             dt_const_cfl = 100.
             if constant_cfl:
-                dt_const_cfl = np.minimum(dt_fluid, dt_wall)
+                dt_fluid_min = np.minimum(dt_fluid[0], dt_fluid[1])
+                if use_wall:
+                    dt_const_cfl = np.minimum(dt_fluid_min, dt_wall)
+                else:
+                    dt_const_cfl = dt_fluid_min
 
-            # adjust time to hit the final requested time
-            t_remaining = max(0, t_final - t)
+                # adjust time to hit the final requested time
+                t_remaining = max(0, t_final - t)
 
-            if viz_interval_type == 0:
-                dt = np.minimum(t_remaining, current_dt)
-            else:
+                """
+                if viz_interval_type == 0:
+                    dt = np.minimum(t_remaining, current_dt)
+                else:
+                    dt = np.minimum(t_remaining, dt_const_cfl)
+                """
                 dt = np.minimum(t_remaining, dt_const_cfl)
 
-            # update our I/O quantities
-            cfl_fluid = dt*cfl_fluid/dt_fluid
-            cfl_wall = dt*cfl_wall/dt_wall
-            ts_field_fluid = dt*ts_field_fluid/dt_fluid
-            ts_field_wall = dt*ts_field_wall/dt_wall
+                # update our I/O quantities
+                cfl_fluid[0] = dt*cfl_fluid[0]/dt_fluid[0]
+                cfl_fluid[1] = dt*cfl_fluid[1]/dt_fluid[1]
+                # turn ts_field back into cfl
+                ts_field_fluid[0] = current_cfl*dt/ts_field_fluid[0]
+                ts_field_fluid[1] = current_cfl_visc*dt/ts_field_fluid[1]
+                if use_wall:
+                    cfl_wall = dt*cfl_wall/dt_wall
+                    ts_field_wall = current_cfl_visc*dt/ts_field_wall
 
+            if viz_interval_type == 0:
+                do_viz = check_step(step=step, interval=nviz)
+                next_dump_number = step
             if viz_interval_type == 1:
                 do_viz, dt, next_dump_number = check_time(
                     time=t, dt=dt, interval=t_viz_interval,
@@ -4161,12 +4243,10 @@ def main(actx_class,
                 # adjust cfl by dt
                 cfl_fluid = dt*cfl_fluid/dt_sav
                 cfl_wall = dt*cfl_wall/dt_sav
-            else:
-                do_viz = check_step(step=step, interval=nviz)
-                next_dump_number = step
-            """
 
-            t_wall = t_wall_start + (step - first_step)*dt*wall_time_scale
+            # t_wall is not explicitly tracked, compute it from the elapsed
+            # fluid time
+            t_wall = t_wall_start + (t - t_start)*wall_time_scale
             my_write_status_lite(step=step, t=t, t_wall=t_wall)
 
             # these status updates require global reductions on state data
@@ -4190,7 +4270,8 @@ def main(actx_class,
                     raise MyRuntimeError("Failed simulation health check.")
 
             if do_restart:
-                my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
+                my_write_restart(step=step, num_viz_dumps=next_dump_number,
+                                 t=t, t_wall=t_wall, state=stepper_state)
 
             if do_viz:
                 # pack things up
@@ -4215,8 +4296,7 @@ def main(actx_class,
             if viz_interval_type == 0:
                 dump_number = step
             else:
-                dump_number = (math.floor((t-t_start)/t_viz_interval) +
-                    last_viz_interval)
+                dump_number = math.floor((t - first_viz_time)/t_viz_interval)
 
             # pack things up
             if use_wall:
@@ -4233,12 +4313,15 @@ def main(actx_class,
                 ts_field_wall=ts_field_wall,
                 dump_number=dump_number)
 
-            my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
+            my_write_restart(step=step, num_viz_dumps=dump_number,
+                             t=t, t_wall=t_wall, state=stepper_state)
             comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
 
         # This re-creation of the state resets *tseed* to current temp
         stepper_state = stepper_state.replace(tseed=fluid_state.temperature)
+
+        dt = force_evaluation(actx, dt)
 
         return stepper_state.get_obj_array(), dt
 
@@ -4533,6 +4616,8 @@ def main(actx_class,
         # don't know if we should do this
         #state = force_evaluation(actx, state)
 
+        #t = force_evaluation(actx, t)
+
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
         rhs_state = unfiltered_rhs_compiled(t, state)
@@ -4592,10 +4677,16 @@ def main(actx_class,
     if rank == 0:
         logger.info("Checkpointing final state ...")
 
+    cfl = make_obj_array([current_cfl, current_cfl_visc])
+    """
     ts_field_fluid, cfl, dt = my_get_timestep(dcoll=dcoll,
         fluid_state=current_fluid_state,
-        t=current_t, dt=current_dt, cfl=current_cfl,
+        t=current_t, dt=current_dt, cfl=cfl,
         t_final=t_final, constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
+        """
+    ts_field_fluid, cfl, dt = my_get_timestep(
+        state=current_stepper_state,
+        t=current_t, dt=current_dt)
 
     ts_field_wall = None
     if use_wall:
@@ -4604,21 +4695,21 @@ def main(actx_class,
             wall_temperature=current_wdv.temperature, t=current_t, dt=current_dt,
             cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
             wall_dd=dd_vol_wall)
-    current_t_wall = t_wall_start + (current_step - first_step)*dt*wall_time_scale
+
+    current_t_wall = t_wall_start + (current_t - t_start)*wall_time_scale
 
     my_write_status_lite(step=current_step, t=current_t,
                          t_wall=current_t_wall)
 
-    my_write_status_fluid(fluid_state=current_fluid_state, dt=dt, cfl_fluid=cfl)
+    my_write_status_fluid(fluid_state=current_fluid_state, dt=dt[0], cfl_fluid=cfl)
     if use_wall:
         my_write_status_wall(wall_temperature=current_wdv.temperature,
-                             dt=dt*wall_time_scale, cfl_wall=cfl_wall)
+                             dt=dt[0]*wall_time_scale, cfl_wall=cfl_wall)
 
     if viz_interval_type == 0:
         dump_number = current_step
     else:
-        dump_number = (math.floor((current_t - t_start)/t_viz_interval) +
-            last_viz_interval)
+        dump_number = math.floor((current_t - first_viz_time)/t_viz_interval)
 
     if nviz > 0:
         # pack things up
@@ -4637,7 +4728,8 @@ def main(actx_class,
             dump_number=dump_number)
 
     if nrestart > 0:
-        my_write_restart(step=current_step, t=current_t, t_wall=current_t_wall,
+        my_write_restart(step=current_step, num_viz_dumps=dump_number,
+                         t=current_t, t_wall=current_t_wall,
                          state=current_stepper_state)
 
     if logmgr:

@@ -11,12 +11,14 @@ nstatus: 1
 use_av: 2
 #constant_cfl: 1
 constant_cfl: 0
-current_cfl: 0.05
+current_cfl: 0.0005
+current_cfl_visc: 0.00025
 current_dt: 1e-10
 t_final: 2e-9
 nspecies:  2
 order:  2
 integrator: euler
+#integrator: compiled_lsrk54
 #health_pres_min: 2828
 #health_pres_max: 274259
 ########################
