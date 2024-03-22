@@ -946,7 +946,7 @@ def main(actx_class,
 
     if rank == 0:
         print("\n#### Simluation initialization data: ####")
-        if init_case == "y3prediction":
+        if init_case == "y3prediction" or init_case == "y3prediction_ramp":
             print("\tInitializing flow to y3prediction")
             print(f"\tInflow stagnation pressure {total_pres_inflow}")
             print(f"\tInflow stagnation temperature {total_temp_inflow}")
@@ -1763,6 +1763,117 @@ def main(actx_class,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
 
+    elif init_case == "y3prediction_ramp":
+
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        fuel_location = np.zeros(shape=(dim,))
+        disc_location[0] = 0.225
+        fuel_location[0] = 10000.
+        plane_normal = np.zeros(shape=(dim,))
+
+        # parameters to adjust the shape of the initialization
+        temp_wall = 300
+
+        #
+        # isentropic expansion based on the area ratios between the
+        # inlet (r=54e-3m) and the throat (r=3.167e-3)
+        #
+        vel_inflow = np.zeros(shape=(dim,))
+        vel_outflow = np.zeros(shape=(dim,))
+
+        throat_height = 3.61909e-3
+        inlet_height = 54.129e-3
+        inlet_area_ratio = inlet_height/throat_height
+
+        inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                          gamma=gamma,
+                                          mach_guess=0.01)
+        pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                            P0=total_pres_inflow,
+                                            gamma=gamma)
+        temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                               T0=total_temp_inflow,
+                                               gamma=gamma)
+
+        if eos_type == 0:
+            rho_inflow = pres_inflow/temp_inflow/r
+            sos = math.sqrt(gamma*pres_inflow/rho_inflow)
+            inlet_gamma = gamma
+        else:
+            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                              temperature=temp_inflow,
+                                              mass_fractions=y)
+            inlet_gamma = (
+                pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+
+            gamma_error = (gamma - inlet_gamma)
+            gamma_guess = inlet_gamma
+            toler = 1.e-6
+            # iterate over the gamma/mach since gamma = gamma(T)
+            while gamma_error > toler:
+
+                inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                                  gamma=gamma_guess,
+                                                  mach_guess=0.01)
+                pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                                    P0=total_pres_inflow,
+                                                    gamma=gamma_guess)
+                temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                                       T0=total_temp_inflow,
+                                                       gamma=gamma_guess)
+
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                                  temperature=temp_inflow,
+                                                  mass_fractions=y)
+                inlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+                gamma_error = (gamma_guess - inlet_gamma)
+                gamma_guess = inlet_gamma
+
+            sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
+
+        vel_inflow[0] = inlet_mach*sos
+        plane_normal = np.zeros(shape=(dim,))
+        theta = 0.
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {inlet_mach}")
+            print(f"\tinlet gamma {inlet_gamma}")
+            print(f"\tinlet temperature {temp_inflow}")
+            print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet rho {rho_inflow}")
+            print(f"\tinlet velocity {vel_inflow[1]}")
+            #print(f"final inlet pressure {pres_inflow_final}")
+
+        bulk_init = PlanarDiscontinuityMulti(
+            dim=dim,
+            nspecies=nspecies,
+            disc_location=disc_location,
+            disc_location_species=fuel_location,
+            normal_dir=plane_normal,
+            sigma=0.002,
+            pressure_left=pres_inflow,
+            pressure_right=pres_bkrnd,
+            temperature_left=temp_inflow,
+            temperature_right=temp_bkrnd,
+            velocity_left=vel_inflow,
+            velocity_right=vel_outflow,
+            velocity_cross=vel_outflow,
+            species_mass_left=y,
+            species_mass_right=y_fuel,
+            temp_wall=temp_bkrnd,
+            y_top=0.0270645,
+            y_bottom=-0.0270645,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+
     elif init_case == "y3prediction":
         #
         # stagnation tempertuare 2076.43 K
@@ -1778,7 +1889,6 @@ def main(actx_class,
 
         throat_height = 3.61909e-3
         inlet_height = 54.129e-3
-        #outlet_height = 28.54986e-3
         outlet_height = 34.5e-3
         inlet_area_ratio = inlet_height/throat_height
         outlet_area_ratio = outlet_height/throat_height
@@ -2066,10 +2176,16 @@ def main(actx_class,
         inj_ymin = -0.0243245
         inj_ymax = -0.0227345
 
-        if actii_init_case == "cav8":
-            from y3prediction.actii_y3_cav8 import InitACTII
+        if init_case == "y3prediction_ramp":
+            if actii_init_case == "cav8":
+                from y3prediction.actii_y3_cav8 import InitACTII_Ramp
+            else:
+                from y3prediction.actii_y3_cav5 import InitACTII_Ramp
         else:
-            from y3prediction.actii_y3_cav5 import InitACTII
+            if actii_init_case == "cav8":
+                from y3prediction.actii_y3_cav8 import InitACTII
+            else:
+                from y3prediction.actii_y3_cav5 import InitACTII
 
         bulk_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
@@ -4857,7 +4973,7 @@ def main(actx_class,
     sponge_amp = sponge_sigma/current_dt/1000
     from y3prediction.utils import InitSponge
 
-    if init_case == "y3prediction":
+    if init_case == "y3prediction" or init_case == "y3prediction_ramp":
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
