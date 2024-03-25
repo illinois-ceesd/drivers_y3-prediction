@@ -123,7 +123,7 @@ Physical Curve("wall_farfield") = {37:39};
 num_bl_injector = 5;
 num_injector_center = 2;
 num_injector = 40;
-num_injector_curve = 8;
+num_injector_curve = 10;
 Transfinite Curve{1077, -1079} = num_bl_injector Using Progression 1.5; // vertical segments
 Transfinite Curve{302, 300} = num_bl_injector Using Progression 1.2; // vertical segments
 Transfinite Curve{1078, 304} = num_injector_center; // center vertical segments
@@ -240,14 +240,14 @@ Transfinite Surface {13} = {18, 1111, 1053, 10};
 // nozzle
 //
 num_nozzle_top1 = 3;
-num_nozzle_top2 = 47;
+num_nozzle_top2 = 60;
 num_nozzle_bottom1 = 10;
-num_nozzle_bottom2 = 40;
+num_nozzle_bottom2 = 53;
 num_nozzle_interior = 10;
 Transfinite Curve {1009} = num_nozzle_top1;
-Transfinite Curve {1003} = num_nozzle_top2;
+Transfinite Curve {1003} = num_nozzle_top2 Using Bump 2.5;
 Transfinite Curve {1026} = num_nozzle_bottom1;
-Transfinite Curve {1021} = num_nozzle_bottom2;
+Transfinite Curve {1021} = num_nozzle_bottom2 Using Bump 1.5;
 Transfinite Curve {1030} = num_nozzle_interior;
 Transfinite Curve {1023} = num_bl_inlet_bottom + num_nozzle_interior - num_bl_isolator_bottom; 
 Transfinite Surface {3} = {1010, 1004, 1033, 1035};
@@ -405,8 +405,8 @@ Mesh.RecombineAll = 1;
 
 Mesh 2;
 RecombineMesh;
+//Mesh.SubdivisionAlgorithm = 0;
 Mesh.SubdivisionAlgorithm = 1;
 RefineMesh;
-//Mesh.SubdivisionAlgorithm = 0;
 Mesh.MshFileVersion = 2.2;
 Save "actii_2d.msh";

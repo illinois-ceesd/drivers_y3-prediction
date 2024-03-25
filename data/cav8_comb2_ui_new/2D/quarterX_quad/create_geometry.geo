@@ -161,6 +161,13 @@ BooleanFragments{ Point{1111}; Delete;}{Line{18}; Delete;}
 Line(500) = {65, 1110};
 Line(501) = {1065, 1111};
 
+// move the cavity corner bl
+Delete{ Line{1047, 1062, 313};}
+Translate {-1.5, -.5, 0.}{Point{1079};}
+Line(1047) = {1076, 1079};
+Line(1062) = {1079, 1093};
+Line(313) = {5, 1079};
+
 Coherence;
 //
 
