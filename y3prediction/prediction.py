@@ -1849,7 +1849,7 @@ def main(actx_class,
             print(f"\tinlet temperature {temp_inflow}")
             print(f"\tinlet pressure {pres_inflow}")
             print(f"\tinlet rho {rho_inflow}")
-            print(f"\tinlet velocity {vel_inflow[1]}")
+            print(f"\tinlet velocity {vel_inflow[0]}")
             #print(f"final inlet pressure {pres_inflow_final}")
 
         bulk_init = PlanarDiscontinuityMulti(
@@ -4735,8 +4735,8 @@ def main(actx_class,
             temp_wall=temp_wall,
             temp_sigma=temp_sigma,
             vel_sigma=vel_sigma,
-            smooth_y0=-0.01,
-            smooth_y1=0.01,
+            smooth_y0=-0.0270645,
+            smooth_y1=0.0270645,
             gamma=gamma,
             nspecies=nspecies,
             mass_frac=y,

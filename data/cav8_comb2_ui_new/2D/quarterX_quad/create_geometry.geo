@@ -168,6 +168,14 @@ Line(1047) = {1076, 1079};
 Line(1062) = {1079, 1093};
 Line(313) = {5, 1079};
 
+// extra points in the sample
+Translate {0., -3., 0.} { Duplicata{ Line{43, 41}; } }
+BooleanFragments{ Line{1108, 1109}; Delete;}{Line{38}; Delete;}
+Recursive Delete{ Line{43, 1109, 1108, 41, 1110, 1111}; }
+Line(550) = {1113, 43};
+Line(551) = {1116, 42};
+
+
 Coherence;
 //
 
@@ -205,9 +213,9 @@ Curve Loop(16) = {1051, 313, -1047, 1045};
 Plane Surface(16) = {16};
 Curve Loop(17) = {5, -1061, -1062, -313};
 Plane Surface(17) = {17};
-Curve Loop(18) = {1061, 1071, -1108, -1063};
+Curve Loop(18) = {1061, 1071, -1115, -1063};
 Plane Surface(18) = {18};
-Curve Loop(19) = {1108, 1072, -1067, -1064};
+Curve Loop(19) = {1115, 1072, -1067, -1064};
 Plane Surface(19) = {19};
 Curve Loop(20) = {1067, 1073, -1055, -1065};
 Plane Surface(20) = {20};
@@ -225,10 +233,13 @@ Curve Loop(28) = {1079, 33, 32, 300, -1041, -1040};
 Plane Surface(26) = {28};
 Curve Loop(29) = {1078, 1040, 304, -1042};
 Plane Surface(27) = {29};
-Curve Loop(200) = {42, -41, -12, 43};
-Plane Surface(200) = {200};
-Curve Loop(202) = {38, -39, -13, 41, -42, -43, -11, 37};
-Plane Surface(202) = {202};
 
+Curve Loop(200) = {37, 1112, 550, -45, -11};
+Plane Surface(200) = {200};
+Curve Loop(201) = {47, -551, 1114, -39, -13};
+Plane Surface(201) = {201};
+Curve Loop(204) = {1113, 551, -42, -550};
+Plane Surface(204) = {204};
+Curve Loop(203) = {45, 42, -47, -12};
+Plane Surface(203) = {203};
 Save "geometry_trans.geo_unrolled";
-//+

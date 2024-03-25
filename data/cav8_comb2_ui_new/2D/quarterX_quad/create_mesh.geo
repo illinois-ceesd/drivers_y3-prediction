@@ -47,7 +47,7 @@ EndIf
 If(Exists(samplefac))
     sample_factor=samplefac;
 Else
-    sample_factor=8.0;
+    sample_factor=10.0;
 EndIf
 
 If(Exists(shearfac))
@@ -107,8 +107,8 @@ Physical Surface('fluid') = {
     -100, -101, -3, -4, -5, 6, -7, -8, 9, 10,
     11, 12, 13, -14, -15, -16, -17, -18, -19, -20,
     -21, -22, -23, 24, -25, 26, 27};
-Physical Surface('wall_insert') = {200};
-Physical Surface('wall_surround') = {-202};
+Physical Surface('wall_insert') = {-203};
+Physical Surface('wall_surround') = {-204, -200, 201};
 
 Physical Curve("inflow") = {1074:1076}; // inlet
 Physical Curve("outflow") = {19}; // outlet
@@ -116,14 +116,14 @@ Physical Curve("injection") = {1080:1082}; // injection
 Physical Curve("upstream_injection") = {1077:1079}; // injection
 Physical Curve("flow") = {1074:1076, 1080:1082, 1077:1079}; // all inflow
 Physical Curve("isothermal_wall") = {26, 1010, 1003, 1002, 23, 22, 21, 1105, 1104, 1107, 1106, 17, 16, 15, 14, 10, 9, 8, 6, 5, 1051, 1050, 1049, 1048, 1101, 1100, 1, 35, 33, 32, 1087, 1096, 1095, 1021, 1026, 1009, 1027, 29, 28};
-Physical Curve("wall_farfield") = {37:39};
+Physical Curve("wall_farfield") = {37,39, 1112:1114};
 //
 // upstream injector bl
 //
-num_bl_injector = 5;
-num_injector_center = 2;
+num_bl_injector = 7;
+num_injector_center = 3;
 num_injector = 40;
-num_injector_curve = 10;
+num_injector_curve = 9;
 Transfinite Curve{1077, -1079} = num_bl_injector Using Progression 1.5; // vertical segments
 Transfinite Curve{302, 300} = num_bl_injector Using Progression 1.2; // vertical segments
 Transfinite Curve{1078, 304} = num_injector_center; // center vertical segments
@@ -152,12 +152,12 @@ Transfinite Surface{22};
 //
 // cavity bl
 //
-num_bl_cavity = 8;
-num_cavity_front = 20;
-num_cavity_bottom = 70;
-num_cavity_wall_bottom = 10;
-num_cavity_wall_top = 20;
-Transfinite Curve {310, 1046, 1050, -1049, -1045, 313, -1061, -1108, -1067, -1055, -314} = num_bl_cavity Using Progression 1.1; // vertical segments
+num_bl_cavity = 9;
+num_cavity_front = 21;
+num_cavity_bottom = 71;
+num_cavity_wall_bottom = 9;
+num_cavity_wall_top = 19;
+Transfinite Curve {310, 1046, 1050, -1049, -1045, 313, -1061, -1115, -1067, -1055, -314} = num_bl_cavity Using Progression 1.1; // vertical segments
 Transfinite Curve {1048, 1044} = num_cavity_front;
 Transfinite Curve {1051, 1047} = num_cavity_bottom;
 Transfinite Curve {5, 1062} = num_cavity_wall_bottom;
@@ -166,15 +166,17 @@ Transfinite Surface{14:21};
 //
 // top bl, isolator, combustor
 //
-num_bl_isolator = 8;
-num_upstream = 20;
-num_upstream_ramp = 30;
+num_bl_isolator = 9;
+num_bl_inlet_top = 8;
+num_upstream = 21;
+num_upstream_ramp = 31;
 num_nozzle_exp = 75;
 num_top = 370;
-num_exhaust = 12;
-num_bl_comb_exp = 88;
-num_exhaust_edge = 16;
-Transfinite Curve {1074, 1014, 1007, -403, -1105} = num_bl_isolator Using Progression 1.1;
+num_exhaust = 13;
+num_bl_comb_exp = 89;
+num_exhaust_edge = 17;
+Transfinite Curve {1007, -403, -1105} = num_bl_isolator Using Progression 1.1;
+Transfinite Curve {1074, 1014} = num_bl_inlet_top Using Progression 1.1;
 Transfinite Curve {26, 48} = num_upstream;
 Transfinite Curve {1010, 1012} = num_upstream_ramp Using Progression 1.03;
 Transfinite Curve {-1002, -1004} = num_nozzle_exp Using Progression 1.01;
@@ -182,7 +184,8 @@ Transfinite Curve {23} = num_top;
 Transfinite Curve {51} = num_top-num_bl_comb_exp+1;
 Transfinite Curve {22, 52} = num_exhaust Using Progression 1.05;
 Transfinite Curve {-21, 500} = num_exhaust_edge Using Progression 1.1;
-Transfinite Curve { 53, 600} = num_bl_comb_exp;
+//Transfinite Curve { 53, 600} = num_bl_comb_exp;
+Transfinite Curve { 53} = num_bl_comb_exp;
 Transfinite Surface {4} = {27, 1010, 1012, 56};
 Transfinite Surface {6};
 Transfinite Surface {7} = {1005, 24, 21, 1110};
@@ -190,13 +193,13 @@ Transfinite Surface {7} = {1005, 24, 21, 1110};
 // bottom bl, isolator, combustor
 //
 num_bl_inlet_bottom = 10;
-num_bl_isolator_bottom = 14;
-num_upstream_ramp1 = 20;
-num_upstream_ramp2 = 16;
-num_isolator = 100;
-num_injector_upstream = 20;
-num_injector_downstream = 100;
-num_cavity_upstream = 20;
+num_bl_isolator_bottom = 11;
+num_upstream_ramp1 = 21;
+num_upstream_ramp2 = 17;
+num_isolator = 101;
+num_injector_upstream = 17;
+num_injector_downstream = 101;
+num_cavity_upstream = 21;
 Transfinite Curve {-1076, -1031} = num_bl_inlet_bottom Using Progression 1.1;
 Transfinite Curve {-1024, 1091, 1084, 1098, 311} = num_bl_isolator_bottom Using Progression 1.1;
 Transfinite Curve {301, 303} = num_bl_isolator_bottom-num_bl_injector+1 Using Progression 1.1;
@@ -205,7 +208,7 @@ Transfinite Curve {29, 1017} = num_upstream_ramp1;
 Transfinite Curve {1027, 1029} = num_upstream_ramp2 Using Progression 1.05;
 Transfinite Curve {1095, 1093} = num_nozzle_exp Using Progression 1.01;
 Transfinite Curve {1096, 1094} = num_isolator;
-Transfinite Curve {1087, 1089} = num_injector_upstream;
+Transfinite Curve {-1087, -1089} = num_injector_upstream Using Progression 1.1;
 Transfinite Curve {1100, 1102} = num_injector_downstream;
 Transfinite Curve {1101, 1103} = num_cavity_upstream;
 Transfinite Surface {5} = {28, 1024, 1037, 1035};
@@ -216,16 +219,16 @@ Transfinite Surface {11} = {1, 1039, 1109, 1108};
 //
 // bottom bl combustor
 //
-num_bl_combustor = 14;
-num_before_sample = 30;
-num_sample_surround = 10;
+num_bl_combustor = 13;
+num_before_sample = 41;
+num_surround = 11;
 num_sample = 75;
 num_combustor = 300;
-num_combustor_end = 30;
-num_combustor_end_upper = 78;
+num_combustor_end = 31;
+num_combustor_end_upper = 77;
 Transfinite Curve {312, -1107} = num_bl_combustor Using Progression 1.1;
 Transfinite Curve {1033, 10} = num_before_sample;
-Transfinite Curve {1034, 11, 1036, 13} = num_sample_surround;
+Transfinite Curve {1034, 11, 1036, 13} = num_surround;
 Transfinite Curve {1035, 12} = num_sample;
 Transfinite Curve {14} = num_combustor Using Progression 1.005;
 //Transfinite Curve {14} = num_combustor Using Progression 1.;
@@ -243,14 +246,28 @@ num_nozzle_top1 = 3;
 num_nozzle_top2 = 60;
 num_nozzle_bottom1 = 10;
 num_nozzle_bottom2 = 53;
-num_nozzle_interior = 10;
+num_nozzle_interior = 9;
 Transfinite Curve {1009} = num_nozzle_top1;
 Transfinite Curve {1003} = num_nozzle_top2 Using Bump 2.5;
 Transfinite Curve {1026} = num_nozzle_bottom1;
 Transfinite Curve {1021} = num_nozzle_bottom2 Using Bump 1.5;
 Transfinite Curve {1030} = num_nozzle_interior;
-Transfinite Curve {1023} = num_bl_inlet_bottom + num_nozzle_interior - num_bl_isolator_bottom; 
+Transfinite Curve {1023} = num_bl_inlet_bottom + num_bl_inlet_top + num_nozzle_interior - num_bl_isolator_bottom - num_bl_isolator; 
 Transfinite Surface {3} = {1010, 1004, 1033, 1035};
+
+//
+//sample
+//
+num_sample_deep = 17;
+num_surround_deep = 23;
+Transfinite Curve {12, 42, 1113} = num_sample;
+Transfinite Curve {11, 1112, 13, 1114} = num_surround;
+Transfinite Curve {45, 47} = num_sample_deep Using Progression 1.1;
+Transfinite Curve {37, 39} = num_surround_deep Using Progression 1.05;
+Transfinite Curve { 550, 551} = num_surround_deep - num_sample_deep+1 Using Progression 1.1; 
+Transfinite Surface {203, 204};
+Transfinite Surface {200} = {38, 1120, 1121, 1113};
+Transfinite Surface {201} = {1116, 1122, 1123, 39};
 //
 //
 nozzle_start = 270;
@@ -356,17 +373,6 @@ Field[117].Thickness = 100;    // interpolate from VIn to Vout over a distance a
 Field[117].VIn = injectorsize;
 Field[117].VOut = bigsize;
 
-// background mesh size in the sample region
-Field[8] = Constant;
-Field[8].SurfacesList = {200, 202};
-Field[8].VIn = samplesize;
-Field[8].VOut = bigsize;
-
-Field[1] = Constant;
-Field[1].SurfacesList = {100};
-Field[1].VIn = inletsize;
-Field[1].VOut = bigsize;
-
 // background mesh size in the cavity shear region
 shear_start_x = 525;
 shear_end_x = 680;
@@ -387,7 +393,7 @@ Field[9].VOut = bigsize;
 
 // take the minimum of all defined meshing fields
 Field[100] = Min;
-Field[100].FieldsList = {1, 3, 4, 5, 6, 8, 9, 117};
+Field[100].FieldsList = {3, 4, 5, 6, 9, 117};
 
 //Field[100].FieldsList = {2, 3, 4, 5, 6, 8, 9, 12, 16, 18, 20, 21, 102};
 Background Field = 100;
@@ -397,16 +403,15 @@ Background Field = 100;
 //Recombine Surface{200, 202};
 
 Mesh.MeshSizeExtendFromBoundary = 1;
-Mesh.Algorithm = 8;
+//Mesh.Algorithm = 5; // Delaunay
+Mesh.Algorithm = 6; // Frontal-Delaunay
+//Mesh.Algorithm = 8; // Frontal-Delaunay for quads
 Mesh.RecombinationAlgorithm = 1;
 Mesh.RecombineOptimizeTopology =5;
 //Mesh.RecombineAll = 0;
 Mesh.RecombineAll = 1;
 
 Mesh 2;
-RecombineMesh;
-//Mesh.SubdivisionAlgorithm = 0;
-Mesh.SubdivisionAlgorithm = 1;
-RefineMesh;
+//RecombineMesh;
 Mesh.MshFileVersion = 2.2;
 Save "actii_2d.msh";
