@@ -86,7 +86,8 @@ from mirgecom.diffusion import (
     DirichletDiffusionBoundary,
     NeumannDiffusionBoundary
 )
-#from mirgecom.initializers import (Uniform, PlanarDiscontinuity)
+
+from mirgecom.initializers import (Uniform, PlanarDiscontinuity)
 from mirgecom.eos import (
     IdealSingleGas, PyrometheusMixture,
     MixtureDependentVars, GasDependentVars
@@ -449,9 +450,10 @@ def main(actx_class,
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
 
-    # case selection
+    # case selection for compression ramp
     do_compression_ramp = configurate("do_compression_ramp", input_data, False)
     do_compression_ramp_os = configurate("do_compression_ramp_os", input_data, False)
+    do_compression_ramp_uniform = configurate("do_compression_ramp_uniform", input_data, False)
 
     # i/o frequencies
     nviz = configurate("nviz", input_data, 500)
@@ -519,7 +521,8 @@ def main(actx_class,
 
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
-    mesh_filename = configurate("mesh_filename", input_data, "data/compressionRamp.msh")
+    mesh_filename = configurate("mesh_filename", input_data, 
+                                "data/compressionRamp.msh")
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, True)
 
@@ -862,6 +865,8 @@ def main(actx_class,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "CompressionRamp":
+            print("\tInitializing flow to CompressionRamp")
         else:
             raise SimulationConfigurationError(
                 "Invalid initialization configuration specified"
@@ -1165,224 +1170,31 @@ def main(actx_class,
 
     gas_model = GasModel(eos=eos, transport=transport_model)
 
-    # case-specific initialization
-    if do_compression_ramp and not do_compression_ramp_os:
-        print("Compression ramp NS Case")
-        # ambient fluid conditions
-        #   100 Pa
-        #   298 K
-        #   rho = 1.77619667e-3 kg/m^3
-        #   velocity = 0,0,0
-        pres_bkrnd = 100
-        temp_bkrnd = 300
-        mach = 2.0
-        
+    # initialize eos and species mass fractions
+    y = np.zeros(nspecies)
+    y_fuel = np.zeros(nspecies)
+    if nspecies == 2:
+        y[0] = 1
+        y_fuel[1] = 1
+    elif nspecies > 4:
+        # find name species indicies
+        for i in range(nspecies):
+            if species_names[i] == "C2H4":
+                i_c2h4 = i
+            if species_names[i] == "H2":
+                i_h2 = i
+            if species_names[i] == "O2":
+                i_ox = i
+            if species_names[i] == "N2":
+                i_di = i
 
-        #isentropic/normal shock relations
-        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
-        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd) #SPEED OF SOUND
-        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.) #NORMAL SHOCK
-        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.) #NORMAL SHOCK
-        #mach2 = math.sqrt(((gamma-1.)*mach*mach+2.)/(2.*gamma*mach*mach-(gamma-1.)))
+        # Set the species mass fractions to the free-stream flow
+        y[i_ox] = mf_o2
+        y[i_di] = 1. - mf_o2
+        # Set the species mass fractions to the free-stream flow
+        y_fuel[i_c2h4] = mf_c2h4
+        y_fuel[i_h2] = mf_h2
 
-        #get values from normal shock
-        rho1 = rho_bkrnd
-        pressure1 = pres_bkrnd
-        temperature1 = pressure1/rho1/r
-        rho2 = rho1*density_ratio
-        pressure2 = pressure1*pressure_ratio
-        temperature2 = pressure2/rho2/r
-        velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
-        temp_wall = temperature1
-
-        vel_left = np.zeros(shape=(dim,))
-        vel_right = np.zeros(shape=(dim,))
-        vel_cross = np.zeros(shape=(dim,))
-        vel_cross[1] = 0
-
-        if rank == 0:
-            print("#### Simluation initialization data: ####")
-            print(f"\tShock Mach number {mach}")
-            print(f"\tgamma {gamma}")
-            print(f"\tambient temperature {temperature1}")
-            print(f"\tambient pressure {pressure1}")
-            print(f"\tambient rho {rho1}")
-            print(f"\tambient velocity {vel_right[0]}")
-            print(f"\tpost-shock temperature {temperature2}")
-            print(f"\tpost-shock pressure {pressure2}")
-            print(f"\tpost-shock rho {rho2}")
-            print(f"\tpost-shock velocity {velocity2}")
-
-        plane_normal = np.zeros(shape=(dim,))
-        mesh_angle = 0.0
-        
-        # init params
-        disc_location = np.zeros(shape=(dim,))
-        shock_loc_x = -0.4
-
-        fuel_location = np.zeros(shape=(dim,))
-        fuel_loc_x = 0.07
-
-        disc_location[0] = shock_loc_x
-        fuel_location[0] = fuel_loc_x
-        theta = mesh_angle/180.*np.pi/2.
-        plane_normal[0] = np.cos(theta)
-        plane_normal[1] = np.sin(theta)
-        plane_normal = plane_normal/np.linalg.norm(plane_normal)
-
-        vel_left = velocity2*plane_normal
-
-        from y3prediction.compressionRamp import InitCompressionRamp
-        bulk_init = InitCompressionRamp(dim=dim,
-                                        normal_dir=plane_normal,
-                                        disc_location=disc_location,
-                                        disc_location_species=fuel_location,
-                                        nspecies=nspecies,
-                                        sigma=0.01,
-                                        pressure_left=pressure2,
-                                        pressure_right=pressure1,
-                                        temperature_left=temperature2,
-                                        temperature_right=temperature1,
-                                        velocity_left=vel_left,
-                                        velocity_right=vel_right,
-                                        velocity_cross=vel_cross,
-                                        #species_mass_left=y,
-                                        #species_mass_right= y_fuel,
-                                        temp_wall=temp_bkrnd,
-                                        vel_sigma=vel_sigma,
-                                        temp_sigma=temp_sigma)
-        
-    ### OBLIQUE SHOCK INITIALIZATION ###
-    elif do_compression_ramp_os and not do_compression_ramp:
-        print("Compression ramp OS Case")
-        # ambient fluid conditions
-        #   100 Pa
-        #   298 K
-        #   rho = 1.77619667e-3 kg/m^3
-        #   velocity = 0,0,0
-        pres_bkrnd = 100
-        temp_bkrnd = 300
-        mach = 2.9
-        wave_angle = np.radians(43.6722542)
-        ramp_angle = np.radians(24.0)
-        
-
-        #isentropic/normal shock relations
-        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
-        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd) #SPEED OF SOUND
-        pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.) #NORMAL SHOCK
-        density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.) #NORMAL SHOCK
-        #mach2 = math.sqrt(((gamma-1.)*mach*mach+2.)/(2.*gamma*mach*mach-(gamma-1.)))
-
-        #oblique shock relations
-        mach_n = mach * math.sin(wave_angle)
-        pressure_ratio_oblique = 1 + (2*gamma) /(gamma + 1) * (mach_n**2 -1)
-        density_ratio_oblique = ((gamma + 1) * mach_n**2) / (2 + (gamma - 1) * mach_n**2)
-        mach2_n = math.sqrt((1 + ((gamma - 1) / 2) * mach_n**2) / (gamma * mach_n**2 - (gamma - 1) / 2))
-        mach2 = mach2_n / math.sin(wave_angle - ramp_angle)
-
-        #get values from oblique shock
-        rho1 = rho_bkrnd
-        pressure1 = pres_bkrnd
-        temperature1 = pressure1/rho1/r
-        rho2 = rho1*density_ratio_oblique
-        pressure2 = pressure1*pressure_ratio_oblique
-        temperature2 = pressure2/rho2/r
-        velocity2 = mach2 * math.sqrt(gamma * r * temperature2)
-        temp_wall = temperature1
-
-        vel_left = np.zeros(shape=(dim,))
-        vel_right = np.zeros(shape=(dim,))
-        vel_cross = np.zeros(shape=(dim,))
-        vel_cross[1] = 0
-
-        if rank == 0:
-            print("#### Simluation initialization data: ####")
-            print(f"\tShock Mach number {mach}")
-            print(f"\tgamma {gamma}")
-            print(f"\tambient temperature {temperature1}")
-            print(f"\tambient pressure {pressure1}")
-            print(f"\tambient rho {rho1}")
-            print(f"\tambient velocity {vel_right[0]}")
-            print(f"\tpost-shock temperature {temperature2}")
-            print(f"\tpost-shock pressure {pressure2}")
-            print(f"\tpost-shock rho {rho2}")
-            print(f"\tpost-shock velocity {velocity2}")
-
-        plane_normal = np.zeros(shape=(dim,))
-        mesh_angle = 24 - 90
-        
-        # init params
-        disc_location = np.zeros(shape=(dim,))
-        shock_loc_x = -0.0
-
-        fuel_location = np.zeros(shape=(dim,))
-        fuel_loc_x = 0.07
-
-        disc_location[0] = shock_loc_x
-        fuel_location[0] = fuel_loc_x
-        theta = mesh_angle/180.*np.pi/2.
-        plane_normal[0] = np.cos(theta)
-        plane_normal[1] = np.sin(theta)
-        plane_normal = plane_normal/np.linalg.norm(plane_normal)
-
-        vel_left = velocity2*plane_normal
-
-        from y3prediction.compressionRamp import InitCompressionRamp
-        bulk_init = InitCompressionRamp(dim=dim,
-                                        normal_dir=plane_normal,
-                                        disc_location=disc_location,
-                                        disc_location_species=fuel_location,
-                                        nspecies=nspecies,
-                                        sigma=0.01,
-                                        pressure_left=pressure2,
-                                        pressure_right=pressure1,
-                                        temperature_left=temperature2,
-                                        temperature_right=temperature1,
-                                        velocity_left=vel_left,
-                                        velocity_right=vel_right,
-                                        velocity_cross=vel_cross,
-                                        #species_mass_left=y,
-                                        #species_mass_right= y_fuel,
-                                        temp_wall=temp_bkrnd,
-                                        vel_sigma=vel_sigma,
-                                        temp_sigma=temp_sigma)
-    else:
-
-        # initialize eos and species mass fractions
-        y = np.zeros(nspecies)
-        y_fuel = np.zeros(nspecies)
-        if nspecies == 2:
-            y[0] = 1
-            y_fuel[1] = 1
-        elif nspecies > 4:
-            # find name species indicies
-            for i in range(nspecies):
-                if species_names[i] == "C2H4":
-                    i_c2h4 = i
-                if species_names[i] == "H2":
-                    i_h2 = i
-                if species_names[i] == "O2":
-                    i_ox = i
-                if species_names[i] == "N2":
-                    i_di = i
-
-            # Set the species mass fractions to the free-stream flow
-            y[i_ox] = mf_o2
-            y[i_di] = 1. - mf_o2
-            # Set the species mass fractions to the free-stream flow
-            y_fuel[i_c2h4] = mf_c2h4
-            y_fuel[i_h2] = mf_h2
-
-        inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
-                                          gamma=gamma,
-                                          mach_guess=0.01)
-        pres_inflow = getIsentropicPressure(mach=inlet_mach,
-                                            P0=total_pres_inflow,
-                                            gamma=gamma)
-        temp_inflow = getIsentropicTemperature(mach=inlet_mach,
-                                               T0=total_temp_inflow,
-                                               gamma=gamma)
     # select the initialization case
     if init_case == "shock1d":
 
@@ -1775,7 +1587,222 @@ def main(actx_class,
                               inj_vel_sigma=vel_sigma_inj,
                               inj_ytop=inj_ymax, inj_ybottom=inj_ymin,
                               inj_mach=mach_inj, injection=use_injection)
+    elif init_case == "CompressionRamp":  
+        # NORMAL SHOCK COMPRESSION RAMP
+        if do_compression_ramp and not do_compression_ramp_os:
+            print("Compression ramp NS Case")
+            # ambient fluid conditions
+            #   100 Pa
+            #   298 K
+            #   rho = 1.77619667e-3 kg/m^3
+            #   velocity = 0,0,0
+            pres_bkrnd = 100
+            temp_bkrnd = 300
+            mach = 2.0
 
+            #isentropic/normal shock relations
+            rho_bkrnd = pres_bkrnd/r/temp_bkrnd
+            c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)  # SPEED OF SOUND
+            pressure_ratio = (2.*gamma*mach*mach-(gamma-1.))/(gamma+1.)  # NORMAL SHOCK
+            density_ratio = (gamma+1.)*mach*mach/((gamma-1.)*mach*mach+2.)  # NORMAL SHOCK
+            #mach2 = math.sqrt(((gamma-1.)*mach*mach+2.)/(2.*gamma*mach*mach-(gamma-1.)))
+
+            #get values from normal shock
+            rho1 = rho_bkrnd
+            pressure1 = pres_bkrnd
+            temperature1 = pressure1/rho1/r
+            rho2 = rho1*density_ratio
+            pressure2 = pressure1*pressure_ratio
+            temperature2 = pressure2/rho2/r
+            velocity2 = -mach*c_bkrnd*(1/density_ratio-1)
+            temp_wall = temperature1
+
+            vel_left = np.zeros(shape=(dim,))
+            vel_right = np.zeros(shape=(dim,))
+            vel_cross = np.zeros(shape=(dim,))
+            vel_cross[1] = 0
+
+            if rank == 0:
+                print("#### Simluation initialization data: ####")
+                print(f"\tShock Mach number {mach}")
+                print(f"\tgamma {gamma}")
+                print(f"\tambient temperature {temperature1}")
+                print(f"\tambient pressure {pressure1}")
+                print(f"\tambient rho {rho1}")
+                print(f"\tambient velocity {vel_right[0]}")
+                print(f"\tpost-shock temperature {temperature2}")
+                print(f"\tpost-shock pressure {pressure2}")
+                print(f"\tpost-shock rho {rho2}")
+                print(f"\tpost-shock velocity {velocity2}")
+
+            plane_normal = np.zeros(shape=(dim,))
+            mesh_angle = 0.0
+            
+            # init params
+            disc_location = np.zeros(shape=(dim,))
+            shock_loc_x = 1.0
+
+            fuel_location = np.zeros(shape=(dim,))
+            fuel_loc_x = 0.07
+
+            disc_location[0] = shock_loc_x
+            fuel_location[0] = fuel_loc_x
+            theta = mesh_angle/180.*np.pi/2.
+            plane_normal[0] = np.cos(theta)
+            plane_normal[1] = np.sin(theta)
+            plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+            vel_left = velocity2*plane_normal
+
+            from y3prediction.compressionRamp import InitCompressionRamp
+            bulk_init = InitCompressionRamp(dim=dim,
+                                            normal_dir=plane_normal,
+                                            disc_location=disc_location,
+                                            disc_location_species=fuel_location,
+                                            nspecies=nspecies,
+                                            sigma=0.01,
+                                            pressure_left=pressure2,
+                                            pressure_right=pressure1,
+                                            temperature_left=temperature2,
+                                            temperature_right=temperature1,
+                                            velocity_left=vel_left,
+                                            velocity_right=vel_right,
+                                            velocity_cross=vel_cross,
+                                            #species_mass_left=y,
+                                            #species_mass_right= y_fuel,
+                                            temp_wall=temp_bkrnd,
+                                            vel_sigma=vel_sigma,
+                                            temp_sigma=temp_sigma)
+            
+        ### OBLIQUE SHOCK INITIALIZATION ###
+        elif do_compression_ramp_os and not do_compression_ramp:
+            print("Compression ramp OS Case")
+            # ambient fluid conditions
+            #   100 Pa
+            #   298 K
+            #   rho = 1.77619667e-3 kg/m^3
+            #   velocity = 0,0,0
+            pres_bkrnd = 100
+            temp_bkrnd = 300
+            mach = 2.9
+            wave_angle = np.radians(43.6722542)
+            ramp_angle = np.radians(24.0)
+
+            #oblique shock relations
+            mach_n = mach * math.sin(wave_angle)
+            pressure_ratio_oblique = 1 + (2*gamma) / (gamma + 1) * (mach_n**2 -1)
+            density_ratio_oblique = ((gamma + 1) * mach_n**2) / (2 + (gamma - 1) * mach_n**2)
+            mach2_n = math.sqrt((1 + ((gamma - 1) / 2) * mach_n**2) 
+                                / (gamma * mach_n**2 - (gamma - 1) / 2))
+            mach2 = mach2_n / math.sin(wave_angle - ramp_angle)
+
+            #get values from oblique shock
+            rho1 = rho_bkrnd
+            pressure1 = pres_bkrnd
+            temperature1 = pressure1/rho1/r
+            rho2 = rho1*density_ratio_oblique
+            pressure2 = pressure1*pressure_ratio_oblique
+            temperature2 = pressure2/rho2/r
+            velocity2 = mach2 * math.sqrt(gamma * r * temperature2)
+            temp_wall = temperature1
+
+            vel_left = np.zeros(shape=(dim,))
+            vel_right = np.zeros(shape=(dim,))
+            vel_cross = np.zeros(shape=(dim,))
+            vel_cross[1] = 0
+
+            if rank == 0:
+                print("#### Simluation initialization data: ####")
+                print(f"\tShock Mach number {mach}")
+                print(f"\tgamma {gamma}")
+                print(f"\tambient temperature {temperature1}")
+                print(f"\tambient pressure {pressure1}")
+                print(f"\tambient rho {rho1}")
+                print(f"\tambient velocity {vel_right[0]}")
+                print(f"\tpost-shock temperature {temperature2}")
+                print(f"\tpost-shock pressure {pressure2}")
+                print(f"\tpost-shock rho {rho2}")
+                print(f"\tpost-shock velocity {velocity2}")
+
+            plane_normal = np.zeros(shape=(dim,))
+            mesh_angle = 24 - 90
+            
+            # init params
+            disc_location = np.zeros(shape=(dim,))
+            shock_loc_x = -0.0
+
+            fuel_location = np.zeros(shape=(dim,))
+            fuel_loc_x = 0.07
+
+            disc_location[0] = shock_loc_x
+            fuel_location[0] = fuel_loc_x
+            theta = mesh_angle/180.*np.pi/2.
+            plane_normal[0] = np.cos(theta)
+            plane_normal[1] = np.sin(theta)
+            plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+            vel_left = velocity2*plane_normal
+
+            from y3prediction.compressionRamp import InitCompressionRamp
+            bulk_init = InitCompressionRamp(dim=dim,
+                                            normal_dir=plane_normal,
+                                            disc_location=disc_location,
+                                            disc_location_species=fuel_location,
+                                            nspecies=nspecies,
+                                            sigma=0.01,
+                                            pressure_left=pressure2,
+                                            pressure_right=pressure1,
+                                            temperature_left=temperature2,
+                                            temperature_right=temperature1,
+                                            velocity_left=vel_left,
+                                            velocity_right=vel_right,
+                                            velocity_cross=vel_cross,
+                                            #species_mass_left=y,
+                                            #species_mass_right= y_fuel,
+                                            temp_wall=temp_bkrnd,
+                                            vel_sigma=vel_sigma,
+                                            temp_sigma=temp_sigma)
+
+            inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                            gamma=gamma,
+                                            mach_guess=0.01)
+            pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                                P0=total_pres_inflow,
+                                                gamma=gamma)
+            temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                                T0=total_temp_inflow,
+                                                gamma=gamma)
+            
+        ### UNIFORM FLOW INITIALIZER
+        elif  do_compression_ramp_uniform:
+            
+            dim = 2
+            velocity = np.zeros(shape=(dim,))
+            mach = 2.9
+            temperature = 107.1 #paper
+            rho = .077 #paper
+            pressure = rho * r * temperature
+            # rho = pressure/r/temperature
+            c = np.sqrt(gamma*pressure/rho)
+            velocity[0] = c*mach
+
+            if rank == 0:
+                print("#### Simluation initialization data: ####")
+                print(f"\tshock Mach number {mach}")
+                print(f"\ttemperature {temperature}")
+                # print(f"\tpressure {pressure}")
+                print(f"\trho {rho}")
+                print(f"\tvelocity {velocity}")
+                
+            from mirgecom.initializers import Uniform
+            bulk_init = Uniform(
+                dim=dim,
+                velocity=velocity,
+                rho=rho,
+                pressure=pressure,
+            )
+
+    
     viz_path = "viz_data/"
     vizname = viz_path + casename
     restart_path = "restart_data/"
@@ -1860,7 +1887,28 @@ def main(actx_class,
                     """
 
                 return mesh, tag_to_elements, volume_to_tags
+            
         elif init_case == "y3prediction":
+            if rank == 0:
+                print(f"Reading mesh from {mesh_filename}")
+
+            def get_mesh_data():
+                from meshmode.mesh.io import read_gmsh
+                mesh, tag_to_elements = read_gmsh(
+                    mesh_filename, force_ambient_dim=dim,
+                    return_tag_to_elements_map=True)
+                volume_to_tags = {
+                    "fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert", "wall_surround"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
+                return mesh, tag_to_elements, volume_to_tags
+            
+        elif init_case == "CompressionRamp":
             if rank == 0:
                 print(f"Reading mesh from {mesh_filename}")
 
@@ -3210,12 +3258,41 @@ def main(actx_class,
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
+        
+    elif do_compression_ramp or do_compression_ramp_os or do_compression_ramp_uniform:
+        inlet_sponge_thickness = 0.05
+        inlet_sponge_x0 = -1.28 + inlet_sponge_thickness
+        outlet_sponge_thickness = 0.05
+        outlet_sponge_x0 = 0.64 - outlet_sponge_thickness
+        top_sponge_thickness = 0.1
+        top_sponge_y0 = 1.0 - top_sponge_thickness
+        
 
-    get_sponge_sigma = actx.compile(_sponge_sigma)
+        sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                       thickness=inlet_sponge_thickness,
+                                       amplitude=sponge_amp,
+                                       direction=-1.0)
+        sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                        thickness=outlet_sponge_thickness,
+                                        amplitude=sponge_amp)
+        sponge_init_top = InitSponge(x0=top_sponge_y0,
+                                    thickness=top_sponge_thickness,
+                                     amplitude=sponge_amp,
+                                     xmin=-1.28, xmax= .640,
+                                     direction=2.0)
 
-    sponge_sigma = actx.np.zeros_like(restart_cv.mass)
-    sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
-                                                           fluid_nodes))
+        def _sponge_sigma(sponge_field, x_vec):
+            sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
+            return sponge_field
+
+    if use_sponge:
+        get_sponge_sigma = actx.compile(_sponge_sigma)
+
+        sponge_sigma = actx.np.zeros_like(restart_cv.mass)
+        sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
+                                                                fluid_nodes))
 
     def _sponge_source(sigma, cv):
         """Create sponge source."""

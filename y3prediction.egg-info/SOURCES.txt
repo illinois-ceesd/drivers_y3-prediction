@@ -4,7 +4,6 @@ setup.py
 y3prediction/__init__.py
 y3prediction/actii_y3.py
 y3prediction/compressionRamp.py
-y3prediction/prediction 2.py
 y3prediction/prediction.py
 y3prediction/shock1d.py
 y3prediction/uiuc.py
@@ -12,6 +11,11 @@ y3prediction/uiuc_sharp.py
 y3prediction/utils.py
 y3prediction/wall.py
 y3prediction.egg-info/PKG-INFO
+y3prediction.egg-info/SOURCES 2.txt
 y3prediction.egg-info/SOURCES.txt
+y3prediction.egg-info/dependency_links 2.txt
+y3prediction.egg-info/dependency_links 3.txt
 y3prediction.egg-info/dependency_links.txt
+y3prediction.egg-info/top_level 2.txt
+y3prediction.egg-info/top_level 3.txt
 y3prediction.egg-info/top_level.txt
