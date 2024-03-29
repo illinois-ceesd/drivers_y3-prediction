@@ -104,9 +104,9 @@ Printf("boundratiosample = %f", boundratiosample);
 Printf("boundratiosurround = %f", boundratiosurround);
 //
 Physical Surface('fluid') = {
-    -100, -101, -3, -4, -5, 6, -7, -8, 9, 10,
+    -100, -101, -3, 4, 5, 6, 7, -8, 9, 10,
     11, 12, 13, -14, -15, -16, -17, -18, -19, -20,
-    -21, -22, -23, 24, -25, 26, 27};
+    -21, -22, -23, 24, -25, 26, 27, -205, -206, -207, 208};
 Physical Surface('wall_insert') = {-203};
 Physical Surface('wall_surround') = {-204, -200, 201};
 
@@ -115,7 +115,7 @@ Physical Curve("outflow") = {19}; // outlet
 Physical Curve("injection") = {1080:1082}; // injection
 Physical Curve("upstream_injection") = {1077:1079}; // injection
 Physical Curve("flow") = {1074:1076, 1080:1082, 1077:1079}; // all inflow
-Physical Curve("isothermal_wall") = {26, 1010, 1003, 1002, 23, 22, 21, 1105, 1104, 1107, 1106, 17, 16, 15, 14, 10, 9, 8, 6, 5, 1051, 1050, 1049, 1048, 1101, 1100, 1, 35, 33, 32, 1087, 1096, 1095, 1021, 1026, 1009, 1027, 29, 28};
+Physical Curve("isothermal_wall") = {1115, 1116, 1010, 1009, 1003, 1002, 23, 22, 21, 1105, 1129, 1128, 1130, 1131, 1107, 17, 16, 15, 14, 10, 9, 8, 6, 5, 1051, 1050, 1049, 1048, 1101, 1100, 1, 35, 33, 32, 1087, 1096, 1095, 1021, 1027, 1026, 29, 1122, 1121};
 Physical Curve("wall_farfield") = {37,39, 1112:1114};
 //
 // upstream injector bl
@@ -129,8 +129,8 @@ Transfinite Curve{302, 300} = num_bl_injector Using Progression 1.2; // vertical
 Transfinite Curve{1078, 304} = num_injector_center; // center vertical segments
 Transfinite Curve{-33, -1040, -1042, 35} = num_injector Using Progression 1.03; // axial edges
 Transfinite Curve{1, 32, 1043, 1041} = num_injector_curve ; // curved bits
-Transfinite Surface{25} = {35, 1, 1073, 1072}; // right
-Transfinite Surface{26} = {32, 1070, 1067, 34}; // left
+Transfinite Surface{26} = {32, 1048, 1045, 34}; // left
+Transfinite Surface{25} = {1050, 35, 1, 1051}; // right
 Transfinite Surface{27}; // center
 //
 // cavity injector bl
@@ -144,7 +144,7 @@ Transfinite Curve{-1065, 1063} = num_bl_injector Using Progression 1.0; // verti
 Transfinite Curve{1081, 1072, 1064} = num_injector_center; // center vertical segments
 Transfinite Curve{-8, 204} = num_injector Using Progression 1.03; // axial edges in injector top bl
 Transfinite Curve{-1069, -6} = num_injector Using Progression 1.03; // axial edges in injector bottom bl
-Transfinite Curve{1061, 1059, 1057, 1055} = num_injector_ext; // axial edges into cavity
+Transfinite Curve{1061, 205, 1059, 1057, 1055, -1067} = num_injector_ext; // axial edges into cavity
 Transfinite Surface{23}; // top
 Transfinite Surface{24}; // bottom
 Transfinite Surface{22};
@@ -157,7 +157,7 @@ num_cavity_front = 21;
 num_cavity_bottom = 71;
 num_cavity_wall_bottom = 9;
 num_cavity_wall_top = 19;
-Transfinite Curve {310, 1046, 1050, -1049, -1045, 313, -1061, -1115, -1067, -1055, -314} = num_bl_cavity Using Progression 1.1; // vertical segments
+Transfinite Curve {310, 1046, 1050, -1049, -1045, 313, -314, 311} = num_injector_ext Using Progression 1.1; // vertical segments
 Transfinite Curve {1048, 1044} = num_cavity_front;
 Transfinite Curve {1051, 1047} = num_cavity_bottom;
 Transfinite Curve {5, 1062} = num_cavity_wall_bottom;
@@ -166,43 +166,52 @@ Transfinite Surface{14:21};
 //
 // top bl, isolator, combustor
 //
+num_bl_inflow = 7;
+num_bl_inflow2 = 12;
+num_bl_height_inflow = 31;
 num_bl_isolator = 9;
 num_bl_inlet_top = 8;
 num_upstream = 21;
 num_upstream_ramp = 31;
 num_nozzle_exp = 75;
-num_top = 370;
+num_top = 371;
 num_exhaust = 13;
 num_bl_comb_exp = 89;
 num_exhaust_edge = 17;
 Transfinite Curve {1007, -403, -1105} = num_bl_isolator Using Progression 1.1;
-Transfinite Curve {1074, 1014} = num_bl_inlet_top Using Progression 1.1;
+Transfinite Curve {1074, 1014, 1126} = num_bl_inlet_top Using Progression 1.1;
 Transfinite Curve {26, 48} = num_upstream;
 Transfinite Curve {1010, 1012} = num_upstream_ramp Using Progression 1.03;
 Transfinite Curve {-1002, -1004} = num_nozzle_exp Using Progression 1.01;
 Transfinite Curve {23} = num_top;
-Transfinite Curve {51} = num_top-num_bl_comb_exp+1;
+Transfinite Curve {53} = num_top-num_bl_comb_exp+1;
 Transfinite Curve {22, 52} = num_exhaust Using Progression 1.05;
 Transfinite Curve {-21, 500} = num_exhaust_edge Using Progression 1.1;
-//Transfinite Curve { 53, 600} = num_bl_comb_exp;
-Transfinite Curve { 53} = num_bl_comb_exp;
-Transfinite Surface {4} = {27, 1010, 1012, 56};
+Transfinite Curve { 51} = num_bl_comb_exp;
+Transfinite Curve {1115, 1117, 1119, 1121} = num_bl_inflow;
+Transfinite Curve {1116, 1118, 1120, 1122} = num_bl_inflow2;
+Transfinite Curve { 1075, 1125} = num_bl_height_inflow Using Bump .35;
+Transfinite Surface {4} = {1095, 1008, 1009, 1096};
 Transfinite Surface {6};
-Transfinite Surface {7} = {1005, 24, 21, 1110};
+Transfinite Surface {7} = {21, 1088, 56, 24};
+Transfinite Surface {206, 205, 207};
 //
 // bottom bl, isolator, combustor
 //
-num_bl_inlet_bottom = 10;
-num_bl_isolator_bottom = 11;
+num_bl_inlet_bottom = 11;
+num_bl_isolator_bottom = 13;
+num_bl_isolator_bottom_downstream = 15;
 num_upstream_ramp1 = 21;
 num_upstream_ramp2 = 17;
 num_isolator = 101;
 num_injector_upstream = 17;
 num_injector_downstream = 101;
 num_cavity_upstream = 21;
-Transfinite Curve {-1076, -1031} = num_bl_inlet_bottom Using Progression 1.1;
-Transfinite Curve {-1024, 1091, 1084, 1098, 311} = num_bl_isolator_bottom Using Progression 1.1;
-Transfinite Curve {301, 303} = num_bl_isolator_bottom-num_bl_injector+1 Using Progression 1.1;
+Transfinite Curve {-1076, -1031, 1124} = num_bl_inlet_bottom Using Progression 1.05;
+Transfinite Curve {-1024, 1091, 1084} = num_bl_isolator_bottom Using Progression 1.05;
+Transfinite Curve {1098, 310} = num_bl_isolator_bottom_downstream Using Progression 1.05;
+Transfinite Curve {301} = num_bl_isolator_bottom-num_bl_injector+1 Using Progression 1.1;
+Transfinite Curve {303} = num_bl_isolator_bottom_downstream-num_bl_injector+1 Using Progression 1.1;
 Transfinite Curve {28, 1016} = num_upstream;
 Transfinite Curve {29, 1017} = num_upstream_ramp1;
 Transfinite Curve {1027, 1029} = num_upstream_ramp2 Using Progression 1.05;
@@ -211,10 +220,10 @@ Transfinite Curve {1096, 1094} = num_isolator;
 Transfinite Curve {-1087, -1089} = num_injector_upstream Using Progression 1.1;
 Transfinite Curve {1100, 1102} = num_injector_downstream;
 Transfinite Curve {1101, 1103} = num_cavity_upstream;
-Transfinite Surface {5} = {28, 1024, 1037, 1035};
+Transfinite Surface {5} = {1097, 1098, 1025, 1026};
 Transfinite Surface {8, 9, 12};
-Transfinite Surface {10} = {1100, 1101, 1032, 32};
-Transfinite Surface {11} = {1, 1039, 1109, 1108};
+Transfinite Surface {10} = {1079, 1022, 32, 1078};
+Transfinite Surface {11} = {1027, 1, 1086, 1087};
 
 //
 // bottom bl combustor
@@ -228,7 +237,7 @@ num_combustor_end = 31;
 num_combustor_end_upper = 77;
 Transfinite Curve {312, -1107} = num_bl_combustor Using Progression 1.1;
 Transfinite Curve {1033, 10} = num_before_sample;
-Transfinite Curve {1034, 11, 1036, 13} = num_surround;
+Transfinite Curve {1034, 1036} = num_surround;
 Transfinite Curve {1035, 12} = num_sample;
 Transfinite Curve {14} = num_combustor Using Progression 1.005;
 //Transfinite Curve {14} = num_combustor Using Progression 1.;
@@ -238,7 +247,12 @@ Transfinite Curve {600} = num_combustor_end_upper Using Progression 1.005;
 Transfinite Curve {15, 601} = num_combustor_end;
 Transfinite Curve {-16, -1039} = num_exhaust Using Progression 1.1;
 Transfinite Curve {17, 501} = num_exhaust_edge Using Progression 1.1;
-Transfinite Surface {13} = {18, 1111, 1053, 10};
+num_bl_exhaust_exit = 5;
+num_bl_exhaust_exit_height = 15;
+Transfinite Curve {1128, 1130} = num_bl_exhaust_exit;
+Transfinite Curve {1133, 19} = num_bl_exhaust_exit_height;
+Transfinite Surface {13} = {18, 1089, 10, 1036};
+Transfinite Surface {208};
 //
 // nozzle
 //
@@ -246,14 +260,14 @@ num_nozzle_top1 = 3;
 num_nozzle_top2 = 60;
 num_nozzle_bottom1 = 10;
 num_nozzle_bottom2 = 53;
-num_nozzle_interior = 9;
+num_nozzle_interior = 11;
 Transfinite Curve {1009} = num_nozzle_top1;
 Transfinite Curve {1003} = num_nozzle_top2 Using Bump 2.5;
 Transfinite Curve {1026} = num_nozzle_bottom1;
 Transfinite Curve {1021} = num_nozzle_bottom2 Using Bump 1.5;
 Transfinite Curve {1030} = num_nozzle_interior;
 Transfinite Curve {1023} = num_bl_inlet_bottom + num_bl_inlet_top + num_nozzle_interior - num_bl_isolator_bottom - num_bl_isolator; 
-Transfinite Surface {3} = {1010, 1004, 1033, 1035};
+Transfinite Surface {3} = {1023, 1004, 1008, 1025};
 
 //
 //sample
@@ -266,8 +280,8 @@ Transfinite Curve {45, 47} = num_sample_deep Using Progression 1.1;
 Transfinite Curve {37, 39} = num_surround_deep Using Progression 1.05;
 Transfinite Curve { 550, 551} = num_surround_deep - num_sample_deep+1 Using Progression 1.1; 
 Transfinite Surface {203, 204};
-Transfinite Surface {200} = {38, 1120, 1121, 1113};
-Transfinite Surface {201} = {1116, 1122, 1123, 39};
+Transfinite Surface {200} = {38, 1103, 1104, 1091};
+Transfinite Surface {201} = {39, 1094, 1105, 1106};
 //
 //
 nozzle_start = 270;
@@ -408,10 +422,11 @@ Mesh.Algorithm = 6; // Frontal-Delaunay
 //Mesh.Algorithm = 8; // Frontal-Delaunay for quads
 Mesh.RecombinationAlgorithm = 1;
 Mesh.RecombineOptimizeTopology =5;
-//Mesh.RecombineAll = 0;
-Mesh.RecombineAll = 1;
+Mesh.RecombineAll = 0;
+//Mesh.RecombineAll = 1;
 
 Mesh 2;
-//RecombineMesh;
+RecombineMesh;
 Mesh.MshFileVersion = 2.2;
 Save "actii_2d.msh";
+//+
