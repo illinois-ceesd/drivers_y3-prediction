@@ -1357,7 +1357,6 @@ def main(actx_class,
     # with transport and eos sorted out, build the gas model
     gas_model = GasModel(eos=eos, transport=transport_model)
 
-
     # select the initialization case
     if init_case == "shock1d":
 
@@ -2176,16 +2175,10 @@ def main(actx_class,
         inj_ymin = -0.0243245
         inj_ymax = -0.0227345
 
-        if init_case == "y3prediction_ramp":
-            if actii_init_case == "cav8":
-                from y3prediction.actii_y3_cav8 import InitACTII_Ramp
-            else:
-                from y3prediction.actii_y3_cav5 import InitACTII_Ramp
+        if actii_init_case == "cav8":
+            from y3prediction.actii_y3_cav8 import InitACTII
         else:
-            if actii_init_case == "cav8":
-                from y3prediction.actii_y3_cav8 import InitACTII
-            else:
-                from y3prediction.actii_y3_cav5 import InitACTII
+            from y3prediction.actii_y3_cav5 import InitACTII
 
         bulk_init = InitACTII(dim=dim,
                               geom_top=geometry_top, geom_bottom=geometry_bottom,
@@ -2825,25 +2818,22 @@ def main(actx_class,
         cv_update_rho = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                        momentum=mom_lim,
                                        species_mass=mass_lim*spec_lim)
-                                       #species_mass=spec_lim)
         temperature_update_rho = gas_model.eos.temperature(cv=cv_update_rho,
                                                         temperature_seed=tseed)
         pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
                                                   temperature=temperature_update_rho)
 
         # 2.0 limit the species mass fractions
-        #theta_spec = actx.zeros_like(cv.mass)
         theta_spec = actx.zeros_like(cv.species_mass_fractions)
         if nspecies > 0:
 
             # find theta for all the species
             for i in range(0, nspecies):
-                mmin_i = op.elementwise_min(dcoll, dd, cv_update_rho.species_mass_fractions[i])
-                #mmin_i = op.elementwise_min(dcoll, dd, cv_update_rho.species_mass[i])
+                mmin_i = op.elementwise_min(dcoll, dd,
+                                            cv_update_rho.species_mass_fractions[i])
                 mmin = 0.
 
                 cell_avgs = elem_avg_cv.species_mass_fractions[i]
-                #cell_avgs = elem_avg_cv.species_mass[i]
                 _theta = actx.np.maximum(0.,
                     actx.np.where(actx.np.less(mmin_i + toler, mmin),
                                   (mmin-mmin_i)/(cell_avgs - mmin_i),
@@ -2862,10 +2852,9 @@ def main(actx_class,
                     print(f"cell_avgs[{i}] \n {data[0][index]}")
                     """
 
-                mmax_i = op.elementwise_max(dcoll, dd, cv_update_rho.species_mass_fractions[i])
+                mmax_i = op.elementwise_max(dcoll, dd,
+                                            cv_update_rho.species_mass_fractions[i])
                 mmax = 1.0
-                #mmax_i = op.elementwise_max(dcoll, dd, cv_update_rho.species_mass[i])
-                #mmax = cv_update_rho.mass
 
                 _theta = actx.np.maximum(_theta,
                     actx.np.where(actx.np.greater(mmax_i - toler, mmax),
@@ -2873,17 +2862,12 @@ def main(actx_class,
                                   0.)
                 )
 
-                #theta_spec[i] = actx.np.maximum(theta_spec, _theta)
                 theta_spec[i] = _theta
 
                 # apply the limiting to all species equally
-                #for i in range(0, nspecies):
                 spec_lim[i] = (cv.species_mass_fractions[i] +
                                theta_spec[i]*(elem_avg_cv.species_mass_fractions[i] -
                                            cv.species_mass_fractions[i]))
-                #spec_lim[i] = (cv.species_mass[i] +
-                               #theta_spec*(elem_avg_cv.species_mass[i] -
-                                           #cv.species_mass[i]))
 
             # limit the species mass fraction sum to 1.0
             aux = actx.np.zeros_like(cv.mass)
@@ -2898,7 +2882,6 @@ def main(actx_class,
             update_dv = positive_pressure
 
             r = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
-            #r = gas_model.eos.gas_const(species_mass_fractions=spec_lim/mass_lim)
             temperature_update_y = pressure_update_rho/r/mass_lim
 
             energy_lim = actx.np.where(
@@ -2959,12 +2942,6 @@ def main(actx_class,
                                          energy=energy_lim,
                                          momentum=cv_update_rho.momentum,
                                          species_mass=cv_update_rho.mass*spec_lim)
-            #cv_update_y = make_conserved(dim=dim, mass=cv_update_rho.mass,
-                                         #energy=energy_lim,
-                                         ##energy=cv_update_rho.energy,
-                                         #momentum=cv_update_rho.momentum,
-                                         #species_mass=spec_lim)
-                                         ##species_mass=cv_update_rho.mass*spec_lim)
         else:
             cv_update_y = cv_update_rho
 
