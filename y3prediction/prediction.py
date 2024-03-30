@@ -690,6 +690,8 @@ def main(actx_class,
 
     # outflow sponge location and strength
     use_sponge = configurate("use_sponge", input_data, True)
+    use_time_dependent_sponge = configurate("use_time_dependent_sponge",
+                                            input_data, False)
     sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
 
     # artificial viscosity control
@@ -1764,13 +1766,6 @@ def main(actx_class,
 
     elif init_case == "y3prediction_ramp":
 
-        # init params
-        disc_location = np.zeros(shape=(dim,))
-        fuel_location = np.zeros(shape=(dim,))
-        disc_location[0] = 0.225
-        fuel_location[0] = 10000.
-        plane_normal = np.zeros(shape=(dim,))
-
         # parameters to adjust the shape of the initialization
         temp_wall = 300
 
@@ -1788,13 +1783,39 @@ def main(actx_class,
         inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
                                           gamma=gamma,
                                           mach_guess=0.01)
-        pres_inflow = getIsentropicPressure(mach=inlet_mach,
-                                            P0=total_pres_inflow,
-                                            gamma=gamma)
         temp_inflow = getIsentropicTemperature(mach=inlet_mach,
                                                T0=total_temp_inflow,
                                                gamma=gamma)
 
+        # MJA
+        # this is better than the way Isentropic Inflow does things,
+        # i've removed teh repeated computation of the Isentropic Properties
+        # since I know the ramp values at the start, I can just hard code
+        # them into the pressure ramp function
+        # go back and update the boundary conditions to do the same thing
+        #
+        # also extend this to be a class so I can have one for each boundary
+        inlet_ramp_beginP = getIsentropicPressure(mach=inlet_mach,
+                                                  P0=ramp_beginP,
+                                                  gamma=gamma)
+        inlet_ramp_endP = getIsentropicPressure(mach=inlet_mach,
+                                                  P0=ramp_endP,
+                                                  gamma=gamma)
+
+        def inlet_ramp_pressure(t):
+            return actx.np.where(
+                actx.np.greater(t, ramp_time_start),
+                actx.np.minimum(
+                    inlet_ramp_endP,
+                    inlet_ramp_beginP + ((t - ramp_time_start) / ramp_time_interval
+                        * (inlet_ramp_endP - inlet_ramp_beginP))),
+                inlet_ramp_beginP)
+
+        pres_inflow = inlet_ramp_pressure(current_t)
+
+        # only the eos_type == 0 side of this is being exercised right now
+        # we need to think more carefully about what to do when gamma
+        # is variable, and how to pass that in
         if eos_type == 0:
             rho_inflow = pres_inflow/temp_inflow/r
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
@@ -1835,11 +1856,6 @@ def main(actx_class,
             sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
         vel_inflow[0] = inlet_mach*sos
-        plane_normal = np.zeros(shape=(dim,))
-        theta = 0.
-        plane_normal[0] = np.cos(theta)
-        plane_normal[1] = np.sin(theta)
-        plane_normal = plane_normal/np.linalg.norm(plane_normal)
 
         if rank == 0:
             print("#### Simluation initialization data: ####")
@@ -1847,29 +1863,31 @@ def main(actx_class,
             print(f"\tinlet gamma {inlet_gamma}")
             print(f"\tinlet temperature {temp_inflow}")
             print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet pressure begin {inlet_ramp_beginP}")
+            print(f"\tinlet pressure end {inlet_ramp_endP}")
             print(f"\tinlet rho {rho_inflow}")
             print(f"\tinlet velocity {vel_inflow[0]}")
             #print(f"final inlet pressure {pres_inflow_final}")
 
-        bulk_init = PlanarDiscontinuityMulti(
+        if actii_init_case == "cav8":
+            from y3prediction.actii_y3_cav8 import InitACTIIRamp
+        else:
+            from y3prediction.actii_y3_cav5 import InitACTIIRamp
+
+        bulk_init = InitACTIIRamp(
             dim=dim,
             nspecies=nspecies,
-            disc_location=disc_location,
-            disc_location_species=fuel_location,
-            normal_dir=plane_normal,
-            sigma=0.002,
-            pressure_left=pres_inflow,
-            pressure_right=pres_bkrnd,
-            temperature_left=temp_inflow,
-            temperature_right=temp_bkrnd,
-            velocity_left=vel_inflow,
-            velocity_right=vel_outflow,
-            velocity_cross=vel_outflow,
-            species_mass_left=y,
-            species_mass_right=y_fuel,
+            disc_sigma=0.002,
+            pressure_bulk=pres_bkrnd,
+            temperature_bulk=temp_bkrnd,
+            velocity_bulk=vel_outflow,
+            mass_frac_bulk=y,
+            pressure_inlet=pres_inflow,
+            temperature_inlet=temp_inflow,
+            velocity_inlet=vel_inflow,
+            mass_frac_inlet=y,
+            inlet_pressure_func=inlet_ramp_pressure,
             temp_wall=temp_bkrnd,
-            y_top=0.0270645,
-            y_bottom=-0.0270645,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
 
@@ -4338,11 +4356,29 @@ def main(actx_class,
                                                  smoothness_d=restart_av_sd)
         temperature_seed = restart_fluid_state.temperature
 
+        # this is a little funky, need a better way of handling this
+        # most of the initializations just create the initial cv and exit
+        # but I've started breaking off certain parts to use in other pieces of the
+        # driver. See adding injection to an already running simulation (restart)
+        # or developing a time-dependent sponge.
+        if init_case == "y3prediction_ramp":
+            restart_cv = bulk_init.add_inlet(
+                cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
+                temperature=restart_fluid_state.temperature,
+                eos=eos_init, x_vec=fluid_nodes)
+            restart_fluid_state = create_fluid_state(
+                cv=restart_cv, temperature_seed=temperature_seed,
+                smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
+                smoothness_kappa=restart_av_skappa,
+                smoothness_d=restart_av_sd)
+            temperature_seed = restart_fluid_state.temperature
+
         # update current state with injection intialization
         if use_injection:
-            restart_cv = bulk_init.add_injection(restart_fluid_state,
-                                                 eos=eos_init,
-                                                 x_vec=fluid_nodes)
+            restart_cv = bulk_init.add_injection(
+                cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
+                temperature=restart_fluid_state.temperature,
+                x_vec=fluid_nodes, eos=eos_init)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -4351,9 +4387,10 @@ def main(actx_class,
             temperature_seed = restart_fluid_state.temperature
 
         if use_upstream_injection:
-            restart_cv = bulk_init.add_injection_upstream(restart_fluid_state,
-                                                          eos=eos_init,
-                                                          x_vec=fluid_nodes)
+            restart_cv = bulk_init.add_injection_upstream(
+                cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
+                temperature=restart_fluid_state.temperature,
+                x_vec=fluid_nodes, eos=eos_init)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -5039,9 +5076,9 @@ def main(actx_class,
         sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
                                                                fluid_nodes))
 
-    def _sponge_source(sigma, cv):
+    def _sponge_source(sigma, cv, sponge_cv):
         """Create sponge source."""
-        return sigma*(target_fluid_state.cv - cv)
+        return sigma*(sponge_cv - cv)
 
     vis_timer = None
     monitor_memory = True
@@ -6597,7 +6634,32 @@ def main(actx_class,
                 )
 
         if use_sponge:
-            fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma, cv=cv)
+            sponge_cv = cv
+            if use_time_dependent_sponge:
+                # as long as these pieces only operate on a non-overlapping subset
+                # of the domain, we don't need to call make_fluid_state
+                # in between each additive call to recompute temperature/pressure
+                sponge_cv = bulk_init.add_inlet(cv=sponge_cv,
+                                                pressure=fluid_state.pressure,
+                                                temperature=fluid_state.temperature,
+                                                x_vec=fluid_nodes,
+                                                eos=eos, time=t)
+
+                if use_injection:
+                    sponge_cv = bulk_init.add_injection(
+                        cv=sponge_cv, pressure=fluid_state.pressure,
+                        temperature=fluid_state.temperature, eos=eos_init,
+                        x_vec=fluid_nodes)
+
+                if use_upstream_injection:
+                    sponge_cv = bulk_init.add_injection_upstream(
+                        cv=sponge_cv, pressure=fluid_state.pressure,
+                        temperature=fluid_state.temperature,
+                        eos=eos_init, x_vec=fluid_nodes)
+
+            fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma,
+                                                   cv=cv,
+                                                   sponge_cv=sponge_cv)
 
         if use_wall:
             # wall mass loss

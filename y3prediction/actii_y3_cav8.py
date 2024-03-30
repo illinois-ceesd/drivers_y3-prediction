@@ -652,7 +652,7 @@ class InitACTII:
             species_mass=mass*y
         )
 
-    def add_injection(self, fluid_state, x_vec, eos, *, time=0.0):
+    def add_injection(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
 
         Parameters
@@ -678,14 +678,10 @@ class InitACTII:
         ones = zeros + 1.0
 
         # get the current mesh conditions
-        mass = fluid_state.mass_density
-        energy = fluid_state.energy_density
-        velocity = fluid_state.velocity
-        y = fluid_state.species_mass_fractions
-
-        temperature = fluid_state.temperature
-        pressure = fluid_state.pressure
-        velocity = fluid_state.velocity
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
@@ -847,7 +843,8 @@ class InitACTII:
             species_mass=mass*y
         )
 
-    def add_injection_upstream(self, fluid_state, x_vec, eos, *, time=0.0):
+    def add_injection_upstream(self, cv, pressure, temperature,
+                               x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
 
         Parameters
@@ -873,14 +870,590 @@ class InitACTII:
         ones = zeros + 1.0
 
         # get the current mesh conditions
-        mass = fluid_state.mass_density
-        energy = fluid_state.energy_density
-        velocity = fluid_state.velocity
-        y = fluid_state.species_mass_fractions
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
 
-        temperature = fluid_state.temperature
-        pressure = fluid_state.pressure
-        velocity = fluid_state.velocity
+        # fuel stream initialization
+        # initially in pressure/temperature equilibrium with the cavity
+        # even with the bottom corner
+        inj_left = 0.53243
+        # even with the top corner
+        inj_right = 0.53404
+        inj_top = -0.0083245
+        inj_bottom = -0.02253
+        inj_fore = 1.59e-3
+        inj_aft = -1.59e-3
+        xc_left = zeros + inj_left
+        xc_right = zeros + inj_right
+        yc_top = zeros + inj_top
+        yc_bottom = zeros + inj_bottom
+        zc_fore = zeros + inj_fore
+        zc_aft = zeros + inj_aft
+
+        inj_radius = 1.59e-3/2.
+        xc_center = zeros + inj_left + inj_radius
+        zc_center = zeros
+
+        if self._dim == 2:
+            radius = actx.np.sqrt((xpos - xc_center)**2)
+        else:
+            radius = actx.np.sqrt((xpos - xc_center)**2 + (zpos - zc_center)**2)
+
+        left_edge = actx.np.greater(xpos, xc_left)
+        right_edge = actx.np.less(xpos, xc_right)
+        bottom_edge = actx.np.greater(ypos, yc_bottom)
+        top_edge = actx.np.less(ypos, yc_top)
+        aft_edge = ones
+        fore_edge = ones
+        if self._dim == 3:
+            aft_edge = actx.np.greater(zpos, zc_aft)
+            fore_edge = actx.np.less(zpos, zc_fore)
+        inside_injector = (left_edge*right_edge*top_edge*bottom_edge *
+                           aft_edge*fore_edge)
+
+        inj_y = ones*self._inj_mass_frac
+
+        inj_velocity = mass*np.zeros(self._dim, dtype=object)
+        inj_velocity = self._inju_vel
+
+        inj_mach = self._inj_mach*ones
+
+        # smooth out the injection profile
+        # relax to the cavity temperature/pressure/velocity
+        inj_y0 = -0.012
+        inj_fuel_y0 = -0.015
+        inj_sigma = 1500
+
+        inj_tanh = inj_sigma*(ypos - inj_fuel_y0)
+        inj_weight = 0.5*(1.0 - actx.np.tanh(inj_tanh))
+        for i in range(self._nspecies):
+            inj_y[i] = y[i] + (inj_y[i] - y[i])*inj_weight
+
+        # transition the mach number from 0 (cavitiy) to 1 (injection)
+        inj_tanh = inj_sigma*(ypos - inj_y0)
+        inj_weight = 0.5*(1.0 - actx.np.tanh(inj_tanh))
+        inj_mach = inj_weight*inj_mach
+
+        # assume a smooth transition in gamma, could calculate it
+        inj_gamma = (self._gamma_guess +
+            (self._inj_gamma_guess - self._gamma_guess)*inj_weight)
+
+        inj_pressure = getIsentropicPressure(
+            mach=inj_mach,
+            P0=self._inju_P0,
+            gamma=inj_gamma
+        )
+        inj_temperature = getIsentropicTemperature(
+            mach=inj_mach,
+            T0=self._inju_T0,
+            gamma=inj_gamma
+        )
+
+        inj_mass = eos.get_density(pressure=inj_pressure,
+                                   temperature=inj_temperature,
+                                   species_mass_fractions=inj_y)
+        inj_energy = inj_mass*eos.get_internal_energy(
+            temperature=inj_temperature, species_mass_fractions=inj_y)
+
+        inj_velocity = mass*np.zeros(self._dim, dtype=object)
+        inj_mom = inj_mass*inj_velocity
+
+        # the velocity magnitude
+        inj_cv = make_conserved(dim=self._dim, mass=inj_mass, momentum=inj_mom,
+                                energy=inj_energy, species_mass=inj_mass*inj_y)
+
+        inj_velocity[1] = inj_mach*eos.sound_speed(inj_cv, inj_temperature)
+
+        # relax the velocity, temperature, and pressure at the injector interface
+        for i in range(self._dim):
+            inj_velocity[i] = velocity[i] + \
+                (inj_velocity[i] - velocity[i])*inj_weight
+        inj_pressure = pressure + (inj_pressure - pressure)*inj_weight
+        inj_temperature = (temperature +
+            (inj_temperature - temperature)*inj_weight)
+
+        # we need to calculate the velocity from a prescribed mass flow rate
+        # this will need to take into account the velocity relaxation at the
+        # injector walls
+        #inj_velocity[0] = (velocity[0] +
+        #                   (self._inj_vel[0] - velocity[0])*inj_weight)
+
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+        if self._temp_sigma_injection > 0.:
+            sigma = self._temp_sigma_injection
+            wall_temperature = self._temp_wall
+            smoothing_radius = smooth_step(
+                actx, sigma*(actx.np.abs(radius - inj_radius)))
+            inj_temperature = (wall_temperature +
+                (inj_temperature - wall_temperature)*smoothing_radius)
+
+        inj_mass = eos.get_density(pressure=inj_pressure,
+                                   temperature=inj_temperature,
+                                   species_mass_fractions=inj_y)
+        inj_energy = inj_mass*eos.get_internal_energy(
+            temperature=inj_temperature, species_mass_fractions=inj_y)
+
+        # modify the velocity in the near-wall region to have a smooth profile
+        # this approximates the BL velocity profile
+        if self._vel_sigma_injection > 0.:
+            sigma = self._vel_sigma_injection
+            smoothing_radius = smooth_step(
+                actx, sigma*(actx.np.abs(radius - inj_radius)))
+            inj_velocity[1] = inj_velocity[1]*smoothing_radius
+
+        # use the species field with fuel added everywhere
+        for i in range(self._nspecies):
+            y[i] = actx.np.where(inside_injector, inj_y[i], y[i])
+
+        # recompute the mass and energy (outside the injector) to account for
+        # the change in mass fraction
+        mass = eos.get_density(pressure=pressure,
+                               temperature=temperature,
+                               species_mass_fractions=y)
+        energy = mass*eos.get_internal_energy(temperature=temperature,
+                                              species_mass_fractions=y)
+
+        mass = actx.np.where(inside_injector, inj_mass, mass)
+        velocity[1] = actx.np.where(inside_injector,
+                                    inj_velocity[1],
+                                    velocity[1])
+        energy = actx.np.where(inside_injector, inj_energy, energy)
+
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
+        return make_conserved(
+            dim=self._dim,
+            mass=mass,
+            momentum=mom,
+            energy=energy,
+            species_mass=mass*y
+        )
+
+
+class InitACTIIRamp:
+    r"""Solution initializer for flow in the ACT-II facility
+
+    This initializer initializes a pressure discontinuity in the inlet section
+    based on an optionally time-dependent stagnation pressure and temperature
+    and isentropic flow relations.
+
+    Also provides functions for adding injection initialization on top of an existing
+    inlet initialization.
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    .. automethod:: add_injection
+    """
+
+    def __init__(self, *, dim=2, nspecies=0, disc_sigma,
+                 pressure_bulk, temperature_bulk, velocity_bulk, mass_frac_bulk,
+                 pressure_inlet, temperature_inlet, velocity_inlet, mass_frac_inlet,
+                 temp_wall, temp_sigma, vel_sigma,
+                 inlet_pressure_func=None):
+        r"""Initialize mixture parameters.
+
+        Parameters
+        ----------
+        dim: int
+            specifies the number of dimensions for the solution
+        temp_wall: float
+            wall temperature
+        temp_sigma: float
+            near-wall temperature relaxation parameter
+        vel_sigma: float
+            near-wall velocity relaxation parameter
+        """
+        self._dim = dim
+        self._nspecies = nspecies
+        self._disc_sigma = disc_sigma
+        self._temp_wall = temp_wall
+        self._temp_sigma = temp_sigma
+        self._vel_sigma = vel_sigma
+
+        # bulk fluid conditions (background)
+        self._temp_bulk = temperature_bulk
+        self._pres_bulk = pressure_bulk
+        if velocity_bulk is None:
+            velocity_bulk = np.zeros(shape=(dim,))
+        self._vel_bulk = velocity_bulk
+
+        if mass_frac_bulk is None:
+            mass_frac_bulk = np.zeros(shape=(nspecies,))
+        self._y_bulk = mass_frac_bulk
+
+        # inlet fluid conditions
+        self._temp_inlet = temperature_inlet
+        self._pres_inlet = pressure_inlet
+        if velocity_inlet is None:
+            velocity_inlet = np.zeros(shape=(dim,))
+        self._vel_inlet = velocity_inlet
+
+        if mass_frac_inlet is None:
+            mass_frac_inlet = np.zeros(shape=(nspecies,))
+        self._y_inlet = mass_frac_inlet
+
+        if inlet_pressure_func is not None:
+            self._inlet_p_fun = inlet_pressure_func
+
+    def __call__(self, dcoll, x_vec, eos, *, time=0.0):
+        """Create the solution state at locations *x_vec*.
+
+        Parameters
+        ----------
+        x_vec: numpy.ndarray
+            Coordinates at which solution is desired
+        eos:
+            Mixture-compatible equation-of-state object must provide
+            these functions:
+            `eos.get_density`
+            `eos.get_internal_energy`
+        time: float
+            Time at which solution is desired. The pressure and gamma are
+            (optionally) dependent on time
+        """
+        if x_vec.shape != (self._dim,):
+            raise ValueError(f"Position vector has unexpected dimensionality,"
+                             f" expected {self._dim}.")
+
+        # initialize the entire flowfield to a uniform state
+        actx = x_vec[0].array_context
+        zeros = actx.np.zeros_like(x_vec[0])
+        mass = eos.get_density(self._pres_bulk, self._temp_bulk,
+                               self._y_bulk) + zeros
+        velocity = self._vel_bulk
+        energy = mass*(eos.get_internal_energy(self._temp_bulk, self._y_bulk)
+                      + 0.5*np.dot(velocity, velocity))
+
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
+
+        return make_conserved(
+            dim=self._dim,
+            mass=mass,
+            momentum=mom,
+            energy=energy,
+            species_mass=mass*self._y_bulk
+        )
+
+    def inlet_smoothing_func(self, x_vec, sigma):
+        actx = x_vec[0].array_context
+        zeros = actx.np.zeros_like(x_vec[0])
+        ones = zeros + 1.0
+
+        y0 = -0.0270645
+        y1 = 0.0270645
+        z0 = -0.0175
+        z1 = 0.0175
+        smth_bottom = smooth_step(actx, sigma*(x_vec[1] - y0))
+        smth_top = smooth_step(actx, -sigma*(x_vec[1] - y1))
+        if self._dim == 3:
+            smth_fore = smooth_step(actx, sigma*(x_vec[2]-z0))
+            smth_aft = smooth_step(actx, -sigma*(x_vec[2]-z1))
+        else:
+            smth_fore = ones
+            smth_aft = ones
+        return smth_fore*smth_aft*smth_bottom*smth_top
+
+    def add_inlet(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
+        """Create the solution state at locations *x_vec*.
+
+        Parameters
+        ----------
+        fluid_state: mirgecom.gas_modle.FluidState
+            Current fluid state
+        time: float
+            Time at which solution is desired. The location is (optionally)
+            dependent on time
+
+        Returns
+        -------
+        :class:`mirgecom.fluid.ConservedVars`
+        """
+        actx = x_vec[0].array_context
+
+        # get the current mesh conditions
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
+
+        if self._inlet_p_fun is not None:
+            pres_inlet = self._inlet_p_fun(time)
+        else:
+            pres_inlet = self._pres_inlet
+
+        # initial discontinuity location
+        x0 = 0.225
+
+        # now solve for T, P, velocity
+        dist = x0 - x_vec[0]
+        xtanh = 1.0/self._disc_sigma*dist
+        weight = 0.5*(1.0 - actx.np.tanh(xtanh))
+        pressure = pres_inlet + (pressure - pres_inlet)*weight
+        temperature = self._temp_inlet + (temperature - self._temp_inlet)*weight
+        velocity = self._vel_inlet + (velocity - self._vel_inlet)*weight
+        y = self._y_inlet + (y - self._y_inlet)*weight
+
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+
+        sigma = self._temp_sigma
+        if sigma > 0:
+            wall_temperature = self._temp_wall
+            sfunc = self.inlet_smoothing_func(x_vec, sigma)
+            temperature = (wall_temperature +
+                (temperature - wall_temperature)*sfunc)
+
+        # modify the velocity in the near wall region to match the
+        # noslip boundaries
+        sigma = self._vel_sigma
+        if sigma > 0:
+            sfunc = self.inlet_smoothing_func(x_vec, sigma)
+            velocity = velocity*sfunc
+
+        mass = eos.get_density(pressure, temperature, species_mass_fractions=y)
+        mom = mass*velocity
+        internal_energy = eos.get_internal_energy(temperature,
+                                                  species_mass_fractions=y)
+
+        kinetic_energy = 0.5*np.dot(velocity, velocity)
+        energy = mass * (internal_energy + kinetic_energy)
+
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
+        return make_conserved(
+            dim=self._dim,
+            mass=mass,
+            momentum=mom,
+            energy=energy,
+            species_mass=mass*y
+        )
+
+    def add_injection(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
+        """Create the solution state at locations *x_vec*.
+
+        Parameters
+        ----------
+        cv: mirgecom.fluid.ConservedVars
+            Current conserved vars
+        time: float
+            Time at which solution is desired. The location is (optionally)
+            dependent on time
+
+        Returns
+        -------
+        :class:`mirgecom.fluid.ConservedVars`
+        """
+
+        xpos = x_vec[0]
+        ypos = x_vec[1]
+        if self._dim == 3:
+            zpos = x_vec[2]
+        actx = xpos.array_context
+
+        zeros = actx.np.zeros_like(xpos)
+        ones = zeros + 1.0
+
+        # get the current mesh conditions
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
+
+        # fuel stream initialization
+        # initially in pressure/temperature equilibrium with the cavity
+        #inj_left = 0.71
+        # even with the bottom corner
+        #inj_left = 0.632
+        # even with the top corner
+        inj_left = 0.6357
+        inj_right = 0.651
+        inj_top = -0.0125
+        inj_bottom = -0.01413
+        inj_fore = 1.59e-3
+        inj_aft = -1.59e-3
+        xc_left = zeros + inj_left
+        xc_right = zeros + inj_right
+        yc_top = zeros + inj_top
+        yc_bottom = zeros + inj_bottom
+        zc_fore = zeros + inj_fore
+        zc_aft = zeros + inj_aft
+
+        yc_center = zeros - 0.01412 + 1.59e-3/2.
+        zc_center = zeros
+        inj_radius = 1.59e-3/2.
+
+        if self._dim == 2:
+            radius = actx.np.sqrt((ypos - yc_center)**2)
+        else:
+            radius = actx.np.sqrt((ypos - yc_center)**2 + (zpos - zc_center)**2)
+
+        left_edge = actx.np.greater(xpos, xc_left)
+        right_edge = actx.np.less(xpos, xc_right)
+        bottom_edge = actx.np.greater(ypos, yc_bottom)
+        top_edge = actx.np.less(ypos, yc_top)
+        aft_edge = ones
+        fore_edge = ones
+        if self._dim == 3:
+            aft_edge = actx.np.greater(zpos, zc_aft)
+            fore_edge = actx.np.less(zpos, zc_fore)
+        inside_injector = (left_edge*right_edge*top_edge*bottom_edge *
+                           aft_edge*fore_edge)
+
+        inj_y = ones*self._inj_mass_frac
+
+        inj_velocity = mass*np.zeros(self._dim, dtype=object)
+        inj_velocity[0] = self._inj_vel[0]
+
+        inj_mach = self._inj_mach*ones
+
+        # smooth out the injection profile
+        # relax to the cavity temperature/pressure/velocity
+        inj_x0 = 0.6375
+        inj_fuel_x0 = 0.6425
+        inj_sigma = 1500
+
+        # left extent
+        inj_tanh = inj_sigma*(inj_fuel_x0 - xpos)
+        inj_weight = 0.5*(1.0 - actx.np.tanh(inj_tanh))
+        for i in range(self._nspecies):
+            inj_y[i] = y[i] + (inj_y[i] - y[i])*inj_weight
+
+        # transition the mach number from 0 (cavitiy) to 1 (injection)
+        inj_tanh = inj_sigma*(inj_x0 - xpos)
+        inj_weight = 0.5*(1.0 - actx.np.tanh(inj_tanh))
+        inj_mach = inj_weight*inj_mach
+
+        # assume a smooth transition in gamma, could calculate it
+        inj_gamma = (self._gamma_guess +
+            (self._inj_gamma_guess - self._gamma_guess)*inj_weight)
+
+        inj_pressure = getIsentropicPressure(
+            mach=inj_mach,
+            P0=self._inj_P0,
+            gamma=inj_gamma
+        )
+        inj_temperature = getIsentropicTemperature(
+            mach=inj_mach,
+            T0=self._inj_T0,
+            gamma=inj_gamma
+        )
+
+        inj_mass = eos.get_density(pressure=inj_pressure,
+                                   temperature=inj_temperature,
+                                   species_mass_fractions=inj_y)
+        inj_energy = inj_mass*eos.get_internal_energy(
+            temperature=inj_temperature, species_mass_fractions=inj_y)
+
+        inj_velocity = mass*np.zeros(self._dim, dtype=object)
+        inj_mom = inj_mass*inj_velocity
+
+        # the velocity magnitude
+        inj_cv = make_conserved(dim=self._dim, mass=inj_mass, momentum=inj_mom,
+                                energy=inj_energy, species_mass=inj_mass*inj_y)
+
+        inj_velocity[0] = -inj_mach*eos.sound_speed(inj_cv, inj_temperature)
+
+        # relax the velocity, temperature, and pressure at the injector interface
+        for i in range(self._dim):
+            inj_velocity[i] = velocity[i] + \
+                (inj_velocity[i] - velocity[i])*inj_weight
+        inj_pressure = pressure + (inj_pressure - pressure)*inj_weight
+        inj_temperature = (temperature +
+            (inj_temperature - temperature)*inj_weight)
+
+        # we need to calculate the velocity from a prescribed mass flow rate
+        # this will need to take into account the velocity relaxation at the
+        # injector walls
+        #inj_velocity[0] = (velocity[0] +
+        #                   (self._inj_vel[0] - velocity[0])*inj_weight)
+
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+        if self._temp_sigma_injection > 0.:
+            sigma = self._temp_sigma_injection
+            wall_temperature = self._temp_wall
+            smoothing_radius = smooth_step(
+                actx, sigma*(actx.np.abs(radius - inj_radius)))
+            inj_temperature = (wall_temperature +
+                (inj_temperature - wall_temperature)*smoothing_radius)
+
+        inj_mass = eos.get_density(pressure=inj_pressure,
+                                   temperature=inj_temperature,
+                                   species_mass_fractions=inj_y)
+        inj_energy = inj_mass*eos.get_internal_energy(
+            temperature=inj_temperature, species_mass_fractions=inj_y)
+
+        # modify the velocity in the near-wall region to have a smooth profile
+        # this approximates the BL velocity profile
+        if self._vel_sigma_injection > 0.:
+            sigma = self._vel_sigma_injection
+            smoothing_radius = smooth_step(
+                actx, sigma*(actx.np.abs(radius - inj_radius)))
+            inj_velocity[0] = inj_velocity[0]*smoothing_radius
+
+        # use the species field with fuel added everywhere
+        for i in range(self._nspecies):
+            y[i] = actx.np.where(inside_injector, inj_y[i], y[i])
+
+        # recompute the mass and energy (outside the injector) to account for
+        # the change in mass fraction
+        mass = eos.get_density(pressure=pressure,
+                               temperature=temperature,
+                               species_mass_fractions=y)
+        energy = mass*eos.get_internal_energy(temperature=temperature,
+                                              species_mass_fractions=y)
+
+        mass = actx.np.where(inside_injector, inj_mass, mass)
+        velocity[0] = actx.np.where(inside_injector,
+                                    inj_velocity[0],
+                                    velocity[0])
+        energy = actx.np.where(inside_injector, inj_energy, energy)
+
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
+        return make_conserved(
+            dim=self._dim,
+            mass=mass,
+            momentum=mom,
+            energy=energy,
+            species_mass=mass*y
+        )
+
+    def add_injection_upstream(self, cv, pressure, temperature,
+                               x_vec, eos, *, time=0.0):
+        """Create the solution state at locations *x_vec*.
+
+        Parameters
+        ----------
+        fluid_state: mirgecom.gas_modle.FluidState
+            Current fluid state
+        time: float
+            Time at which solution is desired. The location is (optionally)
+            dependent on time
+
+        Returns
+        -------
+        :class:`mirgecom.fluid.ConservedVars`
+        """
+
+        xpos = x_vec[0]
+        ypos = x_vec[1]
+        if self._dim == 3:
+            zpos = x_vec[2]
+        actx = xpos.array_context
+
+        zeros = actx.np.zeros_like(xpos)
+        ones = zeros + 1.0
+
+        # get the current mesh conditions
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
