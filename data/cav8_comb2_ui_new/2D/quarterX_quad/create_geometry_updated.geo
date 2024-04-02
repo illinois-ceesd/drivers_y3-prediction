@@ -168,8 +168,8 @@ Line(551) = {1094, 42};
 // add geometry for inlet and outlet transfinite meshes
 Point(700) = {220.0, 30.0, 0.};
 Point(701) = {220.0, -30.0, 0.};
-Point(702) = {1050.0, 150.0, 0.};
-Point(703) = {1050.0, -150.0, 0.};
+Point(702) = {1250.0, 150.0, 0.};
+Point(703) = {1250.0, -150.0, 0.};
 Curve(700) = {701, 700};
 Curve(701) = {703, 702};
 BooleanFragments{ Line{26, 48, 1016, 28}; Delete;}{Line{700}; Delete;}

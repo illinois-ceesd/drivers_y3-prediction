@@ -65,7 +65,7 @@ EndIf
 If(Exists(cavityfac))
     cavity_factor=cavityfac;
 Else
-    cavity_factor=6;
+    cavity_factor=12;
 EndIf
 
 If(Exists(nozzlefac))
@@ -80,7 +80,7 @@ inj_h=4.;  // height of injector (bottom) from floor
 inj_d=1.59; // diameter of injector
 inj_l = 20; // length of injector
 
-bigsize = basesize*4;     // the biggest mesh size 
+bigsize = basesize*2;     // the biggest mesh size 
 inletsize = basesize/2;   // background mesh size upstream of the nozzle
 isosize = basesize/iso_factor;       // background mesh size in the isolator
 nozzlesize = basesize/nozzle_factor;       // background mesh size in the nozzle
@@ -120,11 +120,11 @@ Physical Curve("wall_farfield") = {37,39, 1112:1114};
 //
 // upstream injector bl
 //
-num_bl_injector = 7;
+num_bl_injector = 8;
 num_injector_center = 3;
 num_injector = 40;
 num_injector_curve = 9;
-Transfinite Curve{1077, -1079} = num_bl_injector Using Progression 1.5; // vertical segments
+Transfinite Curve{1077, -1079} = num_bl_injector Using Progression 1.2; // vertical segments
 Transfinite Curve{302, 300} = num_bl_injector Using Progression 1.2; // vertical segments
 Transfinite Curve{1078, 304} = num_injector_center; // center vertical segments
 Transfinite Curve{-33, -1040, -1042, 35} = num_injector Using Progression 1.03; // axial edges
@@ -138,7 +138,7 @@ Transfinite Surface{27}; // center
 num_injector_ext = 10;
 num_injector = 40;
 num_injector_diff = 10;
-Transfinite Curve{1080, -1082} = num_bl_injector Using Progression 1.3; // vertical segments
+Transfinite Curve{1080, -1082} = num_bl_injector Using Progression 1.2; // vertical segments
 Transfinite Curve{1071, -1073} = num_bl_injector Using Progression 1.0; // vertical segments
 Transfinite Curve{-1065, 1063} = num_bl_injector Using Progression 1.0; // vertical segments
 Transfinite Curve{1081, 1072, 1064} = num_injector_center; // center vertical segments
@@ -247,8 +247,8 @@ Transfinite Curve {600} = num_combustor_end_upper Using Progression 1.005;
 Transfinite Curve {15, 601} = num_combustor_end;
 Transfinite Curve {-16, -1039} = num_exhaust Using Progression 1.1;
 Transfinite Curve {17, 501} = num_exhaust_edge Using Progression 1.1;
-num_bl_exhaust_exit = 5;
-num_bl_exhaust_exit_height = 15;
+num_bl_exhaust_exit = 9;
+num_bl_exhaust_exit_height = 21;
 Transfinite Curve {1128, 1130} = num_bl_exhaust_exit;
 Transfinite Curve {1133, 19} = num_bl_exhaust_exit_height;
 Transfinite Surface {13} = {18, 1089, 10, 1036};
@@ -430,3 +430,7 @@ RecombineMesh;
 Mesh.MshFileVersion = 2.2;
 Save "actii_2d.msh";
 //+
+//+
+Show "*";
+//+
+Show "*";
