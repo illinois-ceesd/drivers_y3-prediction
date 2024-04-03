@@ -412,6 +412,6 @@ Mesh.RecombineOptimizeTopology =5;
 Mesh.RecombineAll = 1;
 
 Mesh 2;
-//RecombineMesh;
+RecombineMesh;
 Mesh.MshFileVersion = 2.2;
 Save "actii_2d.msh";

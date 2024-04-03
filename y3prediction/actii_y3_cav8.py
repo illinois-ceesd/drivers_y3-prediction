@@ -1049,10 +1049,14 @@ class InitACTIIRamp:
     """
 
     def __init__(self, *, dim=2, nspecies=0, disc_sigma,
-                 pressure_bulk, temperature_bulk, velocity_bulk, mass_frac_bulk,
-                 pressure_inlet, temperature_inlet, velocity_inlet, mass_frac_inlet,
+                 pressure_bulk, temperature_bulk, velocity_bulk,
+                 mass_frac_bulk,
+                 pressure_inlet, temperature_inlet, velocity_inlet,
+                 mass_frac_inlet,
+                 pressure_outlet, temperature_outlet, velocity_outlet,
+                 mass_frac_outlet,
                  temp_wall, temp_sigma, vel_sigma,
-                 inlet_pressure_func=None):
+                 inlet_pressure_func=None, outlet_pressure_func=None):
         r"""Initialize mixture parameters.
 
         Parameters
@@ -1097,6 +1101,20 @@ class InitACTIIRamp:
 
         if inlet_pressure_func is not None:
             self._inlet_p_fun = inlet_pressure_func
+
+        # inlet fluid conditions
+        self._temp_outlet = temperature_outlet
+        self._pres_outlet = pressure_outlet
+        if velocity_outlet is None:
+            velocity_outlet = np.zeros(shape=(dim,))
+        self._vel_outlet = velocity_outlet
+
+        if mass_frac_outlet is None:
+            mass_frac_outlet = np.zeros(shape=(nspecies,))
+        self._y_outlet = mass_frac_outlet
+
+        if outlet_pressure_func is not None:
+            self._outlet_p_fun = outlet_pressure_func
 
     def __call__(self, dcoll, x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
@@ -1145,6 +1163,25 @@ class InitACTIIRamp:
 
         y0 = -0.0270645
         y1 = 0.0270645
+        z0 = -0.0175
+        z1 = 0.0175
+        smth_bottom = smooth_step(actx, sigma*(x_vec[1] - y0))
+        smth_top = smooth_step(actx, -sigma*(x_vec[1] - y1))
+        if self._dim == 3:
+            smth_fore = smooth_step(actx, sigma*(x_vec[2]-z0))
+            smth_aft = smooth_step(actx, -sigma*(x_vec[2]-z1))
+        else:
+            smth_fore = ones
+            smth_aft = ones
+        return smth_fore*smth_aft*smth_bottom*smth_top
+
+    def outlet_smoothing_func(self, x_vec, sigma):
+        actx = x_vec[0].array_context
+        zeros = actx.np.zeros_like(x_vec[0])
+        ones = zeros + 1.0
+
+        y0 = -.101956
+        y1 = .098044
         z0 = -0.0175
         z1 = 0.0175
         smth_bottom = smooth_step(actx, sigma*(x_vec[1] - y0))
@@ -1212,6 +1249,81 @@ class InitACTIIRamp:
         sigma = self._vel_sigma
         if sigma > 0:
             sfunc = self.inlet_smoothing_func(x_vec, sigma)
+            velocity = velocity*sfunc
+
+        mass = eos.get_density(pressure, temperature, species_mass_fractions=y)
+        mom = mass*velocity
+        internal_energy = eos.get_internal_energy(temperature,
+                                                  species_mass_fractions=y)
+
+        kinetic_energy = 0.5*np.dot(velocity, velocity)
+        energy = mass * (internal_energy + kinetic_energy)
+
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
+        return make_conserved(
+            dim=self._dim,
+            mass=mass,
+            momentum=mom,
+            energy=energy,
+            species_mass=mass*y
+        )
+
+    def add_outlet(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
+        """Create the solution state at locations *x_vec*.
+
+        Parameters
+        ----------
+        fluid_state: mirgecom.gas_modle.FluidState
+            Current fluid state
+        time: float
+            Time at which solution is desired. The location is (optionally)
+            dependent on time
+
+        Returns
+        -------
+        :class:`mirgecom.fluid.ConservedVars`
+        """
+        actx = x_vec[0].array_context
+
+        # get the current mesh conditions
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
+
+        if self._outlet_p_fun is not None:
+            pres_outlet = self._outlet_p_fun(time)
+        else:
+            pres_outlet = self._pres_outlet
+
+        # initial discontinuity location
+        x0 = 1.13
+
+        # now solve for T, P, velocity
+        dist = x_vec[0] - x0
+        xtanh = 1.0/self._disc_sigma*dist
+        weight = 0.5*(1.0 - actx.np.tanh(xtanh))
+        pressure = pres_outlet + (pressure - pres_outlet)*weight
+        temperature = self._temp_outlet + (temperature - self._temp_outlet)*weight
+        velocity = self._vel_outlet + (velocity - self._vel_outlet)*weight
+        y = self._y_outlet + (y - self._y_outlet)*weight
+
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+
+        sigma = self._temp_sigma
+        if sigma > 0:
+            wall_temperature = self._temp_wall
+            sfunc = self.outlet_smoothing_func(x_vec, sigma)
+            temperature = (wall_temperature +
+                (temperature - wall_temperature)*sfunc)
+
+        # modify the velocity in the near wall region to match the
+        # noslip boundaries
+        sigma = self._vel_sigma
+        if sigma > 0:
+            sfunc = self.outlet_smoothing_func(x_vec, sigma)
             velocity = velocity*sfunc
 
         mass = eos.get_density(pressure, temperature, species_mass_fractions=y)

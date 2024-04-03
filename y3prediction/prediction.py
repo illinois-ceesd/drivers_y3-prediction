@@ -1886,6 +1886,10 @@ def main(actx_class,
             temperature_inlet=temp_inflow,
             velocity_inlet=vel_inflow,
             mass_frac_inlet=y,
+            pressure_outlet=pres_bkrnd,
+            temperature_outlet=temp_bkrnd,
+            velocity_outlet=vel_outflow,
+            mass_frac_outlet=y,
             inlet_pressure_func=inlet_ramp_pressure,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
@@ -4366,6 +4370,10 @@ def main(actx_class,
                 cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
                 temperature=restart_fluid_state.temperature,
                 eos=eos_init, x_vec=fluid_nodes)
+            restart_cv = bulk_init.add_outlet(
+                cv=restart_cv, pressure=restart_fluid_state.pressure,
+                temperature=restart_fluid_state.temperature,
+                eos=eos_init, x_vec=fluid_nodes)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -6640,6 +6648,11 @@ def main(actx_class,
                 # of the domain, we don't need to call make_fluid_state
                 # in between each additive call to recompute temperature/pressure
                 sponge_cv = bulk_init.add_inlet(cv=sponge_cv,
+                                                pressure=fluid_state.pressure,
+                                                temperature=fluid_state.temperature,
+                                                x_vec=fluid_nodes,
+                                                eos=eos, time=t)
+                sponge_cv = bulk_init.add_outlet(cv=sponge_cv,
                                                 pressure=fluid_state.pressure,
                                                 temperature=fluid_state.temperature,
                                                 x_vec=fluid_nodes,
