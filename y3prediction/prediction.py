@@ -581,6 +581,7 @@ def main(actx_class,
     dim = configurate("dimen", input_data, 2)
     inv_num_flux = configurate("inv_num_flux", input_data, "rusanov")
     mesh_filename = configurate("mesh_filename", input_data, "data/actii_2d.msh")
+    generate_mesh = configurate("generate_mesh", input_data, "True")
     mesh_partition_prefix = configurate("mesh_partition_prefix",
                                         input_data, "actii_2d")
     noslip = configurate("noslip", input_data, True)
@@ -2433,16 +2434,25 @@ def main(actx_class,
 
         # eventually encapsulate these inside a class for the respective inits
         if init_case == "shock1d" or init_case == "flame1d":
-            if rank == 0:
-                print("Generating mesh from scratch")
 
             def get_mesh_data():
-                from y3prediction.shock1d import get_mesh
-                mesh, tag_to_elements = get_mesh(
-                    dim=dim, angle=0.*mesh_angle, size=mesh_size,
-                    bl_ratio=bl_ratio, interface_ratio=interface_ratio,
-                    transfinite=transfinite, use_wall=use_wall,
-                    use_quads=use_tpe, use_gmsh=use_gmsh)()
+                if generate_mesh is True:
+                    if rank == 0:
+                        print("Generating mesh from scratch")
+                    from y3prediction.shock1d import get_mesh
+                    mesh, tag_to_elements = get_mesh(
+                        dim=dim, angle=0.*mesh_angle, size=mesh_size,
+                        bl_ratio=bl_ratio, interface_ratio=interface_ratio,
+                        transfinite=transfinite, use_wall=use_wall,
+                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                    from meshmode.mesh.io import read_gmsh
+                else:
+                    if rank == 0:
+                        print("Reading mesh")
+                    from meshmode.mesh.io import read_gmsh
+                    mesh, tag_to_elements = read_gmsh(
+                        mesh_filename, force_ambient_dim=dim,
+                        return_tag_to_elements_map=True)
 
                 volume_to_tags = {"fluid": ["fluid"]}
                 if use_wall:
@@ -2452,6 +2462,11 @@ def main(actx_class,
                     mesh, tag_to_elements = extract_volumes(
                         mesh, tag_to_elements, volume_to_tags["fluid"],
                         "wall_interface")
+
+                import sys
+                import numpy
+                numpy.set_printoptions(threshold=sys.maxsize)
+                #print(f"{mesh=}")
 
                 """
                 # apply periodicity

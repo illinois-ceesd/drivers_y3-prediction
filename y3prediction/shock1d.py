@@ -195,7 +195,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
     height = 0.02
     fluid_length = 0.1
-    wall_length = 0.02
+    wall_length = 0.05
     bottom_inflow = np.zeros(shape=(dim,))
     top_inflow = np.zeros(shape=(dim,))
     bottom_interface = np.zeros(shape=(dim,))
@@ -269,6 +269,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 wall_surface_vector[] = Extrude {0, 0, 0.02} { Surface{2}; };
                 """)
 
+            my_string += ("""Coherence;""")
+
             my_string += ("""
                 Physical Volume('fluid') = {fluid_surface_vector[1]};
                 Physical Volume('wall_insert') = {wall_surface_vector[1]};
@@ -319,7 +321,12 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                     f"={0.02}/{size} + 1 Using Bump 1/{bl_ratio};"
                 )
                 my_string += ("""
-                    Transfinite Surface {1, 2, 16, 20, 24, 28, 29,42,46, 50, 51};
+                    Transfinite Surface {1, 2} Left;
+                    Transfinite Surface {29, 51} Right;
+                    Transfinite Surface {28, 50} Left;
+                    Transfinite Surface {20, 42} Right;
+                    Transfinite Surface {16, 46} Left;
+                    Transfinite Surface {24} Right;
                     Transfinite Volume {1, 2};
                 """)
 
@@ -447,7 +454,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         from meshmode.mesh.generation import generate_regular_rect_mesh
 
         # this only works for non-slanty meshes
-        def get_meshmode_mesh(a, b, nelements_per_axis):
+        def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face):
 
             if use_quads:
                 from meshmode.mesh import TensorProductElementGroup
@@ -458,18 +465,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             mesh = generate_regular_rect_mesh(
                 a=a, b=b, nelements_per_axis=nelements_per_axis,
                 group_cls=group_cls,
-                boundary_tag_to_face={
-                    "inflow": ["-x"],
-                    "outflow": ["+x"],
-                    "flow": ["-x", "+x"],
-                    "isothermal_wall": ["-y", "+y"],
-                    "periodic_y_top": ["+y"],
-                    "periodic_y_bottom": ["-y"],
-                    "wall_farfield": ["+x"],
-                    "solid_wall_top": ["+y"],
-                    "solid_wall_bottom": ["-y"],
-                    "solid_wall_end": ["+x"]
-                })
+                boundary_tag_to_face=boundary_tag_to_face
+                )
 
             mgrp = mesh.groups[0]
             x = mgrp.nodes[0, :, :]
@@ -480,8 +477,35 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
             return mesh, tag_to_elements
 
+        if dim == 2:
+            a = (bottom_inflow[0], bottom_inflow[1])
+            b = (top_wall[0], top_wall[1])
+            boundary_tag_to_face = {
+                "inflow": ["-x"],
+                "outflow": ["+x"],
+                "flow": ["-x", "+x"],
+                "isothermal_wall": ["-y", "+y"],
+                "periodic_y_top": ["+y"],
+                "periodic_y_bottom": ["-y"],
+                "wall_farfield": ["+x"],
+            }
+            nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
+                                  int(height/size))
+        else:
+            a = (bottom_inflow[0], bottom_inflow[1], 0.)
+            b = (top_wall[0], top_wall[1], 0.02)
+            boundary_tag_to_face = {
+                "inflow": ["-x"],
+                "outflow": ["+x"],
+                "flow": ["-x", "+x"],
+                "isothermal_wall": ["-y", "+y", "-z", "+z"],
+                "wall_farfield": ["+x", "-y", "+y", "-z", "+z"]}
+            nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
+                                  int(height/size),
+                                  int(height/size))
+            #nelements_per_axis = (3, 2, 2)
+            print(f"{nelements_per_axis=}")
+
         return partial(get_meshmode_mesh,
-                       a=(bottom_inflow[0], bottom_inflow[1]),
-                       b=(top_wall[0], top_wall[1]),
-                       nelements_per_axis=(int((fluid_length + wall_length)/size),
-                                           int(height/size)))
+                       a=a, b=b, boundary_tag_to_face=boundary_tag_to_face,
+                       nelements_per_axis=nelements_per_axis)
