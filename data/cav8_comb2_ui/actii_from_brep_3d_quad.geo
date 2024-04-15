@@ -29,6 +29,7 @@ Else
     boundratiocorner=1.0;
 EndIf
 
+
 If(Exists(blratiocomb))
     boundratiocomb=blratiocomb;
 Else
@@ -87,6 +88,7 @@ If(Exists(nozzlefac))
     nozzle_factor=nozzlefac;
 Else
     nozzle_factor=3.0;
+
 EndIf
 
 If(Exists(samplefac))
@@ -314,6 +316,7 @@ Field[4002] = Threshold;
 Field[4002].InField = 4001;
 Field[4002].SizeMin = injectorsize/cornerfac;
 Field[4002].SizeMax = injectorsize/cornerfac*(2.-1./cornerfac);
+
 Field[4002].DistMin = 0.02;
 Field[4002].DistMax = 2.0;
 Field[4002].StopAtDistMax = 1;
@@ -324,6 +327,7 @@ Field[4003] = Threshold;
 Field[4003].InField = 4001;
 Field[4003].SizeMin = injectorsize/cornerfac;
 Field[4003].SizeMax = injectorsize/cornerfac*(2.-1./cornerfac);
+
 Field[4003].DistMin = 0.02;
 Field[4003].DistMax = 1.0;
 Field[4003].StopAtDistMax = 1;
@@ -605,6 +609,7 @@ Mesh.Algorithm = 1;
 Mesh.Algorithm3D = 10;
 // 0 - none, 1 - all quads, 2 - all hexes
 Mesh.SubdivisionAlgorithm = 0;
+
 Mesh.OptimizeNetgen = 1;
 Mesh.Smoothing = 100;
 //Mesh.Smoothing = 0;
