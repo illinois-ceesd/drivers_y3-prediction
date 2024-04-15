@@ -3969,7 +3969,7 @@ def main(actx_class,
             if use_injection:
                 restart_cv = bulk_init.add_injection(restart_fluid_state.cv,
                                                      restart_fluid_state.pressure,
-                                                     restart_fluid_state.tempearture,
+                                                     restart_fluid_state.temperature,
                                                      eos=eos_init,
                                                      x_vec=fluid_nodes)
                 restart_fluid_state = create_fluid_state(
