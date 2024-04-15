@@ -5758,9 +5758,10 @@ def main(actx_class,
                     #state = force_evaluation(actx, state)
                     if use_wall:
                         wv = force_evaluation(actx, stepper_state.wv)
+                elif use_wall:
+                    wv = stepper_state.wv  # pylint: disable=no-member
 
                 dv = fluid_state.dv
-                wv = stepper_state.wv
 
                 ts_field_fluid, cfl_fluid, dt_fluid = my_get_timestep(
                     dcoll=dcoll, fluid_state=fluid_state,
