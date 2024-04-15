@@ -4067,8 +4067,11 @@ def main(actx_class,
         logger.info(f" - filter order  = {rhs_filter_order}")
 
     limiter_func = None
-    if use_species_limiter:
-        #limiter_func = limit_fluid_state_new
+    if use_species_limiter == 1:
+        logger.info("Limiting species mass fractions:")
+        limiter_func = limit_fluid_state
+    elif use_species_limiter == 2:
+        logger.info("Positivity-preserving limiter enabled:")
         #limiter_func = limit_fluid_state_average_pressure
         #limiter_func = limit_fluid_state_neighbors_tulio
         #limiter_func = limit_fluid_state_neighbors
