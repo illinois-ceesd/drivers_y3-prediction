@@ -5714,9 +5714,9 @@ def main(actx_class,
 
         # we can't get the limited viz data back from create_fluid_state
         # so call the limiter directly first, basically doing the limiting twice
-        theta_rho = actx.zeros_like(stepper_state.cv.mass)
-        theta_Y = actx.zeros_like(stepper_state.cv.mass)
-        theta_pres = actx.zeros_like(stepper_state.cv.mass)
+        theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+        theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+        theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
         if viz_level == 3 and use_species_limiter == 2:
             cv_lim, theta_rho, theta_Y, theta_pres = \
                 limiter_func(cv=stepper_state.cv, gas_model=gas_model,
@@ -6472,9 +6472,9 @@ def main(actx_class,
 
     # we can't get the limited viz data back from create_fluid_state
     # so call the limiter directly first, basically doing the limiting twice
-    theta_rho = actx.zeros_like(current_cv.mass)
-    theta_Y = actx.zeros_like(current_cv.mass)
-    theta_pres = actx.zeros_like(current_cv.mass)
+    theta_rho = actx.np.zeros_like(current_cv.mass)
+    theta_Y = actx.np.zeros_like(current_cv.mass)
+    theta_pres = actx.np.zeros_like(current_cv.mass)
     if viz_level == 3 and use_species_limiter == 2:
         cv_lim, theta_rho, theta_Y, theta_pres = \
             limiter_func(cv=current_cv, gas_model=gas_model,
