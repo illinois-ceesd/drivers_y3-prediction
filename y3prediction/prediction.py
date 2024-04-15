@@ -5760,6 +5760,7 @@ def main(actx_class,
                         wv = force_evaluation(actx, stepper_state.wv)
 
                 dv = fluid_state.dv
+                wv = stepper_state.wv
 
                 ts_field_fluid, cfl_fluid, dt_fluid = my_get_timestep(
                     dcoll=dcoll, fluid_state=fluid_state,
