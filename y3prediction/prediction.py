@@ -2897,7 +2897,7 @@ def main(actx_class,
 
         return make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                               momentum=mom_lim,
-                              species_mass=mass_lim*spec_lim)
+                              species_mass=mass_lim*spec_lim), pressure, temperature
 
     #
     # positivity preserving limiter of liu
