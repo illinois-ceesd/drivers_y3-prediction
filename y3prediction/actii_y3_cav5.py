@@ -652,7 +652,7 @@ class InitACTII:
             species_mass=mass*y
         )
 
-    def add_injection(self, fluid_state, x_vec, eos, *, time=0.0):
+    def add_injection(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
 
         Parameters
@@ -678,14 +678,10 @@ class InitACTII:
         ones = zeros + 1.0
 
         # get the current mesh conditions
-        mass = fluid_state.mass_density
-        energy = fluid_state.energy_density
-        velocity = fluid_state.velocity
-        y = fluid_state.species_mass_fractions
-
-        temperature = fluid_state.temperature
-        pressure = fluid_state.pressure
-        velocity = fluid_state.velocity
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
@@ -847,7 +843,8 @@ class InitACTII:
             species_mass=mass*y
         )
 
-    def add_injection_upstream(self, fluid_state, x_vec, eos, *, time=0.0):
+    def add_injection_upstream(self, cv, pressure, temperature,
+                               x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
 
         Parameters
@@ -873,14 +870,10 @@ class InitACTII:
         ones = zeros + 1.0
 
         # get the current mesh conditions
-        mass = fluid_state.mass_density
-        energy = fluid_state.energy_density
-        velocity = fluid_state.velocity
-        y = fluid_state.species_mass_fractions
-
-        temperature = fluid_state.temperature
-        pressure = fluid_state.pressure
-        velocity = fluid_state.velocity
+        mass = cv.mass
+        energy = cv.energy
+        velocity = cv.velocity
+        y = cv.species_mass_fractions
 
         # fuel stream initialization
         # initially in pressure/temperature equilibrium with the cavity
