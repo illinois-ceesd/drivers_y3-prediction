@@ -490,6 +490,14 @@ def main(actx_class,
     logmgr = initialize_logmgr(True,
         filename=logname, mode="wu", mpi_comm=comm)
 
+    from mirgecom.array_context import initialize_actx, actx_class_is_profiling
+    actx = initialize_actx(actx_class, comm,
+                           use_axis_tag_inference_fallback=allow_fallbacks,
+                           use_einsum_inference_fallback=allow_fallbacks)
+    queue = getattr(actx, "queue", None)
+    use_profiling = actx_class_is_profiling(actx_class)
+    alloc = getattr(actx, "allocator", None)
+
     # set up driver parameters
     from mirgecom.simutil import configurate
     from mirgecom.io import read_and_distribute_yaml_data
