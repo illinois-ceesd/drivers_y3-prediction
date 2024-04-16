@@ -426,13 +426,11 @@ Background Field = 100;
 Mesh.MeshSizeExtendFromBoundary = 0;
 Mesh.MeshSizeFromPoints = 0;
 Mesh.MeshSizeFromCurvature = 0;
+Mesh.RecombinationAlgorithm = 2;
+Mesh.RecombineAll = 1;
 
 
 Mesh.Algorithm = 8;
-Mesh.RecombinationAlgorithm = 2;
-Mesh.RecombineAll = 1;
 Mesh.OptimizeNetgen = 1;
 Mesh.Smoothing = 100;
-
-Recombine Surface {1, 2, 3};
 

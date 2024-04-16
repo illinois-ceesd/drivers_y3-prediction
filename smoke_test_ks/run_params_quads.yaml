@@ -1,0 +1,101 @@
+##############
+# run control
+##############
+advance_time: True
+nviz: 5
+nrestart: 10
+nhealth: 1
+nstatus: 1
+viz_level: 2
+viz_interval_type: 0
+#viz_interval_type: 1
+#viz_interval_type: 2
+t_viz_interval: 1.e-9
+constant_cfl: 0
+#constant_cfl: 1
+current_cfl: 0.05
+current_dt: 1.0e-9
+t_final: 2.e-8
+use_tensor_product_elements: True
+use_wall: 0
+
+##############
+# wall model
+##############
+wall_time_scale: 100
+wall_penalty_amount: 0
+wall_material: 2
+
+##############
+# model control
+##############
+nlimit: 1
+use_species_limiter: 1
+smooth_char_length_alpha: 0.025
+smooth_char_length: 0
+#smooth_char_length: 0
+smoothness_alpha: 1.e-12
+smoothness_tau: 1.e-12
+use_av: 0
+#use_av: 0
+alpha_sc: 0.01
+s0_sc: -5.0
+kappa_sc: 0.5
+av2_mu0: 0.1
+av2_beta0: 6.0
+av2_kappa0: 1.0
+av2_prandtl0: 0.9
+order:  3
+use_rhs_filter: True
+rhs_filter_cutoff: 2
+
+##############
+# equation of state
+##############
+nspecies:  7
+#nspecies:  2
+#nspecies:  0
+pyro_temp_iter: 2
+pyro_temp_tol: 1.
+transport: 1
+#transport: 0
+
+##############
+# ignition parameters
+##############
+use_ignition: 2
+ignition_loc_x: 0.68
+ignition_loc_y: -0.01
+ignition_init_time: 5.e-8
+ignition_strength: 600
+ignition_duration: 1.e-8
+ignition_diameter: 0.02
+integrator: compiled_lsrk54
+#health_mass_frac_min: 0.1
+#health_temp_min: 100
+#health_pres_min: 400
+#health_pres_max: 274259
+
+##############
+# initialization
+##############
+vel_sigma: 500
+temp_sigma: 500
+vel_sigma_inj: 5000
+temp_sigma_inj: 5000
+use_injection: True
+use_upstream_injection: True
+total_pres_inj_upstream: 10000
+total_temp_inj_upstream: 500
+total_pres_inj: 20000
+total_temp_inj: 350
+
+#####################
+# boundary conditions
+# ###################
+use_outflow_boundary: "none"
+use_inflow_boundary: "none"
+use_flow_boundary: "prescribed"
+use_wall_boundary: "isothermal_noslip"
+use_interface_boundary: "none"
+use_injection_boundary: "none"

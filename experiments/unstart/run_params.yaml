@@ -1,0 +1,131 @@
+##############
+# run control
+##############
+mesh_filename: data_quads/actii_2d.msh
+use_tensor_product_elements: True
+#mesh_filename: data/actii_2d.msh
+#use_tensor_product_elements: False
+use_axisymmetric: True
+use_1d_part: True
+nviz: 1
+#nviz: 10
+#nviz: 100
+#nviz: 500
+#nviz: 1000
+#nviz: 1000
+nrestart: 1000
+nhealth: 1
+nstatus: 1
+viz_level: 3
+#viz_order: 9
+viz_interval_type: 0
+constant_cfl: 0
+#current_dt: 1.0e-7
+#current_dt: 2.0e-8
+current_dt: 2.0e-8
+#t_final: 1e-2
+t_final: 5.e-7
+
+##############
+# wall model
+##############
+use_wall: False
+
+##############
+# model control
+##############
+#inv_num_flux: hll
+inv_num_flux: rusanov
+nlimit: 1
+use_species_limiter: 1
+#drop_order_strength: 0.25
+
+smooth_char_length_alpha: 0.00001
+smooth_char_length: 0
+use_av: 2
+av2_mu0: 0.1
+av2_beta0: 1
+av2_kappa0: 0.1
+av2_d0: 0.01
+av2_prandtl0: 0.9
+smoothness_alpha: 0.01
+smoothness_tau: 0.01
+
+order:  1
+dimen: 2
+init_injection: False
+use_injection: False
+use_upstream_injection: False
+noslip: True
+adiabatic: False
+mu: 5.0e-5
+
+##############
+# equation of state
+##############
+eos_type: 0
+nspecies: 0
+pyro_temp_iter: 5
+pyro_temp_tol: 1.e-4
+transport: 0
+use_combustion: False
+
+integrator: compiled_lsrk54
+#integrator: euler
+#health_pres_min: 2828
+#health_pres_max: 274259
+
+##############
+# initialization
+##############
+init_case: unstart
+shock_loc_x: -.315
+#vel_sigma: 750
+#temp_sigma: 750
+vel_sigma: 500
+temp_sigma: 500
+#vel_sigma: -1
+#temp_sigma: -1
+sponge_sigma: 25
+#sponge_sigma: 0
+
+#total_pres_inflow: 117.8e3
+#total_pres_inflow: 117.8e2
+total_pres_inflow: 117.8e1
+total_temp_inflow: 2450
+pres_bkrnd: 100
+temp_bkrnd: 300
+mass_fraction_o2: 0.23
+
+#####################
+# boundary conditions
+######################
+outflow_pressure: 100
+use_outflow_boundary: "pressure_outflow"
+
+#use_inflow_boundary: "prescribed"
+use_inflow_boundary: "isentropic_pressure_ramp"
+inlet_mach: 0.13758
+total_temp_inflow: 2450
+ramp_beginP: 117.8e1
+#ramp_endP: 117.8e3
+ramp_endP: 2000
+#ramp_time_start: 1.e-3
+#ramp_time_interval: 2.e-3
+ramp_time_start: 5.e-7
+ramp_time_interval: 5.e-7
+
+use_wall_boundary: "isothermal_noslip"
+use_symmetry_boundary: "adiabatic_slip"
+use_injection_boundary: "none"
+use_upstream_injection_boundary: "none"
+use_flow_boundary: "none"
+use_interface_boundary: "none"
+
+####################
+# status bounds
+####################
+health_temp_min: -1
+health_temp_max: 100000
+health_pres_min: -1
+health_pres_max: 1e8
