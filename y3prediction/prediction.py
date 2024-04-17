@@ -427,6 +427,12 @@ def update_coupled_boundaries(
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
 
+    # Get the operator fluid states
+    fluid_operator_states_quad = make_operator_fluid_states(
+        dcoll, fluid_state, gas_model, fluid_all_boundaries,
+        quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+
     fluid_grad_cv = grad_cv_operator(
         dcoll, gas_model, fluid_all_boundaries, fluid_state,
         dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
