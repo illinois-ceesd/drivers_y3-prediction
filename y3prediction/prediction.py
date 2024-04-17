@@ -692,8 +692,8 @@ def main(actx_class,
     use_wall_ox = configurate("use_wall_ox", input_data, True)
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
+    use_injection_source = configurate("use_injection_source", input_data, True)
     use_injection = configurate("use_injection", input_data, True)
-    #use_injection_source = configurate("use_injection_source", input_data, False)
     init_injection = configurate("init_injection", input_data, False)
     use_upstream_injection = configurate("use_upstream_injection", input_data, False)
 
@@ -814,7 +814,6 @@ def main(actx_class,
     wall_surround_kappa = configurate("wall_surround_kappa", input_data, 48)
 
     # initialize the ignition spark
-    spark_init_loc_z = 0.035/2.
     spark_init_time = configurate("ignition_init_time", input_data, 999999999.)
     spark_strength = configurate("ignition_strength", input_data, 2.e7)
     spark_duration = configurate("ignition_duration", input_data, 1.e-8)
@@ -822,6 +821,30 @@ def main(actx_class,
     spark_init_loc_x = configurate("ignition_init_loc_x", input_data, 0.677)
     spark_init_loc_y = configurate("ignition_init_loc_y", input_data, -0.021)
     spark_init_loc_z = configurate("ignition_init_loc_z", input_data, 0.0)
+
+    # initialize the injection source
+    injection_source_init_time = configurate("injection_source_init_time",
+                                             input_data, 999999999.)
+    injection_source_ramp_time = configurate("injection_source_ramp_time",
+                                             input_data, 1.e-4)
+    injection_source_mass = configurate("injection_source_mass",
+                                        input_data, 2.)
+    injection_source_mom_x = configurate("injection_source_mom_x",
+                                         input_data, 3.)
+    injection_source_mom_y = configurate("injection_source_mom_y",
+                                         input_data, 3.)
+    injection_source_mom_z = configurate("injection_source_mom_z",
+                                         input_data, 0.)
+    injection_source_energy = configurate("injection_source_energy",
+                                          input_data, 1.e3)
+    injection_source_diameter = configurate("injection_source_diameter",
+                                            input_data, 0.0025)
+    injection_source_loc_x = configurate("injection_source_loc_x",
+                                              input_data, 0.677)
+    injection_source_loc_y = configurate("injection_source_loc_y",
+                                         input_data, -0.021)
+    injection_source_loc_z = configurate("injection_source_loc_z",
+                                         input_data, 0.0)
 
     # initialization for the sponge
     inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
@@ -1012,6 +1035,7 @@ def main(actx_class,
         print(f"\ttemp_sigma_injection = {temp_sigma_inj}")
         print("#### Simluation setup data: ####")
 
+    # spark ignition
     spark_center = np.zeros(shape=(dim,))
     spark_center[0] = spark_init_loc_x
     spark_center[1] = spark_init_loc_y
@@ -1029,6 +1053,41 @@ def main(actx_class,
         elif use_ignition == 2:
             print("heat source ignition")
         print("#### Ignition control parameters ####\n")
+
+    # injection mass source
+    injection_source_center = np.zeros(shape=(dim,))
+    injection_source_center[0] = injection_source_loc_x
+    injection_source_center[1] = injection_source_loc_y
+    if dim == 3:
+        injection_source_center[2] = injection_source_loc_z
+    if rank == 0 and use_injection_source is True:
+        print("\n#### Injection source control parameters ####")
+        print("injection source center ("
+              f"{injection_source_center[0]},"
+              f"{injection_source_center[1]})")
+        if dim == 2:
+            print("injection source center ("
+                  f"{injection_source_center[0]},"
+                  f"{injection_source_center[1]})")
+        else:
+            print("injection source center ("
+                  f"{injection_source_center[0]},"
+                  f"{injection_source_center[1]},"
+                  f"{injection_source_center[2]})")
+        print(f"injection source FWHM {injection_source_diameter}")
+        print(f"injection source mass {injection_source_mass}")
+        print(f"injection source energy {injection_source_energy}")
+        if dim == 2:
+            print("injection source mom ("
+                  f"{injection_source_mom_x}",
+                  f"{injection_source_mom_y}")
+        else:
+            print("injection source mom ("
+                  f"{injection_source_mom_x}",
+                  f"{injection_source_mom_y}",
+                  f"{injection_source_mom_z}")
+        print(f"injection source start time {injection_source_init_time}")
+        print("#### Injection source control parameters ####\n")
 
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
@@ -2886,18 +2945,18 @@ def main(actx_class,
 
         mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
                                    species_mass_fractions=cv.species_mass_fractions)
-
         energy_lim = mass_lim*(
             gas_model.eos.get_internal_energy(temperature,
                                               species_mass_fractions=spec_lim)
             + kin_energy
         )
-
         mom_lim = mass_lim*cv.velocity
 
-        return make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                              momentum=mom_lim,
-                              species_mass=mass_lim*spec_lim)
+        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                momentum=mom_lim,
+                                species_mass=mass_lim*spec_lim)
+
+        return cv_lim, pressure, temperature
 
     #
     # positivity preserving limiter of liu
@@ -4657,6 +4716,34 @@ def main(actx_class,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
+    # gaussian application in time
+    injection_source_diameter /= 6.0697
+
+    def injection_source_time_func(t):
+        scaled_time = injection_source_init_time - t
+        # this gives about 96% of the change in the requested time
+        xtanh = 4*scaled_time/injection_source_ramp_time
+        return 0.5*(1.0 - actx.np.tanh(xtanh))
+
+    from y3prediction.utils import StateSource
+    source_mass = injection_source_mass
+    source_mom = np.zeros(shape=(dim,))
+    source_mom[0] = injection_source_mom_x
+    source_mom[1] = injection_source_mom_y
+    if dim == 3:
+        source_mom[2] = injection_source_mom_z
+    source_energy = injection_source_energy
+    source_y = y_fuel
+    injection_source = StateSource(dim=dim, nspecies=nspecies,
+                                   center=injection_source_center,
+                                   mass_amplitude=source_mass,
+                                   mom_amplitude=source_mom,
+                                   energy_amplitude=source_energy,
+                                   y_amplitude=source_y,
+                                   amplitude_func=injection_source_time_func,
+                                   #amplitude_func=None,
+                                   width=injection_source_diameter)
+
     if rank == 0:
         logger.info("Sponges processsing")
     ##################
@@ -6238,6 +6325,11 @@ def main(actx_class,
         if use_combustion:
             fluid_rhs = fluid_rhs + \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
+
+        if use_injection_source is True:
+            fluid_rhs = fluid_rhs + \
+                injection_source(x_vec=fluid_nodes, cv=cv,
+                                 eos=gas_model.eos, time=t)/current_dt
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
