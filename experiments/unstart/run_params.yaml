@@ -63,15 +63,15 @@ mu: 5.0e-5
 ##############
 # equation of state
 ##############
-eos_type: 0
-nspecies: 0
+eos_type: 1
+nspecies: 7
 pyro_temp_iter: 5
 pyro_temp_tol: 1.e-4
 transport: 0
 use_combustion: False
 
-integrator: compiled_lsrk54
-#integrator: euler
+#integrator: compiled_lsrk54
+integrator: euler
 #health_pres_min: 2828
 #health_pres_max: 274259
 
@@ -121,6 +121,20 @@ use_injection_boundary: "none"
 use_upstream_injection_boundary: "none"
 use_flow_boundary: "none"
 use_interface_boundary: "none"
+
+####################
+# injection source term
+####################
+use_injection_source: True
+injection_source_loc_x: 0.008
+injection_source_loc_y: 0.21
+injection_source_init_time: 2.5e-6
+injection_source_ramp_time: 1.e-6
+injection_source_mass: 1.e-3
+injection_source_mom_x: 1.0e-3
+injection_source_mom_y: 5.0e-3
+injection_source_energy: 300.
+injection_source_diameter: 0.007
 
 ####################
 # status bounds

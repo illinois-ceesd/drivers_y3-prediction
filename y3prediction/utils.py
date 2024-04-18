@@ -280,6 +280,104 @@ class SparkSource:
                               momentum=momentum, species_mass=species_mass)
 
 
+class StateSource:
+    r"""State variable deposition from a source"
+
+    Density, momentum, energy, and species mass fraction
+    are deposited as a gaussian  of the form:
+
+    .. math::
+
+        e &= e + e_{a}\exp^{(1-r^{2})}\\
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+    def __init__(self, *, dim, nspecies,
+                 center=None, width=1.0,
+                 mass_amplitude,
+                 mom_amplitude,
+                 energy_amplitude,
+                 y_amplitude,
+                 amplitude_func=None):
+        r"""Initialize the source parameters.
+
+        Parameters
+        ----------
+        center: numpy.ndarray
+            center of source
+        amplitude: float
+            source strength modifier
+        amplitude_fun: function
+            variation of amplitude with time
+        """
+
+        if center is None:
+            center = np.zeros(shape=(dim,))
+        self._center = center
+        self._dim = dim
+        self._nspecies = nspecies
+        self._mass_amplitude = mass_amplitude
+        self._mom_amplitude = mom_amplitude
+        self._energy_amplitude = energy_amplitude
+        self._y_amplitude = y_amplitude
+        self._width = width
+        self._amplitude_func = amplitude_func
+
+    def __call__(self, x_vec, cv, time, **kwargs):
+        """
+        Create the energy deposition at time *t* and location *x_vec*.
+
+        the source at time *t* is created by evaluting the gaussian
+        with time-dependent amplitude at *t*.
+
+        Parameters
+        ----------
+        cv: :class:`mirgecom.gas_model.FluidState`
+            Fluid state object with the conserved and thermal state.
+        time: float
+            Current time at which the solution is desired
+        x_vec: numpy.ndarray
+            Nodal coordinates
+        """
+
+        t = time
+        if self._amplitude_func is not None:
+            time_amplitude = self._amplitude_func(t)
+        else:
+            time_amplitude = 1.0
+
+        #print(f"{time=} {amplitude=}")
+
+        loc = self._center
+
+        # coordinates relative to lump center
+        rel_center = make_obj_array(
+            [x_vec[i] - loc[i] for i in range(self._dim)]
+        )
+        actx = x_vec[0].array_context
+        r = actx.np.sqrt(np.dot(rel_center, rel_center))
+        expterm = time_amplitude*actx.np.exp(-(r**2)/(2*self._width*self._width))
+
+        mass = actx.np.zeros_like(cv.mass) + self._mass_amplitude*expterm
+        momentum = actx.np.zeros_like(cv.momentum)
+        for i in range(self._dim):
+            momentum[i] = self._mom_amplitude[i]*expterm
+
+        species_mass = actx.np.zeros_like(cv.species_mass)
+        for i in range(self._nspecies):
+            species_mass[i] = mass*self._y_amplitude[i]
+
+        kinetic_energy = actx.np.where(
+            actx.np.greater(mass, 0.), 0.5*np.dot(momentum, momentum)/mass, 0.)
+
+        energy = actx.np.zeros_like(cv.energy) + \
+            self._energy_amplitude*expterm + kinetic_energy
+
+        return make_conserved(dim=self._dim, mass=mass, energy=energy,
+                              momentum=momentum, species_mass=species_mass)
+
+
 class InitSponge:
     r"""Solution initializer for flow in the ACT-II facility
 
