@@ -427,6 +427,12 @@ def update_coupled_boundaries(
             quadrature_tag=quadrature_tag,
             comm_tag=comm_tag)
 
+    # Get the operator fluid states
+    fluid_operator_states_quad = make_operator_fluid_states(
+        dcoll, fluid_state, gas_model, fluid_all_boundaries,
+        quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+
     fluid_grad_cv = grad_cv_operator(
         dcoll, gas_model, fluid_all_boundaries, fluid_state,
         dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
@@ -2895,9 +2901,11 @@ def main(actx_class,
 
         mom_lim = mass_lim*cv.velocity
 
-        return make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                              momentum=mom_lim,
-                              species_mass=mass_lim*spec_lim), pressure, temperature
+        cv = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                            momentum=mom_lim,
+                            species_mass=mass_lim*spec_lim)
+
+        return make_obj_array([cv, pressure, temperature])
 
     #
     # positivity preserving limiter of liu
