@@ -2961,7 +2961,7 @@ def main(actx_class,
                                 momentum=mom_lim,
                                 species_mass=mass_lim*spec_lim)
 
-        return cv_lim, pressure, temperature
+        return make_obj_array([cv_lim, pressure, temperature])
 
     #
     # positivity preserving limiter of liu
