@@ -2929,7 +2929,6 @@ def main(actx_class,
     #
     def limit_fluid_state(cv, temperature_seed, gas_model, dd=dd_vol_fluid):
 
-        # need temperature and pressure after limiting to reset density/energy
         temperature = gas_model.eos.temperature(
             cv=cv, temperature_seed=temperature_seed)
         pressure = gas_model.eos.pressure(cv=cv, temperature=temperature)
@@ -3163,6 +3162,23 @@ def main(actx_class,
                           + kin_energy),
                 cv_update_rho.energy
             )
+
+            """
+            # where species limiting was done, reset the temperature back to tseed
+            limit_y = actx.np.zeros_like(cv.mass)
+            for i in range(0, nspecies):
+                limit_y += actx.np.abs(theta_spec[i])
+
+            temperature_update_y = actx.np.where(actx.np.greater(limit_y, 0.),
+                          temperature_seed, -1.)
+
+            energy_lim = actx.np.where(actx.np.greater(temperature_update_y, 0.),
+                mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
+                          species_mass_fractions=spec_lim)
+                          + kin_energy),
+                cv_update_rho.energy
+            )
+            """
 
             cv_update_y = make_conserved(dim=dim,
                                          mass=cv_update_rho.mass,
