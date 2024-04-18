@@ -2,6 +2,7 @@
 import numpy as np
 from pytools.obj_array import make_obj_array
 from mirgecom.fluid import make_conserved
+from mirgecom.gas_model import make_fluid_state
 
 
 def getIsentropicPressure(mach, P0, gamma):
@@ -279,6 +280,104 @@ class SparkSource:
                               momentum=momentum, species_mass=species_mass)
 
 
+class StateSource:
+    r"""State variable deposition from a source"
+
+    Density, momentum, energy, and species mass fraction
+    are deposited as a gaussian  of the form:
+
+    .. math::
+
+        e &= e + e_{a}\exp^{(1-r^{2})}\\
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+    def __init__(self, *, dim, nspecies,
+                 center=None, width=1.0,
+                 mass_amplitude,
+                 mom_amplitude,
+                 energy_amplitude,
+                 y_amplitude,
+                 amplitude_func=None):
+        r"""Initialize the source parameters.
+
+        Parameters
+        ----------
+        center: numpy.ndarray
+            center of source
+        amplitude: float
+            source strength modifier
+        amplitude_fun: function
+            variation of amplitude with time
+        """
+
+        if center is None:
+            center = np.zeros(shape=(dim,))
+        self._center = center
+        self._dim = dim
+        self._nspecies = nspecies
+        self._mass_amplitude = mass_amplitude
+        self._mom_amplitude = mom_amplitude
+        self._energy_amplitude = energy_amplitude
+        self._y_amplitude = y_amplitude
+        self._width = width
+        self._amplitude_func = amplitude_func
+
+    def __call__(self, x_vec, cv, time, **kwargs):
+        """
+        Create the energy deposition at time *t* and location *x_vec*.
+
+        the source at time *t* is created by evaluting the gaussian
+        with time-dependent amplitude at *t*.
+
+        Parameters
+        ----------
+        cv: :class:`mirgecom.gas_model.FluidState`
+            Fluid state object with the conserved and thermal state.
+        time: float
+            Current time at which the solution is desired
+        x_vec: numpy.ndarray
+            Nodal coordinates
+        """
+
+        t = time
+        if self._amplitude_func is not None:
+            time_amplitude = self._amplitude_func(t)
+        else:
+            time_amplitude = 1.0
+
+        #print(f"{time=} {amplitude=}")
+
+        loc = self._center
+
+        # coordinates relative to lump center
+        rel_center = make_obj_array(
+            [x_vec[i] - loc[i] for i in range(self._dim)]
+        )
+        actx = x_vec[0].array_context
+        r = actx.np.sqrt(np.dot(rel_center, rel_center))
+        expterm = time_amplitude*actx.np.exp(-(r**2)/(2*self._width*self._width))
+
+        mass = actx.np.zeros_like(cv.mass) + self._mass_amplitude*expterm
+        momentum = actx.np.zeros_like(cv.momentum)
+        for i in range(self._dim):
+            momentum[i] = self._mom_amplitude[i]*expterm
+
+        species_mass = actx.np.zeros_like(cv.species_mass)
+        for i in range(self._nspecies):
+            species_mass[i] = mass*self._y_amplitude[i]
+
+        kinetic_energy = actx.np.where(
+            actx.np.greater(mass, 0.), 0.5*np.dot(momentum, momentum)/mass, 0.)
+
+        energy = actx.np.zeros_like(cv.energy) + \
+            self._energy_amplitude*expterm + kinetic_energy
+
+        return make_conserved(dim=self._dim, mass=mass, energy=energy,
+                              momentum=momentum, species_mass=species_mass)
+
+
 class InitSponge:
     r"""Solution initializer for flow in the ACT-II facility
 
@@ -336,7 +435,7 @@ class InitSponge:
         xpos = x_vec[0]
         ypos = x_vec[1]
         actx = xpos.array_context
-        zeros = actx.zeros_like(xpos)
+        zeros = actx.np.zeros_like(xpos)
         x0 = zeros + self._x0
 
         if abs(self._direction) == 1:
@@ -370,3 +469,174 @@ class InitSponge:
                                      sponge_field)
 
         return sponge_field
+
+
+class IsentropicInflow:
+    r"""Fluid state initializer for isentropic inflow""
+
+    Creates a flow solution from mach, total pressure and total temperature
+    Optionally smooths the solution near walls to account for noslip, isothermal
+    boundary conditions.
+
+    Optionally takes a pressure function that allows the total pressure
+    to vary with time
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+
+    def __init__(self, *, dim, T0, P0, mass_frac, mach, gamma,
+                 temp_wall, temp_sigma=0., vel_sigma=0.,
+                 smooth_x0=-1000., smooth_x1=1000.,
+                 smooth_y0=-1000., smooth_y1=1000.,
+                 smooth_z0=-1000., smooth_z1=1000.,
+                 smooth_r0=None, smooth_r1=1000.,
+                 nspecies=0, normal_dir=None, p_fun=None):
+
+        self._P0 = P0
+        self._T0 = T0
+        self._dim = dim
+        self._mach = mach
+        self._gamma = gamma
+        self._nspecies = nspecies
+
+        # wall smoothing parameters
+        self._temp_wall = temp_wall
+        self._temp_sigma = temp_sigma
+        self._vel_sigma = vel_sigma
+
+        # wall edges for smoothing
+        self._x0 = smooth_x0
+        self._y0 = smooth_y0
+        self._z0 = smooth_z0
+        self._x1 = smooth_x1
+        self._y1 = smooth_y1
+        self._z1 = smooth_z1
+        self._r1 = smooth_r1
+
+        if smooth_r0 is None:
+            self._r0 = np.zeros(shape=(dim,))
+            self._r0[0] = 1
+
+        if normal_dir is None:
+            self._normal_dir = np.zeros(shape=(dim,))
+            self._normal_dir[0] = 1
+        else:
+            self._normal_dir = normal_dir
+
+        if self._normal_dir.shape != (dim,):
+            raise ValueError(f"Expected {dim}-dimensional normal_dir")
+
+        if self._r0.shape != (dim,):
+            raise ValueError(f"Expected {dim}-dimensional r0")
+
+        if mass_frac is None:
+            if nspecies > 0:
+                mass_frac = np.zeros(shape=(nspecies,))
+
+        if p_fun is not None:
+            self._p_fun = p_fun
+
+        self._mass_frac = mass_frac
+
+    def __call__(self,  x_vec, gas_model, *, time=0, **kwargs):
+
+        actx = x_vec[0].array_context
+        zeros = 0*x_vec[0]
+        ones = zeros + 1.0
+
+        if self._p_fun is not None:
+            P0 = self._p_fun(time)
+        else:
+            P0 = self._P0
+        T0 = self._T0
+
+        pressure = getIsentropicPressure(
+            mach=self._mach,
+            P0=P0,
+            gamma=self._gamma
+        )
+        temperature = getIsentropicTemperature(
+            mach=self._mach,
+            T0=T0,
+            gamma=self._gamma
+        )
+
+        pressure = pressure*ones
+        temperature = temperature*ones
+
+        def smoothing_func(dim, x_vec, sigma):
+            actx = x_vec[0].array_context
+            radial_pos = actx.np.sqrt(
+                np.dot(x_vec - self._r0, x_vec - self._r0))
+
+            smoothing_left = smooth_step(actx, sigma*(x_vec[0]-self._x0))
+            smoothing_right = smooth_step(actx, -sigma*(x_vec[0]-self._x1))
+            smoothing_bottom = smooth_step(actx, sigma*(x_vec[1]-self._y0))
+            smoothing_top = smooth_step(actx, -sigma*(x_vec[1]-self._y1))
+            smoothing_radius = smooth_step(actx, sigma*(
+                actx.np.abs(radial_pos - self._r1)))
+            if self._dim == 3:
+                smoothing_fore = smooth_step(actx, sigma*(x_vec[2]-self._z0))
+                smoothing_aft = smooth_step(actx, -sigma*(x_vec[2]-self._z1))
+            else:
+                smoothing_fore = ones
+                smoothing_aft = ones
+
+            return (smoothing_left*smoothing_right*smoothing_bottom *
+                    smoothing_top*smoothing_aft*smoothing_fore *
+                    smoothing_radius)
+
+        # modify the temperature in the near wall region to match the
+        # isothermal boundaries
+        wall_temperature = self._temp_wall
+        if self._temp_sigma > 0:
+            sigma = self._temp_sigma
+
+            sfunc = smoothing_func(self._dim, x_vec, sigma)
+            temperature = (wall_temperature +
+                (temperature - wall_temperature)*sfunc)
+
+        y = np.zeros(self._nspecies, dtype=object)
+        for i in range(self._nspecies):
+            y[i] = self._mass_frac[i]
+
+        mass = gas_model.eos.get_density(pressure=pressure,
+                                         temperature=temperature,
+                                         species_mass_fractions=y)
+        energy = mass*gas_model.eos.get_internal_energy(temperature=temperature,
+                                                        species_mass_fractions=y)
+
+        velocity = np.zeros(self._dim, dtype=float)
+        mom = mass*velocity
+        cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                            energy=energy, species_mass=mass*y)
+
+        vmag = self._mach*gas_model.eos.sound_speed(cv, temperature)
+
+        # modify the velocity in the near-wall region to have a smooth profile
+        # this approximates the BL velocity profile
+        if self._vel_sigma > 0:
+            sigma = self._vel_sigma
+            sfunc = smoothing_func(self._dim, x_vec, sigma)
+            vmag = (vmag*sfunc)
+
+        velocity = vmag*self._normal_dir
+        mom = mass*velocity
+        energy = (energy + np.dot(mom, mom)/(2.0*mass))
+
+        cv = make_conserved(dim=self._dim, mass=mass, momentum=mom,
+                            energy=energy, species_mass=mass*y)
+
+        av_smu = actx.np.zeros_like(cv.mass)
+        av_sbeta = actx.np.zeros_like(cv.mass)
+        av_skappa = actx.np.zeros_like(cv.mass)
+        av_sd = actx.np.zeros_like(cv.mass)
+        return make_fluid_state(cv=cv, gas_model=gas_model,
+                                temperature_seed=temperature,
+                                smoothness_mu=av_smu,
+                                smoothness_beta=av_sbeta,
+                                smoothness_kappa=av_skappa,
+                                smoothness_d=av_sd,
+                                limiter_func=None,
+                                limiter_dd=None)
