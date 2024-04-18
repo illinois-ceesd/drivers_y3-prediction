@@ -79,7 +79,7 @@ if __name__ == "__main__":
         description="Y3 paraview visualization driver")
     parser.add_argument("-d", "--dump_index", type=int, dest="dump_index",
                         nargs="?", action="store", help="simulation viz dump index")
-    parser.add_argument("-p", "--prefix", type=int, dest="prefix",
+    parser.add_argument("-p", "--prefix", type=ascii, dest="prefix",
                         nargs="?", action="store", help="prefix for image file name")
     parser.add_argument("-f", "--fluid_viz_file", type=ascii, dest="fluid_viz_file",
                         nargs="?", action="store",
@@ -115,6 +115,4 @@ if __name__ == "__main__":
 
     print(f"Running {sys.argv[0]}\n")
 
-    main(user_input_file=input_file, fluid_viz_file=fluid_viz_file,
-         wall_viz_file=wall_viz_file,
-         prefix=prefix, dump_index=dump_index)
+    main(user_input_file=input_file, viz_path=prefix, dump_index=dump_index)

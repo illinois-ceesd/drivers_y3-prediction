@@ -4,6 +4,7 @@ cavity_camera = [0.625, 0.0, 0.023]
 
 from slice import SliceData
 slice_data = []
+slice_data_3d = []
 slice_data.append(
     SliceData(
         dataName="cv_mass",
