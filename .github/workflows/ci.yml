@@ -13,9 +13,8 @@ jobs:
         name: Flake8
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -
-            uses: actions/setup-python@v4
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
             with:
                 # matches compat target in setup.py
                 python-version: '3.8'
@@ -56,11 +55,14 @@ jobs:
 
     pytest:
         name: Pytest
-        runs-on: ubuntu-latest
+        runs-on: ${{ matrix.os }}
+        strategy:
+          matrix:
+            #os: [ubuntu-latest, macos-latest]
+            os: [ubuntu-latest]
 
         steps:
         - uses: actions/checkout@v4
-
         - name: Run tests
           run: |
             source emirge/config/activate_env.sh
@@ -69,6 +71,15 @@ jobs:
             python -m pytest .
 
     examples:
+        name: Examples
+        runs-on: ${{ matrix.os }}
+        strategy:
+          matrix:
+            #os: [ubuntu-latest, macos-latest]
+            os: [ubuntu-latest]
+
+        steps:
+        - uses: actions/checkout@v3
         - name: Eager smoke test
           run: |
             source emirge/config/activate_env.sh
