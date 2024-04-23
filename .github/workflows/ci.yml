@@ -14,17 +14,18 @@ jobs:
         runs-on: ubuntu-latest
         steps:
         - uses: actions/checkout@v3
-        - uses: actions/setup-python@v4
-            with:
-                # matches compat target in setup.py
-                python-version: '3.8'
-        -   name: "Flake8 test"
-            run: |
-                python3 -m venv myenv
-                source myenv/bin/activate
-                python -m pip install wheel
-                python -m pip install flake8 flake8-quotes
-                python -m flake8 setup.py driver.py y3prediction/*.py
+        -
+          uses: actions/setup-python@v4
+          with:
+              # matches compat target in setup.py
+              python-version: '3.8'
+        - name: "Flake8 test"
+          run: |
+              python3 -m venv myenv
+              source myenv/bin/activate
+              python -m pip install wheel
+              python -m pip install flake8 flake8-quotes
+              python -m flake8 setup.py driver.py y3prediction/*.py
 
     emirge:
         name: Emirge installation
