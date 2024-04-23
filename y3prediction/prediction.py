@@ -678,7 +678,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                       (mmin-mmin_i)/(cell_avgs - mmin_i),
                       0.)
     )
-    print(f"{theta_rho=}")
+    #print(f"{theta_rho=}")
 
     mass_lim = (cv.mass + theta_rho*(cell_avgs - cv.mass))
 
