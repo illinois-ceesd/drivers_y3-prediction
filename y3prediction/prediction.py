@@ -4080,7 +4080,7 @@ def main(actx_class,
             if use_upstream_injection:
                 restart_cv = bulk_init.add_injection_upstream(
                     restart_fluid_state.cv, restart_fluid_state.pressure,
-                    restart_fluid_state.tempearture, eos=eos_init, x_vec=fluid_nodes)
+                    restart_fluid_state.temperature, eos=eos_init, x_vec=fluid_nodes)
                 restart_fluid_state = create_fluid_state(
                     cv=restart_cv, temperature_seed=temperature_seed,
                     smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -6462,6 +6462,8 @@ def main(actx_class,
                         cv=sponge_cv, pressure=fluid_state.pressure,
                         temperature=fluid_state.temperature,
                         eos=eos_init, x_vec=fluid_nodes)
+            else:
+                sponge_cv=target_fluid_state.cv
 
             fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma,
                                                    cv=cv,
