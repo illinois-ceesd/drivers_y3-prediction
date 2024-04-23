@@ -54,6 +54,21 @@ jobs:
 
             pylint setup.py driver.py y3prediction/*.py
 
+    pytest:
+        name: Pytest
+        runs-on: ubuntu-latest
+
+        steps:
+        - uses: actions/checkout@v4
+
+        - name: Run tests
+          run: |
+            source emirge/config/activate_env.sh
+            cd test
+            python -m pip install pytest
+            python -m pytest .
+
+    examples:
         - name: Eager smoke test
           run: |
             source emirge/config/activate_env.sh
