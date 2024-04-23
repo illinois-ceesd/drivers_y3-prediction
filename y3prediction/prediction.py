@@ -141,6 +141,8 @@ from arraycontext import (
 )
 from mirgecom.fluid import ConservedVars
 from meshmode.dof_array import DOFArray  # noqa
+from grudge.dof_desc import DISCR_TAG_MODAL
+from meshmode.transform_metadata import FirstAxisIsElementsTag
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -446,9 +448,471 @@ def update_coupled_boundaries(
             wall_grad_temperature)
 
 
+def limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd):
+
+    actx = cv.array_context
+    nspecies = cv.nspecies
+    dim = cv.dim
+
+    temperature = gas_model.eos.temperature(
+        cv=cv, temperature_seed=temperature_seed)
+    pressure = gas_model.eos.pressure(cv=cv, temperature=temperature)
+
+    spec_lim = make_obj_array([
+        bound_preserving_limiter(dcoll=dcoll, dd=dd,
+                                 field=cv.species_mass_fractions[i],
+                                 mmin=0.0, mmax=1.0, modify_average=True)
+        for i in range(nspecies)
+    ])
+
+    # limit the sum to 1.0
+    aux = actx.np.zeros_like(cv.mass)
+    for i in range(0, nspecies):
+        aux = aux + spec_lim[i]
+    spec_lim = spec_lim/aux
+
+    kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+
+    mass_lim = gas_model.eos.get_density(
+        pressure=pressure, temperature=temperature,
+        species_mass_fractions=cv.species_mass_fractions)
+    energy_lim = mass_lim*(
+        gas_model.eos.get_internal_energy(
+            temperature, species_mass_fractions=spec_lim)
+        + kin_energy
+    )
+    mom_lim = mass_lim*cv.velocity
+
+    cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                            momentum=mom_lim,
+                            species_mass=mass_lim*spec_lim)
+
+    return make_obj_array([cv_lim, pressure, temperature])
+
+
+def element_average(dcoll, field, dd,
+                    positivity_preserving=False):
+    # Compute cell averages of the state
+
+    actx = field.array_context
+
+    def cancel_polynomials(grp):
+        return actx.from_numpy(
+            np.asarray([1 if sum(mode_id) == 0
+                        else 0 for mode_id in grp.mode_ids()]))
+
+    dd_nodal = dd
+    dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
+
+    modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
+    nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
+
+    modal_discr = dcoll.discr_from_dd(dd_modal)
+    modal_field = modal_map(field)
+
+    # cancel the ``high-order"" polynomials p > 0 and keep the average
+    filtered_modal_field = DOFArray(
+        actx,
+        tuple(actx.einsum("ej,j->ej",
+                          vec_i,
+                          cancel_polynomials(grp),
+                          arg_names=("vec", "filter"),
+                          tagged=(FirstAxisIsElementsTag(),))
+              for grp, vec_i in zip(modal_discr.groups, modal_field))
+    )
+
+    # convert back to nodal to have the average at all points
+    cell_avgs = nodal_map(filtered_modal_field)
+
+    return cell_avgs
+
+
+def _element_average_cv(dcoll, cv, dd):
+
+    nspecies = cv.nspecies
+    dim = cv.dim
+
+    density = element_average(dcoll, cv.mass, dd)
+    momentum = make_obj_array([
+        element_average(dcoll, cv.momentum[i], dd)
+        for i in range(dim)])
+    energy = element_average(dcoll, cv.energy, dd)
+
+    species_mass = None
+    if nspecies > 0:
+        species_mass = make_obj_array([
+            element_average(dcoll, cv.species_mass[i], dd)
+            for i in range(0, nspecies)])
+
+    # make a new CV with the limited variables
+    return make_conserved(dim=dim, mass=density, energy=energy,
+                          momentum=momentum, species_mass=species_mass)
+
+
+def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
+    r"""Element average positivity preserving limiter
+
+    Follows loosely the implementation outline in Liu, et. al.
+    Limits the density and mass fractions based on global minima
+    then computes an average fluid state and uses the averge pressure
+    to limit the entire cv in regions with very small pressures
+    """
+
+    actx = cv.array_context
+    nspecies = cv.nspecies
+    dim = cv.dim
+
+    rho_lim = 1.e-10
+    pres_lim = 1.0
+
+    elem_avg_cv = _element_average_cv(cv, dd)
+
+    # 1.0 limit the density
+    theta_rho = actx.np.abs((elem_avg_cv.mass - rho_lim) /
+                            (elem_avg_cv.mass - cv.mass + 1.e-13))
+
+    # only apply limiting when theta < 1
+    mass_lim = actx.np.where(actx.np.less(theta_rho, 1.0),
+        theta_rho*cv.mass + (1 - theta_rho)*elem_avg_cv.mass, cv.mass)
+
+    # 2.0 limit the species mass fractions
+    spec_mass_lim = cv.species_mass
+    theta_rhoY = actx.zeros_like(cv.species_mass)
+    for i in range(0, nspecies):
+        theta_rhoY[i] = actx.np.abs(
+            (elem_avg_cv.species_mass) /
+            (elem_avg_cv.species_mass - cv.species_mass + 1.e-13))
+
+        # only apply limiting when theta < 1
+        spec_mass_lim = actx.np.where(
+            actx.np.less(theta_rhoY, 1.0),
+            theta_rho*cv.species_mass + (1 - theta_rho)*elem_avg_cv.mass,
+            cv.species_mass)
+
+    # 3.0 reconstruct cv and find the average element cv and pressure
+    #
+    # Question:
+    # we don't update the energy or the momentum here
+    # so if the density is reduced it results in a
+    #    net decrease in the pressure and increase in velocity?
+    cv_updated = make_conserved(dim=dim, mass=mass_lim, energy=cv.energy,
+                                momentum=cv.momentum,
+                                species_mass=spec_mass_lim)
+    temperature_updated = gas_model.eos.temperature(
+        cv=cv_updated, temperature_seed=temperature_seed)
+    pressure_updated = gas_model.eos.pressure(cv=cv_updated,
+                                              temperature=temperature_updated)
+
+    elem_avg_temp = gas_model.eos.temperature(
+        cv=elem_avg_cv, temperature_seed=temperature_updated)
+    elem_avg_pres = gas_model.eos.pressure(
+        cv=elem_avg_cv, temperature=elem_avg_temp)
+
+    mmin_i = op.elementwise_min(dcoll, dd, pressure_updated)
+    mmin = pres_lim
+
+    _theta = actx.np.minimum(
+        1.0, actx.np.where(actx.np.less(mmin_i, mmin),
+        abs((mmin-elem_avg_pres)/(mmin_i-elem_avg_pres+1e-13)), 1.0)
+    )
+
+    # 4.0 limit cv where the pressure is negative
+    #     this is turn keeps the pressure positive
+
+    mass_lim = (_theta*(cv_updated.mass - elem_avg_cv.mass)
+        + elem_avg_cv.mass)
+    mom_lim = make_obj_array([
+        (_theta*(cv_updated.momentum[i] - elem_avg_cv.momentum[i])
+         + elem_avg_cv.momentum[i])
+        for i in range(dim)
+    ])
+    energy_lim = (_theta*(cv_updated.energy - elem_avg_cv.energy)
+        + elem_avg_cv.energy)
+    spec_lim = make_obj_array([
+        (_theta*(cv_updated.species_mass[i] - elem_avg_cv.species_mass[i])
+         + elem_avg_cv.species_mass[i])
+        for i in range(0, nspecies)
+    ])
+
+    cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                            momentum=mom_lim,
+                            species_mass=spec_lim)
+
+    return cv_lim
+
+
+def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
+                         viz_theta=False, limiter_smin=10):
+    r"""Entropy-based positivity preserving limiter
+
+    Follows loosely the implementation outline in Lv, et. al.
+    Limits the density, entropy, and mass fractions locally
+    based on average states.
+    """
+
+    actx = cv.array_context
+    nspecies = cv.nspecies
+    dim = cv.dim
+    toler = 1.e-13
+
+    #print(f"inside limiter")
+
+    ##################
+    # 1.0 limit the density to be above 0.
+    ##################
+    elem_avg_cv = _element_average_cv(dcoll, cv, dd)
+    #rho_lim = elem_avg_cv.mass*0.1
+    rho_lim = 1.e-6
+
+    mmin_i = op.elementwise_min(dcoll, dd, cv.mass)
+    mmin = rho_lim
+
+    cell_avgs = elem_avg_cv.mass
+    #print(f"rho_avg {cell_avgs}")
+
+    cell_avgs = actx.np.where(actx.np.greater(cell_avgs, mmin), cell_avgs, mmin)
+    #print(f"modified rho_avg {cell_avgs}")
+
+    theta_rho = actx.np.maximum(0.,
+        actx.np.where(actx.np.less(mmin_i + toler, mmin),
+                      (mmin-mmin_i)/(cell_avgs - mmin_i),
+                      0.)
+    )
+    print(f"{theta_rho=}")
+
+    mass_lim = (cv.mass + theta_rho*(cell_avgs - cv.mass))
+
+    # tseed is the best guess at a reasonable temperature after the limiting
+    # assume that whatever pressure and temperature that was computed was bogus
+    if temperature_seed is not None:
+        # preserve internal energy, velocity, and mass fractions,
+        # keeps pressure/temperature constant
+        mom_lim = mass_lim*cv.velocity
+        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+        int_energy = cv.energy - cv.mass*kin_energy
+        energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
+        spec_lim = cv.species_mass_fractions
+
+        temperature_guess = gas_model.eos.temperature(
+            cv=cv, temperature_seed=temperature_seed)
+        safe_temperature = actx.np.where(actx.np.greater(theta_rho, toler),
+                                         temperature_seed, temperature_guess)
+        energy_lim = mass_lim*(gas_model.eos.get_internal_energy(safe_temperature,
+                               species_mass_fractions=spec_lim) + kin_energy)
+    else:
+        # if tseed is not available, don't mess with the temperature
+        mom_lim = cv.momentum
+        energy_lim = cv.energy
+        spec_lim = cv.species_mass_fractions
+
+    cv_update_rho = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                                   momentum=mom_lim,
+                                   species_mass=mass_lim*spec_lim)
+    temperature_update_rho = gas_model.eos.temperature(
+        cv=cv_update_rho, temperature_seed=temperature_seed)
+    pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
+                                              temperature=temperature_update_rho)
+
+    #print("After limiting rho")
+    #print(f"{temperature_update_rho=}")
+    #print(f"{pressure_update_rho=}")
+
+    ##################
+    # 2.0 limit the species mass fractions
+    ##################
+    theta_spec = actx.np.zeros_like(cv.species_mass_fractions)
+    if nspecies > 0:
+        # find theta for all the species
+        for i in range(0, nspecies):
+            mmin_i = op.elementwise_min(dcoll, dd,
+                                        cv_update_rho.species_mass_fractions[i])
+            mmin = 0.
+
+            cell_avgs = elem_avg_cv.species_mass_fractions[i]
+            _theta = actx.np.maximum(0.,
+                actx.np.where(actx.np.less(mmin_i + toler, mmin),
+                              (mmin-mmin_i)/(cell_avgs - mmin_i),
+                              0.)
+            )
+
+            mmax_i = op.elementwise_max(dcoll, dd,
+                                        cv_update_rho.species_mass_fractions[i])
+            mmax = 1.0
+            _theta = actx.np.maximum(_theta,
+                actx.np.where(actx.np.greater(mmax_i - toler, mmax),
+                              (mmax_i - mmax)/(mmax_i - cell_avgs),
+                              0.)
+            )
+
+            theta_spec[i] = _theta
+
+            # apply the limiting to all species equally
+            spec_lim[i] = (cv.species_mass_fractions[i] +
+                           theta_spec[i]*(elem_avg_cv.species_mass_fractions[i] -
+                                       cv.species_mass_fractions[i]))
+
+        # limit the species mass fraction sum to 1.0
+        aux = actx.np.zeros_like(cv.mass)
+        for i in range(0, nspecies):
+            aux = aux + spec_lim[i]
+        spec_lim = spec_lim/aux
+
+        # modify Temperature (energy) maintain pressure equilibrium
+        kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
+        positive_pressure = actx.np.greater(pressure_update_rho, 1.e-12)
+        r = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
+        temperature_update_y = pressure_update_rho/r/mass_lim
+
+        energy_lim = actx.np.where(
+            positive_pressure,
+            mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
+                      #species_mass_fractions=spec_lim/mass_lim)
+                      species_mass_fractions=spec_lim)
+                      + kin_energy),
+            cv_update_rho.energy
+        )
+
+        """
+        # where species limiting was done, reset the temperature back to tseed
+        limit_y = actx.np.zeros_like(cv.mass)
+        for i in range(0, nspecies):
+            limit_y += actx.np.abs(theta_spec[i])
+
+        temperature_update_y = actx.np.where(actx.np.greater(limit_y, 0.),
+                      temperature_seed, -1.)
+
+        energy_lim = actx.np.where(actx.np.greater(temperature_update_y, 0.),
+            mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
+                      species_mass_fractions=spec_lim)
+                      + kin_energy),
+            cv_update_rho.energy
+        )
+        """
+
+        cv_update_y = make_conserved(dim=dim,
+                                     mass=cv_update_rho.mass,
+                                     energy=energy_lim,
+                                     momentum=cv_update_rho.momentum,
+                                     species_mass=cv_update_rho.mass*spec_lim)
+    else:
+        cv_update_y = cv_update_rho
+
+    ##################
+    # 3.0 find the average element cv and pressure
+    ##################
+    cv_updated = cv_update_y
+    temperature_updated = gas_model.eos.temperature(
+        cv=cv_updated, temperature_seed=temperature_seed)
+    pressure_updated = gas_model.eos.pressure(
+        cv=cv_updated, temperature=temperature_updated)
+
+    #print(f"{pressure_updated=}")
+    #entropy = actx.np.log(pressure_updated/cv_updated.mass**1.4)
+    #print(f"{entropy=}")
+
+    elem_avg_cv = _element_average_cv(dcoll, cv_updated, dd)
+    elem_avg_temp = gas_model.eos.temperature(
+        cv=elem_avg_cv, temperature_seed=temperature_seed)
+    elem_avg_pres = gas_model.eos.pressure(
+        cv=elem_avg_cv, temperature=elem_avg_temp)
+
+    #print(f"{elem_avg_pres=}")
+    #avg_entropy = actx.np.log(elem_avg_pres/elem_avg_cv.mass**1.4)
+    #print(f"{avg_entropy=}")
+
+    # use an entropy function to keep pressure positive and entropy
+    # above some minimum value
+    # not sure which gamma to use here? the average state?
+    gamma = gas_model.eos.gamma(cv_updated, temperature_updated)
+    gamma_avg = gas_model.eos.gamma(elem_avg_cv, elem_avg_temp)
+    mmin = 1.e-12
+    theta_smin = (pressure_updated -
+                  math.exp(limiter_smin)*cv_updated.mass**gamma)
+    theta_smin_i = op.elementwise_min(dcoll, dd, theta_smin)
+
+    # in some cases, the average pressure is too small, we need to satisfy
+    # elem_avg_pres > math.exp(limiter_smin)*elem_avg_cv.mass**gamma
+    # compute a safe pressure such that this is always true and use it to compute
+    # a safe average energy
+    safe_pressure = math.exp(limiter_smin)*elem_avg_cv.mass**gamma_avg - toler
+    r_avg = gas_model.eos.gas_const(
+        species_mass_fractions=elem_avg_cv.species_mass_fractions)
+    safe_temperature = safe_pressure/elem_avg_cv.mass/r_avg
+    kin_energy = 0.5*np.dot(elem_avg_cv.velocity, elem_avg_cv.velocity)
+    safe_energy = elem_avg_cv.mass*(
+        gas_model.eos.get_internal_energy(
+            safe_temperature,
+            species_mass_fractions=elem_avg_cv.species_mass_fractions)
+        + kin_energy)
+
+    #print(f"{safe_energy=}")
+    safe_energy = actx.np.where(
+        actx.np.less(math.exp(limiter_smin)*elem_avg_cv.mass**gamma_avg,
+                     elem_avg_pres),
+        elem_avg_cv.energy, safe_energy)
+
+    #print(f"{safe_pressure=}")
+    #print(f"{safe_energy=}")
+    #print(f"{elem_avg_cv.energy=}")
+    theta_savg = actx.np.maximum(
+        elem_avg_pres, safe_pressure) -\
+        math.exp(limiter_smin)*elem_avg_cv.mass**gamma_avg
+    elem_avg_cv_safe = elem_avg_cv.replace(energy=safe_energy)
+
+    """
+    check_temperature_updated = gas_model.eos.temperature(
+        cv=elem_avg_cv_safe, temperature_seed=temperature_seed)
+    check_pressure_updated = gas_model.eos.pressure(
+        cv=elem_avg_cv_safe, temperature=check_temperature_updated)
+    check_entropy_updated = actx.np.log(check_pressure_updated/elem_avg_cv.mass**1.4)
+
+    print(f"{check_temperature_updated=}")
+    print(f"{check_pressure_updated=}")
+    print(f"{check_entropy_updated=}")
+
+    print(f"{theta_savg=}")
+    """
+
+    theta_pressure = actx.np.maximum(0.,
+        actx.np.where(actx.np.less(theta_smin_i + toler, mmin),
+                      (mmin-theta_smin_i)/(theta_savg - theta_smin_i),
+                      0.)
+    )
+
+    #print(f"{theta_pressure=}")
+
+    ##################
+    # 4.0 limit cv where the entropy minimum function is violated
+    #     this in turn keeps the pressure positive
+    ##################
+    mass_lim = cv_updated.mass + theta_pressure*(
+        elem_avg_cv_safe.mass - cv_updated.mass)
+    mom_lim = make_obj_array([cv_updated.momentum[i] +
+        theta_pressure*(elem_avg_cv_safe.momentum[i] - cv_updated.momentum[i])
+        for i in range(dim)
+    ])
+    energy_lim = (cv_updated.energy +
+                  theta_pressure*(elem_avg_cv_safe.energy - cv_updated.energy))
+    spec_lim = make_obj_array([cv_updated.species_mass[i] +
+        theta_pressure*(elem_avg_cv_safe.species_mass[i] -
+                        cv_updated.species_mass[i])
+        for i in range(0, nspecies)
+    ])
+
+    cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
+                            momentum=mom_lim,
+                            species_mass=spec_lim)
+
+    if viz_theta:
+        return make_obj_array([cv_lim, theta_rho,
+                               theta_spec, theta_pressure])
+    else:
+        return cv_lim
+        #return cv_update_rho
+
+
 @mpi_entry_point
-def main(actx_class,
-         restart_filename=None, target_filename=None,
+def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          casename=None, log_path="log_data", use_esdg=False,
          disable_fallbacks=False):
@@ -2922,333 +3386,6 @@ def main(actx_class,
     #########################
     # Convenience Functions #
     #########################
-
-    #
-    # original limiter implementation
-    # only limits the species mass fractions
-    #
-    def limit_fluid_state(cv, temperature_seed, gas_model, dd=dd_vol_fluid):
-
-        temperature = gas_model.eos.temperature(
-            cv=cv, temperature_seed=temperature_seed)
-        pressure = gas_model.eos.pressure(cv=cv, temperature=temperature)
-
-        spec_lim = make_obj_array([
-            bound_preserving_limiter(dcoll=dcoll, dd=dd,
-                                     field=cv.species_mass_fractions[i],
-                                     mmin=0.0, mmax=1.0, modify_average=True)
-            for i in range(nspecies)
-        ])
-
-        # limit the sum to 1.0
-        aux = actx.np.zeros_like(cv.mass)
-        for i in range(0, nspecies):
-            aux = aux + spec_lim[i]
-        spec_lim = spec_lim/aux
-
-        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
-
-        mass_lim = eos.get_density(pressure=pressure, temperature=temperature,
-                                   species_mass_fractions=cv.species_mass_fractions)
-        energy_lim = mass_lim*(
-            gas_model.eos.get_internal_energy(temperature,
-                                              species_mass_fractions=spec_lim)
-            + kin_energy
-        )
-        mom_lim = mass_lim*cv.velocity
-
-        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                                momentum=mom_lim,
-                                species_mass=mass_lim*spec_lim)
-
-        return make_obj_array([cv_lim, pressure, temperature])
-
-    #
-    # positivity preserving limiter of liu
-    # limits the density and mass fractions based on global minima
-    # then computes an average fluid state and uses the averge pressure
-    # to limit the entire cv in regions with very small pressures
-    #
-    def limit_fluid_state_liu(cv, temperature_seed, gas_model, dd=dd_vol_fluid):
-
-        rho_lim = 1.e-10
-        pres_lim = 1.0
-
-        elem_avg_cv = _element_average_cv(cv, dd)
-
-        # 1.0 limit the density
-        theta_rho = actx.np.abs((elem_avg_cv.mass - rho_lim) /
-                                (elem_avg_cv.mass - cv.mass + 1.e-13))
-
-        # only apply limiting when theta < 1
-        mass_lim = actx.np.where(actx.np.less(theta_rho, 1.0),
-            theta_rho*cv.mass + (1 - theta_rho)*elem_avg_cv.mass, cv.mass)
-
-        # 2.0 limit the species mass fractions
-        spec_mass_lim = cv.species_mass
-        theta_rhoY = actx.zeros_like(cv.species_mass)
-        for i in range(0, nspecies):
-            theta_rhoY[i] = actx.np.abs(
-                (elem_avg_cv.species_mass) /
-                (elem_avg_cv.species_mass - cv.species_mass + 1.e-13))
-
-            # only apply limiting when theta < 1
-            spec_mass_lim = actx.np.where(
-                actx.np.less(theta_rhoY, 1.0),
-                theta_rho*cv.species_mass + (1 - theta_rho)*elem_avg_cv.mass,
-                cv.species_mass)
-
-        # 3.0 reconstruct cv and find the average element cv and pressure
-        #
-        # Question:
-        # we don't update the energy or the momentum here
-        # so if the density is reduced it results in a
-        #    net decrease in the pressure and increase in velocity?
-        cv_updated = make_conserved(dim=dim, mass=mass_lim, energy=cv.energy,
-                                    momentum=cv.momentum,
-                                    species_mass=spec_mass_lim)
-        temperature_updated = gas_model.eos.temperature(cv=cv_updated,
-                                                        temperature_seed=temperature)
-        pressure_updated = gas_model.eos.pressure(cv=cv_updated,
-                                                  temperature=temperature_updated)
-
-        elem_avg_temp = gas_model.eos.temperature(
-            cv=elem_avg_cv, temperature_seed=temperature_updated)
-        elem_avg_pres = gas_model.eos.pressure(
-            cv=elem_avg_cv, temperature=elem_avg_temp)
-
-        mmin_i = op.elementwise_min(dcoll, dd, pressure_updated)
-        mmin = pres_lim
-
-        _theta = actx.np.minimum(
-            1.0, actx.np.where(actx.np.less(mmin_i, mmin),
-            abs((mmin-elem_avg_pres)/(mmin_i-elem_avg_pres+1e-13)), 1.0)
-        )
-
-        # 4.0 limit cv where the pressure is negative
-        #     this is turn keeps the pressure positive
-
-        mass_lim = (_theta*(cv_updated.mass - elem_avg_cv.mass)
-            + elem_avg_cv.mass)
-        mom_lim = make_obj_array([
-            (_theta*(cv_updated.momentum[i] - elem_avg_cv.momentum[i])
-             + elem_avg_cv.momentum[i])
-            for i in range(dim)
-        ])
-        energy_lim = (_theta*(cv_updated.energy - elem_avg_cv.energy)
-            + elem_avg_cv.energy)
-        spec_lim = make_obj_array([
-            (_theta*(cv_updated.species_mass[i] - elem_avg_cv.species_mass[i])
-             + elem_avg_cv.species_mass[i])
-            for i in range(0, nspecies)
-        ])
-
-        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                                momentum=mom_lim,
-                                species_mass=spec_lim)
-
-        return cv_lim
-
-    #
-    # positivity preserving limiter of lv
-    # limits the density and mass fractions based on global minima
-    # then computes an average fluid state and uses the averge pressure
-    # to limit the entire cv in regions with very small pressures
-    #
-    def limit_fluid_state_lv(cv, temperature_seed, gas_model, dd=dd_vol_fluid,
-                             viz_theta=False):
-
-        toler = 1.e-13
-        # we need a reasonable guess for temperature, use the element
-        # average when the incoming temperature is negative
-        # remove any negative values from the average, to ensure positivity
-        """
-        if temperature_seed is not None:
-            safe_temp = actx.np.where(actx.np.less(temperature, 0.),
-                                          1., temperature)
-            tseed_avg = element_average(dcoll, safe_temp, dd)
-            tseed = actx.np.where(actx.np.less(temperature_seed, 0.),
-                                  tseed_avg, temperature_seed)
-        else:
-            tseed = None
-            tseed_avg = None
-        """
-
-        ##################
-        # 1.0 limit the density to be above 0.
-        ##################
-        elem_avg_cv = _element_average_cv(cv, dd)
-        rho_lim = elem_avg_cv.mass*0.1
-
-        mmin_i = op.elementwise_min(dcoll, dd, cv.mass)
-        mmin = rho_lim
-
-        cell_avgs = elem_avg_cv.mass
-        theta_rho = actx.np.maximum(0.,
-            actx.np.where(actx.np.less(mmin_i + toler, mmin),
-                          (mmin-mmin_i)/(cell_avgs - mmin_i),
-                          0.)
-        )
-
-        mass_lim = (cv.mass + theta_rho*(elem_avg_cv.mass - cv.mass))
-
-        # preserve internal energy, velocity, and mass fractions,
-        # keeps pressure/temperature constant
-        mom_lim = mass_lim*cv.velocity
-        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
-        int_energy = cv.energy - cv.mass*kin_energy
-        energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
-        spec_lim = cv.species_mass_fractions
-
-        cv_update_rho = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                                       momentum=mom_lim,
-                                       species_mass=mass_lim*spec_lim)
-        temperature_update_rho = gas_model.eos.temperature(
-            cv=cv_update_rho, temperature_seed=temperature_seed)
-        pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
-                                                  temperature=temperature_update_rho)
-
-        ##################
-        # 2.0 limit the species mass fractions
-        ##################
-        theta_spec = actx.zeros_like(cv.species_mass_fractions)
-        if nspecies > 0:
-            # find theta for all the species
-            for i in range(0, nspecies):
-                mmin_i = op.elementwise_min(dcoll, dd,
-                                            cv_update_rho.species_mass_fractions[i])
-                mmin = 0.
-
-                cell_avgs = elem_avg_cv.species_mass_fractions[i]
-                _theta = actx.np.maximum(0.,
-                    actx.np.where(actx.np.less(mmin_i + toler, mmin),
-                                  (mmin-mmin_i)/(cell_avgs - mmin_i),
-                                  0.)
-                )
-
-                mmax_i = op.elementwise_max(dcoll, dd,
-                                            cv_update_rho.species_mass_fractions[i])
-                mmax = 1.0
-                _theta = actx.np.maximum(_theta,
-                    actx.np.where(actx.np.greater(mmax_i - toler, mmax),
-                                  (mmax_i - mmax)/(mmax_i - cell_avgs),
-                                  0.)
-                )
-
-                theta_spec[i] = _theta
-
-                # apply the limiting to all species equally
-                spec_lim[i] = (cv.species_mass_fractions[i] +
-                               theta_spec[i]*(elem_avg_cv.species_mass_fractions[i] -
-                                           cv.species_mass_fractions[i]))
-
-            # limit the species mass fraction sum to 1.0
-            aux = actx.np.zeros_like(cv.mass)
-            for i in range(0, nspecies):
-                aux = aux + spec_lim[i]
-            spec_lim = spec_lim/aux
-
-            # modify Temperature (energy) maintain pressure equilibrium
-            kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-            positive_pressure = actx.np.greater(pressure_update_rho, 1.e-12)
-            r = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
-            temperature_update_y = pressure_update_rho/r/mass_lim
-
-            energy_lim = actx.np.where(
-                positive_pressure,
-                mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
-                          #species_mass_fractions=spec_lim/mass_lim)
-                          species_mass_fractions=spec_lim)
-                          + kin_energy),
-                cv_update_rho.energy
-            )
-
-            """
-            # where species limiting was done, reset the temperature back to tseed
-            limit_y = actx.np.zeros_like(cv.mass)
-            for i in range(0, nspecies):
-                limit_y += actx.np.abs(theta_spec[i])
-
-            temperature_update_y = actx.np.where(actx.np.greater(limit_y, 0.),
-                          temperature_seed, -1.)
-
-            energy_lim = actx.np.where(actx.np.greater(temperature_update_y, 0.),
-                mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
-                          species_mass_fractions=spec_lim)
-                          + kin_energy),
-                cv_update_rho.energy
-            )
-            """
-
-            cv_update_y = make_conserved(dim=dim,
-                                         mass=cv_update_rho.mass,
-                                         energy=energy_lim,
-                                         momentum=cv_update_rho.momentum,
-                                         species_mass=cv_update_rho.mass*spec_lim)
-        else:
-            cv_update_y = cv_update_rho
-
-        ##################
-        # 3.0 find the average element cv and pressure
-        ##################
-        cv_updated = cv_update_y
-        temperature_updated = gas_model.eos.temperature(
-            cv=cv_updated, temperature_seed=temperature_seed)
-        pressure_updated = gas_model.eos.pressure(
-            cv=cv_updated, temperature=temperature_updated)
-
-        elem_avg_cv = _element_average_cv(cv_updated, dd)
-        elem_avg_temp = gas_model.eos.temperature(
-            cv=elem_avg_cv, temperature_seed=temperature_seed)
-        elem_avg_pres = gas_model.eos.pressure(
-            cv=elem_avg_cv, temperature=elem_avg_temp)
-
-        # use an entropy function to keep pressure positive and entropy
-        # above some minimum value
-        gamma = gas_model.eos.gamma(cv_updated, temperature_updated)
-        mmin = 1.e-12
-        theta_smin = (pressure_updated -
-                      math.exp(limiter_smin)*cv_updated.mass**gamma)
-        theta_smin_i = op.elementwise_min(dcoll, dd, theta_smin)
-        theta_savg = elem_avg_pres - math.exp(limiter_smin)*elem_avg_cv.mass**gamma
-
-        _theta = actx.np.maximum(0.,
-            actx.np.where(actx.np.less(theta_smin_i + toler, theta_savg),
-                          (mmin - theta_smin_i)/(theta_savg - theta_smin_i),
-                          0.)
-        )
-
-        theta_pressure = _theta
-
-        ##################
-        # 4.0 limit cv where the entropy minimum function is violated
-        #     this in turn keeps the pressure positive
-        ##################
-        mass_lim = cv_updated.mass + _theta*(elem_avg_cv.mass - cv_updated.mass)
-        mom_lim = make_obj_array([cv_updated.momentum[i] +
-            _theta*(elem_avg_cv.momentum[i] - cv_updated.momentum[i])
-            for i in range(dim)
-        ])
-        energy_lim = (cv_updated.energy +
-                      _theta*(elem_avg_cv.energy - cv_updated.energy))
-        spec_lim = make_obj_array([cv_updated.species_mass[i] +
-            _theta*(elem_avg_cv.species_mass[i] - cv_updated.species_mass[i])
-            for i in range(0, nspecies)
-        ])
-
-        cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
-                                momentum=mom_lim,
-                                species_mass=spec_lim)
-
-        if viz_theta:
-            return make_obj_array([cv_lim, theta_rho,
-                                   theta_spec, theta_pressure])
-        else:
-            return cv_lim
-
-    from grudge.dof_desc import DISCR_TAG_MODAL
-    from meshmode.transform_metadata import FirstAxisIsElementsTag
-
     def drop_order(dcoll, field, theta, dd=dd_vol_fluid,
                    positivity_preserving=False):
         # Compute cell averages of the state
@@ -3301,57 +3438,6 @@ def main(actx_class,
                               momentum=momentum_lim, species_mass=cv.species_mass)
 
     drop_order_cv = actx.compile(_drop_order_cv)
-
-    def element_average(dcoll, field, dd=dd_vol_fluid,
-                        positivity_preserving=False):
-        # Compute cell averages of the state
-        def cancel_polynomials(grp):
-            return actx.from_numpy(
-                np.asarray([1 if sum(mode_id) == 0
-                            else 0 for mode_id in grp.mode_ids()]))
-
-        dd_nodal = dd
-        dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
-
-        modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
-        nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
-
-        modal_discr = dcoll.discr_from_dd(dd_modal)
-        modal_field = modal_map(field)
-
-        # cancel the ``high-order"" polynomials p > 0 and keep the average
-        filtered_modal_field = DOFArray(
-            actx,
-            tuple(actx.einsum("ej,j->ej",
-                              vec_i,
-                              cancel_polynomials(grp),
-                              arg_names=("vec", "filter"),
-                              tagged=(FirstAxisIsElementsTag(),))
-                  for grp, vec_i in zip(modal_discr.groups, modal_field))
-        )
-
-        # convert back to nodal to have the average at all points
-        cell_avgs = nodal_map(filtered_modal_field)
-
-        return cell_avgs
-
-    def _element_average_cv(cv, dd=dd_vol_fluid):
-
-        density = element_average(dcoll, cv.mass, dd)
-        momentum = make_obj_array([
-            element_average(dcoll, cv.momentum[i], dd)
-            for i in range(dim)])
-        energy = element_average(dcoll, cv.energy, dd)
-
-        species_mass = None
-        if nspecies > 0:
-            species_mass = make_obj_array([
-                element_average(dcoll, cv.species_mass[i], dd)
-                for i in range(0, nspecies)])
-
-        # make a new CV with the limited variables
-        return make_conserved(dim=dim, mass=density, energy=energy,
-                              momentum=momentum, species_mass=species_mass)
 
     def element_minimum(dcoll, field, dd=dd_vol_fluid,
                         positivity_preserving=False):
@@ -3628,10 +3714,17 @@ def main(actx_class,
     limiter_func = None
     if use_species_limiter == 1:
         logger.info("Limiting species mass fractions:")
-        limiter_func = limit_fluid_state
     elif use_species_limiter == 2:
         logger.info("Positivity-preserving limiter enabled:")
-        limiter_func = limit_fluid_state_lv
+
+    def my_limiter_func(cv, temperature_seed, gas_model, dd):
+        if use_species_limiter == 1:
+            return limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd)
+        elif use_species_limiter == 2:
+            return limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
+                                        limiter_smin=limiter_smin)
+
+    limiter_func = my_limiter_func
 
     ########################################
     # Helper functions for building states #
@@ -5836,9 +5929,10 @@ def main(actx_class,
         theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
         if viz_level == 3 and use_species_limiter == 2:
             cv_lim, theta_rho, theta_Y, theta_pres = \
-                limiter_func(cv=stepper_state.cv, gas_model=gas_model,
-                             temperature_seed=stepper_state.tseed,
-                             dd=dd_vol_fluid, viz_theta=True)
+                limit_fluid_state_lv(
+                    dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                    temperature_seed=stepper_state.tseed,
+                    dd=dd_vol_fluid, viz_theta=True)
 
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
@@ -6599,9 +6693,10 @@ def main(actx_class,
     theta_pres = actx.np.zeros_like(current_cv.mass)
     if viz_level == 3 and use_species_limiter == 2:
         cv_lim, theta_rho, theta_Y, theta_pres = \
-            limiter_func(cv=current_cv, gas_model=gas_model,
-                         temperature_seed=tseed,
-                         dd=dd_vol_fluid, viz_theta=True)
+            limit_fluid_state_lv(
+                dcoll, cv=current_cv, gas_model=gas_model,
+                temperature_seed=tseed,
+                dd=dd_vol_fluid, viz_theta=True)
 
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              smoothness_mu=current_av_smu,

@@ -1,7 +1,8 @@
 ##############
 # run control
 ##############
-mesh_filename: data_quads/actii_2d.msh
+mesh_filename: data_quads_cf/base.msh
+#mesh_filename: data_quads/actii_2d.msh
 use_tensor_product_elements: True
 #mesh_filename: data/actii_2d.msh
 #use_tensor_product_elements: False
