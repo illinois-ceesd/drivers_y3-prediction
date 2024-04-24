@@ -5536,9 +5536,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                            for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
+            """
             if use_wall:
                 viz_ext = [("grad_temperature_wall", grad_wall_t)]
                 wall_viz_fields.extend(viz_ext)
+            """
 
             """
             elem_average = element_average_cv(cv)
