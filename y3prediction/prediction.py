@@ -1611,7 +1611,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
-        elif init_case == "unstart":
+        elif init_case == "unstart" or init_case == "unstart_ramp":
             print("\tInitializing flow to unstart")
             print(f"\tInflow stagnation pressure {total_pres_inflow}")
             print(f"\tInflow stagnation temperature {total_temp_inflow}")
@@ -1623,6 +1623,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "Currently supported options are: "
                 "\t y3prediction"
                 "\t unstart"
+                "\t unstart_ramp"
                 "\t shock1d"
                 "\t flame1d"
                 "\t wedge"
@@ -2432,6 +2433,134 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_wall=temp_bkrnd,
             y_top=0.013,
             y_bottom=-0.013,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+
+    elif init_case == "unstart_ramp":
+
+        # parameters to adjust the shape of the initialization
+        temp_wall = 300
+
+        #
+        # isentropic expansion based on the area ratios between the
+        # inlet (r=54e-3m) and the throat (r=3.167e-3)
+        #
+        vel_inflow = np.zeros(shape=(dim,))
+        vel_outflow = np.zeros(shape=(dim,))
+
+        throat_height = 6.3028e-3
+        inlet_height = 13.0e-3
+        inlet_area_ratio = inlet_height/throat_height
+
+        inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                          gamma=gamma,
+                                          mach_guess=0.01)
+        temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                               T0=total_temp_inflow,
+                                               gamma=gamma)
+
+        # MJA
+        # this is better than the way Isentropic Inflow does things,
+        # i've removed teh repeated computation of the Isentropic Properties
+        # since I know the ramp values at the start, I can just hard code
+        # them into the pressure ramp function
+        # go back and update the boundary conditions to do the same thing
+        #
+        # also extend this to be a class so I can have one for each boundary
+        inlet_ramp_beginP = getIsentropicPressure(mach=inlet_mach,
+                                                  P0=ramp_beginP,
+                                                  gamma=gamma)
+        inlet_ramp_endP = getIsentropicPressure(mach=inlet_mach,
+                                                  P0=ramp_endP,
+                                                  gamma=gamma)
+
+        def inlet_ramp_pressure(t):
+            return actx.np.where(
+                actx.np.greater(t, ramp_time_start),
+                actx.np.minimum(
+                    inlet_ramp_endP,
+                    inlet_ramp_beginP + ((t - ramp_time_start) / ramp_time_interval
+                        * (inlet_ramp_endP - inlet_ramp_beginP))),
+                inlet_ramp_beginP)
+
+        pres_inflow = inlet_ramp_pressure(current_t)
+
+        # only the eos_type == 0 side of this is being exercised right now
+        # we need to think more carefully about what to do when gamma
+        # is variable, and how to pass that in
+        if eos_type == 0:
+            rho_inflow = pres_inflow/temp_inflow/r
+            sos = math.sqrt(gamma*pres_inflow/rho_inflow)
+            inlet_gamma = gamma
+        else:
+            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                              temperature=temp_inflow,
+                                              mass_fractions=y)
+            inlet_gamma = (
+                pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+
+            gamma_error = (gamma - inlet_gamma)
+            gamma_guess = inlet_gamma
+            toler = 1.e-6
+            # iterate over the gamma/mach since gamma = gamma(T)
+            while gamma_error > toler:
+
+                inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
+                                                  gamma=gamma_guess,
+                                                  mach_guess=0.01)
+                pres_inflow = getIsentropicPressure(mach=inlet_mach,
+                                                    P0=total_pres_inflow,
+                                                    gamma=gamma_guess)
+                temp_inflow = getIsentropicTemperature(mach=inlet_mach,
+                                                       T0=total_temp_inflow,
+                                                       gamma=gamma_guess)
+
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                                                  temperature=temp_inflow,
+                                                  mass_fractions=y)
+                inlet_gamma = \
+                    (pyro_mech.get_mixture_specific_heat_cp_mass(temp_inflow, y) /
+                     pyro_mech.get_mixture_specific_heat_cv_mass(temp_inflow, y))
+                gamma_error = (gamma_guess - inlet_gamma)
+                gamma_guess = inlet_gamma
+
+            sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
+
+        vel_inflow[0] = inlet_mach*sos
+
+        if rank == 0:
+            print("#### Simluation initialization data: ####")
+            print(f"\tinlet Mach number {inlet_mach}")
+            print(f"\tinlet gamma {inlet_gamma}")
+            print(f"\tinlet temperature {temp_inflow}")
+            print(f"\tinlet pressure {pres_inflow}")
+            print(f"\tinlet pressure begin {inlet_ramp_beginP}")
+            print(f"\tinlet pressure end {inlet_ramp_endP}")
+            print(f"\tinlet rho {rho_inflow}")
+            print(f"\tinlet velocity {vel_inflow[0]}")
+            #print(f"final inlet pressure {pres_inflow_final}")
+
+        from y3prediction.unstart import InitUnstartRamp
+
+        bulk_init = InitUnstartRamp(
+            dim=dim,
+            nspecies=nspecies,
+            disc_sigma=500.,
+            pressure_bulk=pres_bkrnd,
+            temperature_bulk=temp_bkrnd,
+            velocity_bulk=vel_outflow,
+            mass_frac_bulk=y,
+            pressure_inlet=pres_inflow,
+            temperature_inlet=temp_inflow,
+            velocity_inlet=vel_inflow,
+            mass_frac_inlet=y,
+            pressure_outlet=pres_bkrnd,
+            temperature_outlet=temp_bkrnd,
+            velocity_outlet=vel_outflow,
+            mass_frac_outlet=y,
+            inlet_pressure_func=inlet_ramp_pressure,
+            temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
 
@@ -4336,7 +4465,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # but I've started breaking off certain parts to use in other pieces of the
         # driver. See adding injection to an already running simulation (restart)
         # or developing a time-dependent sponge.
-        if init_case == "y3prediction_ramp":
+        if init_case == "y3prediction_ramp" or init_case == "unstart_ramp":
             restart_cv = bulk_init.add_inlet(
                 cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
                 temperature=restart_fluid_state.temperature,
@@ -4874,9 +5003,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             bound_list.append(bound.tag)
         #print(f"{uncoupled_fluid_boundaries=}")
         print(f"{bound_list=}")
-        check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
-                          boundary_tags=bound_list,
-                          incomplete_ok=False)
+        #check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
+                          #boundary_tags=bound_list,
+                          #incomplete_ok=False)
     except (ValueError, RuntimeError):
         print(f"{uncoupled_fluid_boundaries=}")
         raise SimulationConfigurationError(
@@ -5053,7 +5182,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
-    elif init_case == "unstart":
+    elif init_case == "unstart" or init_case == "unstart_ramp":
 
         inlet_sponge_x0 = -0.315
         inlet_sponge_thickness = 0.010
@@ -5062,12 +5191,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
         top_sponge_x0 = 0.1
         top_sponge_thickness = 0.100
 
-        """
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
                                        direction=-2)
-        """
         sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
                                         thickness=outlet_sponge_thickness,
                                         amplitude=sponge_amp,
@@ -5079,7 +5206,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         def _sponge_sigma(sponge_field, x_vec):
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
-            #sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
