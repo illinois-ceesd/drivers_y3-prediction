@@ -565,7 +565,7 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
     rho_lim = 1.e-10
     pres_lim = 1.0
 
-    elem_avg_cv = _element_average_cv(cv, dd)
+    elem_avg_cv = _element_average_cv(dcoll, cv, dd)
 
     # 1.0 limit the density
     theta_rho = actx.np.abs((elem_avg_cv.mass - rho_lim) /
