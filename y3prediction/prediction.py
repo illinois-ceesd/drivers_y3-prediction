@@ -6738,7 +6738,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         temperature=fluid_state.temperature,
                         eos=eos_init, x_vec=fluid_nodes)
             else:
-                sponge_cv=target_fluid_state.cv
+                sponge_cv = target_fluid_state.cv
 
             fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma,
                                                    cv=cv,
