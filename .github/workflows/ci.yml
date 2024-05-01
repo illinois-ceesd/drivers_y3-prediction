@@ -54,72 +54,50 @@ jobs:
 
             pylint setup.py driver.py y3prediction/*.py
 
-        pytest:
-            name: Pytest
-            runs-on: ${{ matrix.os }}
-            needs: emirge
-            strategy:
-              matrix:
-                #os: [ubuntu-latest, macos-latest]
-                os: [ubuntu-latest]
-    
-            steps:
-            - uses: actions/checkout@v4
-            - name: Run tests
+        - name: Pytest
               run: |
                 source emirge/config/activate_env.sh
                 cd test
                 python -m pip install pytest
                 python -m pytest .
     
-        examples:
-            name: Examples
-            runs-on: ${{ matrix.os }}
-            needs: emirge
-            strategy:
-              matrix:
-                #os: [ubuntu-latest, macos-latest]
-                os: [ubuntu-latest]
-    
-            steps:
-            - uses: actions/checkout@v3
-            - name: Eager smoke test
+        - name: Eager smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test
                 ./run.sh
     
-            - name: Eager smoke restart test
+        - name: Eager smoke restart test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test
                 ./run_restart.sh
     
-            - name: Eager smoke restart n2 to n7 transition test
+        - name: Eager smoke restart n2 to n7 transition test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test
                 ./run_transition.sh
     
-            - name: Numpy smoke test
+        - name: Numpy smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test
                 ./run_numpy.sh
     
-            - name: Lazy smoke test
+        - name: Lazy smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test
                 ./run_lazy.sh
     
-            - name: ESDG smoke test
+        - name: ESDG smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test
                 ./run_esdg.sh
     
-            - name: Compare smoke_test accuracy
+        - name: Compare smoke_test accuracy
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test/viz_data
@@ -135,31 +113,31 @@ jobs:
                     python ../../emirge/mirgecom/bin/mirgecompare.py --tolerance $TOL_NUMPY ${vizfile} ${numpy_vizfile}
                 done
     
-            - name: Lazy smoke test without wall
+        - name: Lazy smoke test without wall
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test_nw
                 ./run_lazy.sh
     
-            - name: Kitchen sink smoke test
+        - name: Kitchen sink smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test_ks
                 ./run_lazy.sh
     
-            - name: Kitchen sink 3D smoke test
+        - name: Kitchen sink 3D smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test_ks_3d
                 ./run_lazy.sh
     
-            - name: 1D shock smoke test
+        - name: 1D shock smoke test
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test_shock1d
                 ./run.sh
 
-            - name: smoke test quads lazy
+        - name: smoke test quads lazy
               run: |
                 source emirge/config/activate_env.sh
                 cd smoke_test_quads
