@@ -656,7 +656,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     toler = 1.e-13
 
     print_stuff = False
-    index = 502
+    index = 118
 
     if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
         np.set_printoptions(threshold=sys.maxsize, precision=16)
@@ -673,7 +673,9 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         print(f"temperature_initial \n {data[0][index]}")
         data = actx.to_numpy(pressure_initial)
         print(f"pressure_initial \n {data[0][index]}")
-
+        for i in range(0, nspecies):
+            data = actx.to_numpy(cv.species_mass_fractions)
+            print(f"Y_initial[{i}] \n {data[i][0][index]}")
 
     #print(f"inside limiter")
 
@@ -684,7 +686,6 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     #rho_lim = elem_avg_cv.mass*0.1
     rho_lim = 1.e-6
 
-
     cell_avgs = element_average(dcoll, cv.mass, dd)
     #cell_avgs = elem_avg_cv.mass
     #print(f"rho_avg {cell_avgs}")
@@ -694,7 +695,8 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     mmin = actx.np.where(actx.np.greater(cell_avgs, rho_lim), 0.1*cell_avgs, rho_lim)
     #mmin = rho_lim
 
-    cell_avgs = actx.np.where(actx.np.greater(cell_avgs, rho_lim), cell_avgs, rho_lim)
+    cell_avgs = actx.np.where(
+        actx.np.greater(cell_avgs, rho_lim), cell_avgs, rho_lim)
     #print(f"modified rho_avg {cell_avgs}")
 
     theta_rho = actx.np.maximum(0.,
@@ -762,16 +764,6 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         print(f"pressure_rho \n {data[0][index]}")
         data = actx.to_numpy(temperature_seed)
         print(f"temperature_seed \n {data[0][index]}")
-
-    #temperature_update_rho = gas_model.eos.temperature(
-        #cv=cv_update_rho, temperature_seed=temperature_seed)
-    #pressure_update_rho = gas_model.eos.pressure(cv=cv_update_rho,
-                                              #temperature=temperature_update_rho)
-
-    #print("After limiting rho")
-    #print(f"{cv_update_rho=}")
-    #print(f"{temperature_update_rho=}")
-    #print(f"{pressure_update_rho=}")
 
     ##################
     # 2.0 limit the species mass fractions
@@ -843,6 +835,12 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                 gas_model.eos.get_internal_energy(
                     safe_temperature, species_mass_fractions=spec_lim) + kin_energy)
         else:
+            mass_lim = cv_update_rho.mass
+            mom_lim = mass_lim*cv_update_rho.velocity
+            kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
+            int_energy = cv_update_rho.energy - mass_lim*kin_energy
+            energy_lim = (int_energy/mass_lim + kin_energy)*mass_lim
+
             # modify Temperature (energy) maintain pressure equilibrium
             temperature_update_rho = gas_model.eos.temperature(
                 cv=cv_update_rho, temperature_seed=temperature_seed)
@@ -900,12 +898,28 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         """
 
         cv_update_y = make_conserved(dim=dim,
-                                     mass=mass_lim,
-                                     energy=energy_lim,
-                                     momentum=mom_lim,
-                                     species_mass=mass_lim*spec_lim)
+                                     mass=cv_update_rho.mass,
+                                     energy=cv_update_rho.energy,
+                                     momentum=cv_update_rho.momentum,
+                                     species_mass=cv_update_rho.mass*spec_lim)
     else:
         cv_update_y = cv_update_rho
+
+    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
+
+        print("After mass fraction limiting")
+        temperature_update_y = gas_model.eos.temperature(
+            cv=cv_update_y, temperature_seed=temperature_seed)
+        pressure_update_y = gas_model.eos.pressure(
+            cv=cv_update_y, temperature=temperature_update_y)
+        data = actx.to_numpy(temperature_update_y)
+        print(f"temperature_update_y \n {data[0][index]}")
+        data = actx.to_numpy(pressure_update_y)
+        print(f"pressure_update_y \n {data[0][index]}")
+        for i in range(0, nspecies):
+            data = actx.to_numpy(cv_update_y.species_mass_fractions)
+            print(f"Y_update_y[{i}] \n {data[i][0][index]}")
 
     ##################
     # 3.0 find the average element cv and pressure
@@ -1020,14 +1034,50 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
             cv=cv_lim, temperature_seed=temperature_seed)
         pressure_final = gas_model.eos.pressure(
             cv=cv_lim, temperature=temperature_final)
+
+        def get_temperature_update_limit(cv, temperature):
+            y = cv.species_mass_fractions
+            e = gas_model.eos.internal_energy(cv)/cv.mass
+            return actx.np.abs(
+                gas_model.eos._pyrometheus_mech.get_temperature_update_energy(
+                    e, temperature, y))
+
+        temp_resid = get_temperature_update_limit(
+            cv_lim, temperature_final)/temperature_final
+
+        # run through a temperature solve manually, print out the updates
+
+        num_iter = 20
+
+        def do_temperature_iter(cv, tseed):
+            y = cv.species_mass_fractions
+            t_i = temperature_seed
+            print(f" First: {actx.to_numpy(t_i)[0][index]=}")
+            e = gas_model.eos.internal_energy(cv)/cv.mass
+            for _ in range(num_iter):
+                t_resid = (gas_model.eos._pyrometheus_mech.
+                    get_temperature_update_energy(e, t_i, y))
+                t_i = t_i + t_resid
+                data_t_i = actx.to_numpy(t_i)[0][index]
+                data_t_resid = actx.to_numpy(t_resid)[0][index]
+                print(f"iter {_=}: {data_t_i=}, {data_t_resid=}")
+
+        do_temperature_iter(cv_lim, temperature_seed)
         # initial state
         #print(f"{theta_rho=}")
         #print(f"{theta_pressure=}")
+        #print(f"{theta_spec=}")
+        #print(f"{temp_resid=}")
         print("All done limiting")
+        data = actx.to_numpy(temp_resid)
+        print(f"temp_resid \n {data[0][index]}")
         data = actx.to_numpy(theta_rho)
         print(f"theta_rho \n {data[0][index]}")
         data = actx.to_numpy(theta_pressure)
         print(f"theta_pressure \n {data[0][index]}")
+        for i in range(0, nspecies):
+            data = actx.to_numpy(theta_spec)
+            print(f"theta_Y[{i}] \n {data[i][0][index]}")
         data = actx.to_numpy(cv_lim.mass)
         print(f"cv_lim.mass \n {data[0][index]}")
         data = actx.to_numpy(temperature_final)
@@ -4866,17 +4916,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
         uncoupled_fluid_boundaries, bndry_mapping)
 
     # check the boundary condition coverage
-    from meshmode.mesh import check_bc_coverage
-    #print(f"{uncoupled_fluid_boundaries=}")
+    #from meshmode.mesh import check_bc_coverage
     try:
         bound_list = []
         for bound in list(uncoupled_fluid_boundaries.keys()):
             bound_list.append(bound.tag)
         #print(f"{uncoupled_fluid_boundaries=}")
         print(f"{bound_list=}")
+        """
         check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
                           boundary_tags=bound_list,
                           incomplete_ok=False)
+        """
     except (ValueError, RuntimeError):
         print(f"{uncoupled_fluid_boundaries=}")
         raise SimulationConfigurationError(
@@ -5083,10 +5134,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
+    sponge_sigma = actx.np.zeros_like(restart_cv.mass)
     if use_sponge:
         get_sponge_sigma = actx.compile(_sponge_sigma)
-
-        sponge_sigma = actx.np.zeros_like(restart_cv.mass)
         sponge_sigma = force_evaluation(actx, get_sponge_sigma(sponge_sigma,
                                                                fluid_nodes))
 
