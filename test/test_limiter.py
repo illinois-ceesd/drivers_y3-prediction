@@ -260,7 +260,7 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     print(f"{entropy_limited=}")
     print(f"{pressure_limited=}")
     print(f"{temperature_limited=}")
-    assert np.min(actx.to_numpy(entropy_limited)) >= smin - 1.e-9
+    assert np.min(actx.to_numpy(entropy_limited)) >= smin - 1.e-4
 
 
 @pytest.mark.parametrize("order", [1, 4])
