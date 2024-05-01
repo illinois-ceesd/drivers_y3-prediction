@@ -3893,7 +3893,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.info(f" - filter cutoff = {rhs_filter_cutoff}")
         logger.info(f" - filter order  = {rhs_filter_order}")
 
-    limiter_func = None
     if use_species_limiter == 1:
         logger.info("Limiting species mass fractions:")
     elif use_species_limiter == 2:
@@ -3901,12 +3900,17 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     def my_limiter_func(cv, temperature_seed, gas_model, dd):
         if use_species_limiter == 1:
-            return limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd)
+            limiter_func = limit_fluid_state(
+                dcoll, cv, temperature_seed, gas_model, dd)
         elif use_species_limiter == 2:
-            return limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
-                                        limiter_smin=limiter_smin)
+            limiter_func = limit_fluid_state_lv(
+                dcoll, cv, temperature_seed, gas_model,
+                dd, limiter_smin=limiter_smin)
+        return limiter_func
 
-    limiter_func = my_limiter_func
+    limiter_func = None
+    if use_species_limiter > 0:
+        limiter_func = my_limiter_func
 
     ########################################
     # Helper functions for building states #
