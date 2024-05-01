@@ -4263,7 +4263,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
             restart_av_smu = fluid_connection(restart_data["av_smu"])
             restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
             restart_av_skappa = fluid_connection(restart_data["av_skappa"])
-            restart_av_sd = fluid_connection(restart_data["av_sd"])
+
+            # this is so we can restart from legacy, before use_av=3
+            try:
+                restart_av_sd = fluid_connection(restart_data["av_sd"])
+            except (KeyError):
+                restart_av_sd = actx.zeros_like(restart_av_smu)
+                if rank == 0:
+                    print("no data for av_sd in restart file")
+                    print("av_sd will be initialzed to 0 on the mesh")
+
             temperature_seed = fluid_connection(restart_data["temperature_seed"])
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
@@ -6728,6 +6737,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         cv=sponge_cv, pressure=fluid_state.pressure,
                         temperature=fluid_state.temperature,
                         eos=eos_init, x_vec=fluid_nodes)
+            else:
+                sponge_cv=target_fluid_state.cv
 
             fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma,
                                                    cv=cv,
