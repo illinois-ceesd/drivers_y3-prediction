@@ -73,7 +73,7 @@ class Thermochemistry:
         """
 
         self.usr_np = usr_np
-        self.model_name = 'uiuc_test.yaml'
+        self.model_name = 'uiuc_bound_cp.yaml'
         self.num_elements = 4
         self.num_species = 7
         self.num_reactions = 3
