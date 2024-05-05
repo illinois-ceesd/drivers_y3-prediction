@@ -777,6 +777,9 @@ def main(actx_class,
     transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
+    # mixing layer flow properties
+    vorticity_thickness = configurate("vorticity_thickness", input_data, 0.32e-3)
+
     # ACTII flow properties
     total_pres_inflow = configurate("total_pres_inflow", input_data, 2.745e5)
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
@@ -1002,6 +1005,10 @@ def main(actx_class,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "mixing_layer":
+            print("\tInitializing flow to mixing_layer")
+            print(f"Vorticity thickness {vorticity_thickness}")
+            print(f"Ambient pressure {pres_bkrnd}")
         elif init_case == "flame1d":
             print("\tInitializing flow to flame1d")
             print(f"Ambient pressure {pres_bkrnd}")
@@ -1030,6 +1037,7 @@ def main(actx_class,
                 "\t shock1d"
                 "\t flame1d"
                 "\t wedge"
+                "\t mixing_layer"
                 "\t species_diffusion"
             )
         print("#### Simluation initialization data: ####")
@@ -1573,6 +1581,10 @@ def main(actx_class,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
+    if init_case == "mixing_layer":
+
+
+        bulk_init = Uniform()
     if init_case == "flame1d":
 
         # init params
@@ -2576,6 +2588,20 @@ def main(actx_class,
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
 
                 return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "mixing_layer":
+            if rank == 0:
+                print("Generating mesh from scratch")
+
+            def get_mesh_data():
+                from y3prediction.mixing_layer import get_mesh
+                mesh, tag_to_elements = get_mesh(
+                    dim=dim, size=mesh_size, layer_ratio=bl_ratio,
+                    vorticity_thickness=vorticity_thickness,
+                    transfinite=transfinite,
+                    use_quads=use_tpe)()
+                volume_to_tags = {"fluid": ["fluid"]}
+                return mesh, tag_to_elements, volume_to_tags
+
         elif init_case == "wedge":
             if rank == 0:
                 print("Generating mesh from scratch")
