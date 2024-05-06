@@ -1,12 +1,10 @@
 """mirgecom driver initializer for the mixing layer problem."""
 import numpy as np
 from mirgecom.fluid import make_conserved
-
-from y3prediction.utils import smooth_step
 from functools import partial
 
 
-class MixingLayer
+class MixingLayerCold:
     r"""Solution initializer for flow with a discontinuity.
 
     This initializer creates a physics-consistent flow solution
@@ -20,15 +18,11 @@ class MixingLayer
     """
 
     def __init__(
-            self, *, dim=2, normal_dir, disc_location, disc_location_species,
-            nspecies=0,
-            temperature_left, temperature_right,
-            pressure_left, pressure_right,
-            velocity_left=None, velocity_right=None,
-            velocity_cross=None,
-            species_mass_left=None, species_mass_right=None,
-            convective_velocity=None, sigma=0.5,
-            temp_sigma=0., vel_sigma=0., temp_wall=300., y_top=0.01, y_bottom=-0.01
+            self, *, dim=2, nspecies=0,
+            mach_fuel, mach_air,
+            temp_fuel, temp_air,
+            y_fuel, y_air,
+            vorticity_thickness, pressure
     ):
         r"""Initialize mixture parameters.
 
@@ -36,73 +30,42 @@ class MixingLayer
         ----------
         dim: int
             specifies the number of dimensions for the solution
-        normal_dir: numpy.ndarray
-            specifies the direction (plane) the discontinuity is applied in
-        disc_location: numpy.ndarray or Callable
-            fixed location of discontinuity or optionally a function that
-            returns the time-dependent location.
-        disc_location_species: numpy.ndarray or Callable
-            fixed location of the species discontinuity
         nspecies: int
             specifies the number of mixture species
-        pressure_left: float
-            pressure to the left of the discontinuity
-        temperature_left: float
-            temperature to the left of the discontinuity
-        velocity_left: numpy.ndarray
-            velocity (vector) to the left of the discontinuity
-        species_mass_left: numpy.ndarray
-            species mass fractions to the left of the discontinuity
-        pressure_right: float
-            pressure to the right of the discontinuity
-        temperature_right: float
-            temperaure to the right of the discontinuity
-        velocity_right: numpy.ndarray
-            velocity (vector) to the right of the discontinuity
-        species_mass_right: numpy.ndarray
-            species mass fractions to the right of the discontinuity
-        sigma: float
-           sharpness parameter
-        velocity_cross: numpy.ndarray
-            velocity (vector) tangent to the shock
-        temp_sigma: float
-            near-wall temperature relaxation parameter
-        vel_sigma: float
-            near-wall velocity relaxation parameter
+        y_fuel: numpy.ndarray
+            fuel stream species mass fractions
+        mach_fuel: float
+            fuel stream mach number
+        temp_fuel: float
+            fuel stream temperature
+        y_air: numpy.ndarray
+            air stream species mass fractions
+        mach_air: float
+            air stream mach number
+        temp_air: float
+            air stream temperature
+        vorticity_thickness: float
+            mixing layer thickness
+        pressure: float
+            ambient pressure
         """
-        if velocity_left is None:
-            velocity_left = np.zeros(shape=(dim,))
-        if velocity_right is None:
-            velocity_right = np.zeros(shape=(dim,))
-        if velocity_cross is None:
-            velocity_cross = np.zeros(shape=(dim,))
 
-        if species_mass_left is None:
-            species_mass_left = np.zeros(shape=(nspecies,))
-        if species_mass_right is None:
-            species_mass_right = np.zeros(shape=(nspecies,))
+        if y_fuel is None:
+            y_fuel = np.zeros(nspecies, dtype=object)
+        if y_air is None:
+            y_air = np.zeros(nspecies, dtype=object)
+
+        self._y_fuel = y_fuel
+        self._y_air = y_air
 
         self._nspecies = nspecies
         self._dim = dim
-        self._disc_location = disc_location
-        self._disc_location_species = disc_location_species
-        self._sigma = sigma
-        self._ul = velocity_left
-        self._ur = velocity_right
-        self._ut = velocity_cross
-        self._uc = convective_velocity
-        self._pl = pressure_left
-        self._pr = pressure_right
-        self._tl = temperature_left
-        self._tr = temperature_right
-        self._yl = species_mass_left
-        self._yr = species_mass_right
-        self._normal = normal_dir
-        self._temp_sigma = temp_sigma
-        self._vel_sigma = vel_sigma
-        self._temp_wall = temp_wall
-        self._y_top = y_top
-        self._y_bottom = y_bottom
+        self._pressure = pressure
+        self._mach_fuel = mach_fuel
+        self._temp_fuel = temp_fuel
+        self._mach_air = mach_air
+        self._temp_air = temp_air
+        self._vorticity_thickness = vorticity_thickness
 
     def __call__(self, dcoll, x_vec, eos, *, time=0.0):
         """Create the mixture state at locations *x_vec*.
@@ -124,68 +87,76 @@ class MixingLayer
             raise ValueError(f"Position vector has unexpected dimensionality,"
                              f" expected {self._dim}.")
 
-        xpos = x_vec[0]*self._normal[0] + x_vec[1]*self._normal[1]
-        ypos = -x_vec[0]*self._normal[1] + x_vec[1]*self._normal[0]
-
-        actx = xpos.array_context
-        #if isinstance(self._disc_location, Number):
-        if callable(self._disc_location):
-            x0 = self._disc_location(time)
-        else:
-            x0 = self._disc_location
-
-        if callable(self._disc_location_species):
-            x0_species = self._disc_location(time)
-        else:
-            x0_species = self._disc_location_species
+        ypos = x_vec[1]
+        actx = ypos.array_context
 
         # get the species mass fractions first
-        dist = np.dot(x0_species - x_vec, self._normal)
-        xtanh = 1.0/self._sigma*dist
-        weight = 0.5*(1.0 - actx.np.tanh(xtanh))
-        y = self._yl + (self._yr - self._yl)*weight
+        xtanh = ypos/self._vorticity_thickness
+        weight = 0.5*(1. - actx.np.tanh(xtanh))
+        y = self._y_air + (self._y_fuel - self._y_air)*weight
 
-        # now solve for T, P, velocity
-        dist = np.dot(x0 - x_vec, self._normal)
-        xtanh = 1.0/self._sigma*dist
-        weight = 0.5*(1.0 - actx.np.tanh(xtanh))
-        pressure = self._pl + (self._pr - self._pl)*weight
-        temperature = self._tl + (self._tr - self._tl)*weight
-        velocity = self._ul + (self._ur - self._ul)*weight + self._ut
+        print(f"{self._y_air=}")
+        print(f"{self._y_fuel=}")
 
-        # modify the temperature in the near wall region to match the
-        # isothermal boundaries
-        y_top = self._y_top
-        y_bottom = self._y_bottom
-        sigma = self._temp_sigma
-        if sigma > 0:
-            wall_temperature = self._temp_wall
-            smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
-            smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
-            temperature = (wall_temperature +
-                (temperature - wall_temperature)*smoothing_top*smoothing_bottom)
+        mass_air = eos.get_density(
+            self._pressure, self._temp_air,
+            species_mass_fractions=self._y_air)
+        mass_fuel = eos.get_density(
+            self._pressure, self._temp_fuel,
+            species_mass_fractions=self._y_fuel)
 
-        # modify the velocity in the near wall region to match the
-        # noslip boundaries
-        sigma = self._vel_sigma
-        if sigma > 0:
-            smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
-            smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
-            velocity = velocity*smoothing_top*smoothing_bottom
+        mass = mass_air + (mass_fuel - mass_air)*weight
 
-        mass = eos.get_density(pressure, temperature,
-                               species_mass_fractions=y)
+        vel_air = np.zeros(self._dim, dtype=object)
+        vel_fuel = np.zeros(self._dim, dtype=object)
 
-        specmass = mass * y
-        mom = mass * velocity
-        internal_energy = eos.get_internal_energy(temperature,
+        # we need cv to get gamma
+        cv_air = make_conserved(dim=self._dim,
+                                mass=mass_air,
+                                energy=0.,
+                                momentum=mass_air*vel_air,
+                                species_mass=mass_air*self._y_air)
+        cv_fuel = make_conserved(dim=self._dim,
+                                mass=mass_fuel,
+                                energy=0.,
+                                momentum=mass_fuel*vel_fuel,
+                                species_mass=mass_fuel*self._y_fuel)
+
+        gamma_air = eos.gamma(cv_air, self._temp_air)
+        gamma_fuel = eos.gamma(cv_fuel, self._temp_fuel)
+
+        c_air = np.sqrt(gamma_air*self._pressure/mass_air)
+        c_fuel = np.sqrt(gamma_fuel*self._pressure/mass_fuel)
+
+        vel_air[0] = self._mach_air*c_air
+        vel_fuel[0] = self._mach_fuel*c_fuel
+        velocity = vel_air + (vel_fuel - vel_air)*weight
+
+        r = eos.gas_const(species_mass_fractions=y)
+
+        temperature = self._pressure/mass/r
+        internal_energy = eos.get_internal_energy(temperature=temperature,
                                                   species_mass_fractions=y)
 
-        kinetic_energy = 0.5 * np.dot(velocity, velocity)
-        energy = mass * (internal_energy + kinetic_energy)
+        """
+        # enthalpy
+        # does not enforce uniform pressure?
+        enthalpy_air = eos.get_enthalpy(self._temp_air, self._y_air)
+        enthalpy_fuel = eos.get_enthalpy(self._temp_fuel, self._y_fuel)
+        enthalpy = enthalpy_air + (enthalpy_fuel - enthalpy_air)*weight
+        internal_energy = enthalpy - self._pressure/mass
+        """
 
-        return make_conserved(dim=self._dim, mass=mass, energy=energy,
-                              momentum=mom, species_mass=specmass)
+        kinetic_energy = 0.5 * np.dot(velocity, velocity)
+        total_energy = mass*(internal_energy + kinetic_energy)
+
+        #print(f"{y=}")
+
+        return make_conserved(dim=self._dim,
+                              mass=mass,
+                              energy=total_energy,
+                              momentum=mass*velocity,
+                              species_mass=mass*y)
 
 
 def get_mesh(dim, size, layer_ratio, vorticity_thickness,
@@ -205,9 +176,9 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
     top_outflow_ml = np.zeros(shape=(dim,))
 
     # points on the inflow
-    bottom_inflow[1] = height/2.
+    bottom_inflow[1] = -height/2.
     bottom_inflow_ml[1] = -2*vorticity_thickness
-    top_inflow[1] = -height/2.
+    top_inflow[1] = height/2.
     top_inflow_ml[1] = 2*vorticity_thickness
 
     # points on the outflow
@@ -216,11 +187,10 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
     top_outflow[0] = length
     top_outflow_ml[0] = length
 
-    bottom_outflow[1] = height/2.
+    bottom_outflow[1] = -height/2.
     bottom_outflow_ml[1] = -10*vorticity_thickness
-    top_outflow[1] = -height/2.
+    top_outflow[1] = height/2.
     top_outflow_ml[1] = 10*vorticity_thickness
-
 
     from meshmode.mesh.io import (
         generate_gmsh,
@@ -246,10 +216,10 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
         Line(5) = {{6, 7}};
         Line(6) = {{7, 8}};
 
-        Line(7) = {{1, 8}};
-        Line(8) = {{2, 5}};
-        Line(9) = {{3, 6}};
-        Line(10) = {{4, 5}};
+        Line(7) = {{1, 5}};
+        Line(8) = {{2, 6}};
+        Line(9) = {{3, 7}};
+        Line(10) = {{4, 8}};
         Line Loop(1) = {{1, 8, -4, -7}};
         Line Loop(2) = {{2, 9, -5, -8}};
         Line Loop(3) = {{3, 10, -6, -9}};
@@ -259,10 +229,10 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
         """)
     if dim == 2:
         my_string += ("""
-            Physical Surface('fluid') = {1};
+            Physical Surface('fluid') = {1, 2, 3};
             Physical Curve('inflow') = {1,2,3};
             Physical Curve('outflow') = {4,5,6};
-            Physical Curve('wall') = {4,8};
+            Physical Curve('wall') = {7,10};
         """)
 
     if transfinite:
@@ -277,7 +247,7 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
             my_string += (f"""
                 // Create distance field from curves, excludes cavity
                 Field[1] = Distance;
-                Field[1].CurvesList = {{5,6}};
+                Field[1].CurvesList = {{8,9}};
                 Field[1].NumPointsPerCurve = 100000;
 
                 //Create threshold field that varies element size near boundaries
@@ -297,9 +267,21 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
                 Field[3].YMax = 1.0;
                 Field[3].VIn = {size};
 
+                //  mixing layer mesh size
+                Field[4] = Box;
+                Field[4].XMin = 0.;
+                Field[4].XMax = 1.0;
+                Field[4].YMin = -1.0;
+                Field[4].YMax = 1.0;
+                Field[4].VIn = {size} / {layer_ratio};
+
+                Field[5] = Restrict;
+                Field[5].SurfacesList = {{2}};
+                Field[5].InField = 4;
+
                 // take the minimum of all defined meshing fields
                 Field[100] = Min;
-                Field[100].FieldsList = {{2, 3}};
+                Field[100].FieldsList = {{2, 3, 5}};
                 Background Field = 100;
             """)
 

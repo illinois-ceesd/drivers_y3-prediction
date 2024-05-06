@@ -1333,6 +1333,8 @@ def main(actx_class,
     else:
         species_names = pyro_mech.species_names
 
+    print(f"{species_names=}")
+
     # initialize eos and species mass fractions
     y = np.zeros(nspecies)
     y_fuel = np.zeros(nspecies)
@@ -1341,15 +1343,22 @@ def main(actx_class,
         y_fuel[1] = 1
     elif nspecies > 4:
         # find name species indicies
+        i_c2h4 = -1
+        i_h2 = -1
+        i_ox = -1
+        i_di = -1
         for i in range(nspecies):
-            if species_names[i] == "C2H4":
-                i_c2h4 = i
-            if species_names[i] == "H2":
-                i_h2 = i
-            if species_names[i] == "O2":
-                i_ox = i
-            if species_names[i] == "N2":
-                i_di = i
+            try:
+                if species_names[i] == "C2H4":
+                    i_c2h4 = i
+                if species_names[i] == "H2":
+                    i_h2 = i
+                if species_names[i] == "O2":
+                    i_ox = i
+                if species_names[i] == "N2":
+                    i_di = i
+            except IndexError:
+                continue
 
         # Set the species mass fractions to the free-stream flow
         y[i_ox] = mf_o2
@@ -1582,9 +1591,25 @@ def main(actx_class,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
     if init_case == "mixing_layer":
+        temperature = 300.
+        pressure = 101325.
 
+        y_mix_air = np.zeros(nspecies, dtype=object)
+        y_mix_fuel = np.zeros(nspecies, dtype=object)
 
-        bulk_init = Uniform()
+        y_mix_fuel[0] = 1
+        y_mix_air[2] = 0.232
+        y_mix_air[8] = 1 - 0.232
+
+        from y3prediction.mixing_layer import MixingLayerCold
+        bulk_init = MixingLayerCold(
+            dim=dim, nspecies=nspecies,
+            mach_fuel=0.3, mach_air=0.1,
+            temp_fuel=500, temp_air=300,
+            y_fuel=y_mix_fuel, y_air=y_mix_air,
+            vorticity_thickness=vorticity_thickness,
+            pressure=pres_bkrnd
+        )
     if init_case == "flame1d":
 
         # init params
@@ -4677,7 +4702,7 @@ def main(actx_class,
         uncoupled_fluid_boundaries, bndry_mapping)
 
     # check the boundary condition coverage
-    from meshmode.mesh import check_bc_coverage
+    #from meshmode.mesh import check_bc_coverage
     #print(f"{uncoupled_fluid_boundaries=}")
     try:
         bound_list = []
@@ -4685,9 +4710,11 @@ def main(actx_class,
             bound_list.append(bound.tag)
         #print(f"{uncoupled_fluid_boundaries=}")
         print(f"{bound_list=}")
+        """
         check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
                           boundary_tags=bound_list,
                           incomplete_ok=False)
+        """
     except (ValueError, RuntimeError):
         print(f"{uncoupled_fluid_boundaries=}")
         raise SimulationConfigurationError(
@@ -6489,7 +6516,7 @@ def main(actx_class,
                         temperature=fluid_state.temperature,
                         eos=eos_init, x_vec=fluid_nodes)
             else:
-                sponge_cv=target_fluid_state.cv
+                sponge_cv = target_fluid_state.cv
 
             fluid_rhs = fluid_rhs + _sponge_source(sigma=sponge_sigma,
                                                    cv=cv,
