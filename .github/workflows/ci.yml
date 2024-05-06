@@ -13,19 +13,19 @@ jobs:
         name: Flake8
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
+        - uses: actions/checkout@v3
         -
-            uses: actions/setup-python@v4
-            with:
-                # matches compat target in setup.py
-                python-version: '3.8'
-        -   name: "Flake8 test"
-            run: |
-                python3 -m venv myenv
-                source myenv/bin/activate
-                python -m pip install wheel
-                python -m pip install flake8 flake8-quotes
-                python -m flake8 setup.py driver.py y3prediction/*.py
+          uses: actions/setup-python@v4
+          with:
+              # matches compat target in setup.py
+              python-version: '3.8'
+        - name: "Flake8 test"
+          run: |
+              python3 -m venv myenv
+              source myenv/bin/activate
+              python -m pip install wheel
+              python -m pip install flake8 flake8-quotes
+              python -m flake8 setup.py driver.py y3prediction/*.py
 
     emirge:
         name: Emirge installation
@@ -54,42 +54,49 @@ jobs:
 
             pylint setup.py driver.py y3prediction/*.py
 
+        - name: Pytest
+          run: |
+            source emirge/config/activate_env.sh
+            cd test
+            python -m pip install pytest
+            python -m pytest .
+    
         - name: Eager smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run.sh
-
+    
         - name: Eager smoke restart test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run_restart.sh
-
+    
         - name: Eager smoke restart n2 to n7 transition test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run_transition.sh
-
+    
         - name: Numpy smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run_numpy.sh
-
+    
         - name: Lazy smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run_lazy.sh
-
+    
         - name: ESDG smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test
             ./run_esdg.sh
-
+    
         - name: Compare smoke_test accuracy
           run: |
             source emirge/config/activate_env.sh
@@ -117,16 +124,22 @@ jobs:
             source emirge/config/activate_env.sh
             cd smoke_test_ks
             ./run_lazy.sh
-
+    
         - name: Kitchen sink 3D smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test_ks_3d
             ./run_lazy.sh
-
+    
         - name: 1D shock smoke test
           run: |
             source emirge/config/activate_env.sh
             cd smoke_test_shock1d
             ./run.sh
+
+        - name: smoke test quads lazy
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test_quads
+            ./run_lazy.sh
 

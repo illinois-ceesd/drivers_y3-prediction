@@ -1,7 +1,8 @@
 ##############
 # run control
 ##############
-mesh_filename: data_quads/actii_2d.msh
+mesh_filename: data_quads_cf/base.msh
+#mesh_filename: data_quads/actii_2d.msh
 use_tensor_product_elements: True
 #mesh_filename: data/actii_2d.msh
 #use_tensor_product_elements: False
@@ -22,7 +23,7 @@ viz_interval_type: 0
 constant_cfl: 0
 #current_dt: 1.0e-7
 #current_dt: 2.0e-8
-current_dt: 5.0e-8
+current_dt: 1.0e-8
 #t_final: 1e-2
 t_final: 5.e-6
 
@@ -63,8 +64,8 @@ mu: 5.0e-5
 ##############
 # equation of state
 ##############
-eos_type: 1
-nspecies: 7
+eos_type: 0
+nspecies: 0
 pyro_temp_iter: 5
 pyro_temp_tol: 1.e-4
 transport: 0
