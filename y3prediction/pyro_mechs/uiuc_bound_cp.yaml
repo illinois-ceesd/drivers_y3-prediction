@@ -1,0 +1,144 @@
+description: |-
+  Modified version of UIUC mechanism
+
+generator: cti2yaml
+cantera-version: 2.6.0
+date: Wed, 27 Jul 2022 18:13:24 -0500
+input-files: [uiuc_Sharp.cti]
+
+units: {length: cm, quantity: mol, activation-energy: cal/mol}
+
+phases:
+- name: gas
+  thermo: ideal-gas
+  elements: [O, H, C, N]
+  species: [C2H4, O2, CO2, CO, H2O, H2, N2]
+  kinetics: gas
+  reactions: all
+  transport: mixture-averaged
+  state:
+    T: 300.0
+    P: 1.01325e+05
+
+species:
+- name: O2
+  composition: {O: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 1000.0, 6000.0]
+    data:
+    - [3.3625982879046, -2.75301645330651E-06, 2.04226666018565E-06, -1.20665444163695E-09, 0, -1063.94356, 3.65767573]
+    - [3.6441176454853, 0.000646414432661291, -1.00626310785635E-07, 5.5517226390456E-12, 0, -1258.80052621656, 1.73121921648199]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.458
+    well-depth: 107.4
+    polarizability: 1.6
+    rotational-relaxation: 3.8
+  note: TPIS89
+- name: H2O
+  composition: {H: 2, O: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 2000.0, 6000.0]
+    data:
+    - [3.95858864602834, -0.000175726158627177, 1.81002662158116E-06, -7.0786721708685E-10, 6.50011944247605E-14, -30293.7267, -0.849032208]
+    - [4.62591833656212, 0.000946420098943144, -7.26216815885404E-08, -4.93452361781564E-13, 0, -31265.7705356708, -6.02666126447272]
+  transport:
+    model: gas
+    geometry: nonlinear
+    diameter: 2.605
+    well-depth: 572.4
+    dipole: 1.844
+    rotational-relaxation: 4.0
+  note: L8/89
+- name: CO
+  composition: {C: 1, O: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 1000.0, 6000.0]
+    data:
+    - [3.61750268526206, -0.000207109710356553, 1.98078104556147E-05, -1.19009332205202E-08, 0, 5089.77593, 4.09733096]
+    - [6.29879520889301, 0.00649479687716679, -1.64661794766909E-06, 1.77033728953477E-10, -6.73765734420406E-15, 3190.86204113572, -14.4233785793103]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.65
+    well-depth: 98.1
+    polarizability: 1.95
+    rotational-relaxation: 1.8
+  note: TPIS79
+- name: CO2
+  composition: {C: 1, O: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 1500.0, 3500.0]
+    data:
+    - [2.38429599080778, 0.00518822098664269, 1.29694718447492E-06, -3.38385694223856E-09, 1.05861321692637E-12, -48371.9697, 9.90105222]
+    - [5.84211519292204, 0.00107835571675337, -2.15537796575996E-07, 1.44539676204158E-11, 0, -49926.772892947, -10.003690576177]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.763
+    well-depth: 244.0
+    polarizability: 2.65
+    rotational-relaxation: 2.1
+  note: L7/88
+- name: C2H4
+  composition: {H: 4, C: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 1000.0, 6000.0]
+    data:
+    - [3.73312012902641, -0.00225161088114689, 2.35442451235782E-05, -1.37084841614577E-08, 0, 5089.77593, 4.09733096]
+    - [6.21785087461938, 0.0066860330395617, -1.79535702793147E-06, 2.18865397063934E-10, -1.01220733135537E-14, 3102.94429958825, -13.974343144185]
+  transport:
+    model: gas
+    geometry: nonlinear
+    diameter: 3.971
+    well-depth: 280.8
+    rotational-relaxation: 1.5
+  note: L1/91
+- name: N2
+  composition: {N: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 2000.0, 6000.0]
+    data:
+    - [3.43881298555407, -0.000085699234117912, 8.87661153413292E-07, -4.12286806217124E-10, 5.05396464228488E-14, -1020.8999, 3.950372]
+    - [3.97578551859744, 0.000221907249698863, -2.48333158774068E-08, 1.01653368930791E-12, 0, -1606.49897146459, 0.178688469772858]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.621
+    well-depth: 97.53
+    polarizability: 1.76
+    rotational-relaxation: 4.0
+  note: '121286'
+- name: H2
+  composition: {H: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [50.0, 1000.0, 6000.0]
+    data:
+    - [3.49143165605928, 5.36892022839055E-06, -6.71954397620306E-08, 1.78789998010718E-10, 1.93975254636421E-14, -917.935173, 0.683010238]
+    - [3.12772071195504, 0.000511469323457161, -7.68518627733334E-09, -3.687942228041E-12, -2.42469068295526E-17, -777.607342137931, 2.7252623253607]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 2.92
+    well-depth: 38.0
+    polarizability: 0.79
+    rotational-relaxation: 280.0
+  note: '000000'
+
+reactions:
+- equation: C2H4 + O2 => 2 CO + 2 H2  # Reaction 1
+  rate-constant: {A: 1.0e+10, b: 0.0, Ea: 36000}
+  orders: {C2H4: 0.5, O2: 0.65}
+- equation: ' CO + 0.5 O2 <=> CO2'  # Reaction 2
+  rate-constant: {A: 1.1e+07, b: 0.7, Ea: 11000}
+- equation: ' H2 + 0.5 O2 => H2O'  # Reaction 3
+  rate-constant: {A: 7.0e+08, b: 0.0, Ea: 12000.0}
+  orders: {H2: 0.75, O2: 0.5}
