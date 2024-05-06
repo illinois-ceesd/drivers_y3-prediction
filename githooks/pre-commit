@@ -16,7 +16,7 @@ fi
 
 echo "Running pylint..."
 if [[ $(command -v "pylint") ]]; then
-    pylint prediction.py
+    pylint y3prediction/*.py
     res=$?
     if [[ $res -ne 0 ]]; then
         echo "Error: Pylint found errors. Fix them."

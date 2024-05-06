@@ -6,13 +6,22 @@ from matplotlib import pyplot as plt
 def check_mechanism(mech_file):
     """Make plot for material properties for species in a mechanism."""
 
-    gas = ct.Solution(f"{mech_file}", "gas")
-    gas.TP = 300, 101325
+    pyro_mech_name_full = f"y3prediction.pyro_mechs.{mech_file}"
+    import importlib
+    pyromechlib = importlib.import_module(pyro_mech_name_full)
+    pyro_mech = pyromechlib.Thermochemistry()
+    #pyro_mech = importlib.import_module(pyro_mech_name_full)
+    #from mirgecom.thermochemistry import get_pyrometheus_wrapper_class
+    #pyro_mech = get_pyrometheus_wrapper_class(
+    #    pyro_class=pyromechlib.Thermochemistry, temperature_niter=5,
+    #    zero_level=1.e-13)(actx.np)
 
-    species_names = gas.species_names
+    species_names = pyro_mech.species_names
+    nspecies = pyro_mech.num_species
 
-    for species in species_names:
-        gas.X = f"{species}:1"
+    for ispec, species in enumerate(species_names):
+        y = np.zeros(nspecies)
+        y[ispec] = 1
 
         numpts = 101
         lnumpts = 10
@@ -21,32 +30,18 @@ def check_mechanism(mech_file):
         temperature_list = np.insert(temperature_list, 0, low_temp_list)
 
         numpts += lnumpts
-        visc = np.zeros(numpts,)
         enthalpy = np.zeros(numpts,)
         cp = np.zeros(numpts,)
         cv = np.zeros(numpts,)
         ii = 0
         for temp in temperature_list:
-            gas.TP = temp, 101325
-            visc[ii] = gas.viscosity
-            enthalpy[ii] = gas.enthalpy_mass
-            cp[ii] = gas.cp_mass
-            cv[ii] = gas.cv_mass
+
+            enthalpy[ii] = pyro_mech.get_mixture_enthalpy_mass(temp, y)
+            cp[ii] = pyro_mech.get_mixture_specific_heat_cp_mass(temp, y)
+            cv[ii] = pyro_mech.get_mixture_specific_heat_cv_mass(temp, y)
             ii += 1
 
         gamma = cp/cv
-
-        plt.close("all")
-        fig = plt.figure(1, figsize=[6.4, 4.8])
-        ax1 = fig.add_subplot(111)
-        ax1.set_title(f"{species}")
-        ax1.set_position([0.16, 0.12, 0.75, 0.83])
-        ax1.plot(temperature_list, visc, "--", label="Current")
-        ax1.set_ylabel(r"$\mathbf{Viscosity \, (Pa-s)}$")
-        ax1.set_xlabel(r"$\mathbf{Temperature \, (K)}$")
-        plt.savefig(f"viscosity_{species}.png", dpi=200)
-        ax1.legend()
-        plt.show()
 
         plt.close("all")
         fig = plt.figure(1, figsize=[6.4, 4.8])
@@ -72,17 +67,6 @@ def check_mechanism(mech_file):
         ax1.legend()
         plt.show()
 
-        plt.close("all")
-        fig = plt.figure(1, figsize=[6.4, 4.8])
-        ax1 = fig.add_subplot(111)
-        ax1.set_title(f"{species}")
-        ax1.set_position([0.16, 0.12, 0.75, 0.83])
-        ax1.plot(temperature_list, cv, "--", label="Current")
-        ax1.set_ylabel(r"$\mathbf{Heat \; Capacity (Cv)\, (J/kg-K)}$")
-        ax1.set_xlabel(r"$\mathbf{Temperature \, (K)}$")
-        plt.savefig(f"heatCapacityCv_{species}.png", dpi=200)
-        ax1.legend()
-        plt.show()
         plt.close("all")
 
         fig = plt.figure(1, figsize=[6.4, 4.8])
