@@ -7039,6 +7039,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_skappa = stepper_state.av_skappa
         av_sd = stepper_state.av_sd
 
+        # don't really want to do this twice
         if use_drop_order:
             smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
                                               kappa=kappa_sc, s0=s0_sc)
@@ -7103,6 +7104,74 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
                 time=t, quadrature_tag=quadrature_tag)
 
+        if use_wall:
+            return make_obj_array([
+                cv,
+                fluid_operator_states_quad,
+                grad_fluid_cv,
+                grad_fluid_t,
+                grad_wall_t])
+        else:
+            return make_obj_array([
+                cv,
+                fluid_operator_states_quad,
+                grad_fluid_cv,
+                grad_fluid_t])
+
+    #rhs_precompute_compiled = actx.compile(rhs_precompute)
+
+    def rhs_no_grad(t, state, precompute):
+
+        stepper_state = make_stepper_state_obj(state)
+        #cv = stepper_state.cv
+        tseed = stepper_state.tseed
+        av_smu = stepper_state.av_smu
+        av_sbeta = stepper_state.av_sbeta
+        av_skappa = stepper_state.av_skappa
+        av_sd = stepper_state.av_sd
+
+        cv = precompute[0]
+        fluid_operator_states_quad = precompute[1]
+        grad_fluid_cv = precompute[2]
+        grad_fluid_t = precompute[3]
+        if use_wall:
+            grad_wall_t = precompute[4]
+
+        # call this without the limiter, it was already limited in precompute
+        fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
+                                       temperature_seed=tseed,
+                                       smoothness_mu=av_smu,
+                                       smoothness_beta=av_sbeta,
+                                       smoothness_kappa=av_skappa,
+                                       smoothness_d=av_sd,
+                                       limiter_func=None)
+
+        # update wall model
+        if use_wall:
+            wv = stepper_state.wv
+            wdv = wall_model.dependent_vars(wv)
+
+        # Insert boundaries for the fluid-wall interface, now with the temperature
+        # gradient
+        if use_wall:
+            updated_fluid_boundaries, updated_wall_boundaries = \
+                add_interface_boundaries(
+                    dcoll=dcoll,
+                    gas_model=gas_model,
+                    fluid_dd=dd_vol_fluid, wall_dd=dd_vol_wall,
+                    fluid_grad_temperature=grad_fluid_t,
+                    wall_grad_temperature=grad_wall_t,
+                    fluid_boundaries=uncoupled_fluid_boundaries,
+                    wall_boundaries=uncoupled_wall_boundaries,
+                    interface_noslip=noslip,
+                    fluid_state=fluid_state,
+                    wall_kappa=wdv.thermal_conductivity,
+                    wall_temperature=wdv.temperature,
+                    wall_penalty_amount=wall_penalty_amount,
+                    quadrature_tag=quadrature_tag)
+        else:
+            updated_fluid_boundaries = uncoupled_fluid_boundaries
+
         if use_av == 1:
             smoothness_mu = compute_smoothness(
                 cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
@@ -7162,7 +7231,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_injection_source is True:
             fluid_rhs = fluid_rhs + \
                 injection_source(x_vec=fluid_nodes, cv=cv,
-                                 eos=gas_model.eos, time=t)
+                                 eos=gas_model.eos, time=t)/current_dt
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
