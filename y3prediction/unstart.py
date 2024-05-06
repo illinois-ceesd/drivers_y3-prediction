@@ -3,10 +3,6 @@ import numpy as np
 from mirgecom.fluid import make_conserved
 
 from y3prediction.utils import (
-    getIsentropicPressure,
-    getIsentropicTemperature,
-    getMachFromAreaRatio,
-    get_theta_from_data,
     smooth_step
 )
 
@@ -131,8 +127,6 @@ class InitUnstartRamp:
 
     def inlet_smoothing_func(self, x_vec, sigma):
         actx = x_vec[0].array_context
-        zeros = actx.np.zeros_like(x_vec[0])
-        ones = zeros + 1.0
 
         x0 = -0.013
         x1 = 0.013
@@ -142,8 +136,6 @@ class InitUnstartRamp:
 
     def outlet_smoothing_func(self, x_vec, sigma):
         actx = x_vec[0].array_context
-        zeros = actx.np.zeros_like(x_vec[0])
-        ones = zeros + 1.0
 
         x0 = -.2
         x1 = .2
