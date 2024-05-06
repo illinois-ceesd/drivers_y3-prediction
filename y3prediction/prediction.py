@@ -1020,9 +1020,13 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
             cv=cv_lim, temperature_seed=temperature_seed)
         pressure_final = gas_model.eos.pressure(
             cv=cv_lim, temperature=temperature_final)
+
+        temp_resid = get_temperature_updated(
+            cv_lim, temperature_final)/temperature_final
         # initial state
         #print(f"{theta_rho=}")
         #print(f"{theta_pressure=}")
+        print(f"{temp_resid=}")
         print("All done limiting")
         data = actx.to_numpy(theta_rho)
         print(f"theta_rho \n {data[0][index]}")
@@ -1140,7 +1144,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     constant_cfl = configurate("constant_cfl", input_data, False)
 
     # these are modified below for a restart
-    current_t = 0
+    current_t = configurate("current_t", input_data, 0.0)
     t_start = 0.
     t_wall_start = 0.
     current_step = 0
@@ -2451,6 +2455,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         throat_height = 6.3028e-3
         inlet_height = 13.0e-3
         inlet_area_ratio = inlet_height/throat_height
+        if use_axisymmetric:
+            inlet_area_ratio *= inlet_area_ratio
 
         inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
                                           gamma=gamma,
@@ -2463,7 +2469,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # this is better than the way Isentropic Inflow does things,
         # i've removed teh repeated computation of the Isentropic Properties
         # since I know the ramp values at the start, I can just hard code
-        # them into the pressure ramp function
+        # them irto the pressure ramp function
         # go back and update the boundary conditions to do the same thing
         #
         # also extend this to be a class so I can have one for each boundary
@@ -2527,7 +2533,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
-        vel_inflow[0] = inlet_mach*sos
+        vel_inflow[1] = inlet_mach*sos
 
         if rank == 0:
             print("#### Simluation initialization data: ####")
@@ -2538,7 +2544,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tinlet pressure begin {inlet_ramp_beginP}")
             print(f"\tinlet pressure end {inlet_ramp_endP}")
             print(f"\tinlet rho {rho_inflow}")
-            print(f"\tinlet velocity {vel_inflow[0]}")
+            print(f"\tinlet velocity {vel_inflow[1]}")
             #print(f"final inlet pressure {pres_inflow_final}")
 
         from y3prediction.unstart import InitUnstartRamp
@@ -4439,7 +4445,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
             dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
-            time=0)
+            time=current_t)
 
         restart_cv = force_evaluation(actx, restart_cv)
 
@@ -4469,7 +4475,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             restart_cv = bulk_init.add_inlet(
                 cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
                 temperature=restart_fluid_state.temperature,
-                eos=eos_init, x_vec=fluid_nodes)
+                eos=eos_init, x_vec=fluid_nodes, time=current_t)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -4480,7 +4486,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             restart_cv = bulk_init.add_outlet(
                 cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
                 temperature=restart_fluid_state.temperature,
-                eos=eos_init, x_vec=fluid_nodes)
+                eos=eos_init, x_vec=fluid_nodes, time=current_t)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -4493,7 +4499,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             restart_cv = bulk_init.add_injection(
                 cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
                 temperature=restart_fluid_state.temperature,
-                x_vec=fluid_nodes, eos=eos_init)
+                x_vec=fluid_nodes, eos=eos_init, time=current_t)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -4505,7 +4511,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             restart_cv = bulk_init.add_injection_upstream(
                 cv=restart_fluid_state.cv, pressure=restart_fluid_state.pressure,
                 temperature=restart_fluid_state.temperature,
-                x_vec=fluid_nodes, eos=eos_init)
+                x_vec=fluid_nodes, eos=eos_init, time=current_t)
             restart_fluid_state = create_fluid_state(
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
@@ -4822,7 +4828,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     * (ramp_endP - ramp_beginP))),
             ramp_beginP)
 
-    if init_case == "unstart":
+    if init_case == "unstart" or init_case == "unstart_ramp":
         normal_dir = np.zeros(shape=(dim,))
         if use_axisymmetric:
             normal_dir[1] = 1
@@ -6706,7 +6712,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_injection_source is True:
             fluid_rhs = fluid_rhs + \
                 injection_source(x_vec=fluid_nodes, cv=cv,
-                                 eos=gas_model.eos, time=t)/current_dt
+                                 eos=gas_model.eos, time=t)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
