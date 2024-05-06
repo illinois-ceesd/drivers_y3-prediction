@@ -3387,8 +3387,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             def get_mesh_data():
                 from meshmode.mesh.io import read_gmsh
+                mesh_construction_kwargs = {
+                    "force_positive_orientation":  False,
+                    "skip_element_orientation_test":  True}
                 mesh, tag_to_elements = read_gmsh(
                     mesh_filename, force_ambient_dim=dim,
+                    mesh_construction_kwargs=mesh_construction_kwargs,
                     return_tag_to_elements_map=True)
                 volume_to_tags = {
                     "fluid": ["fluid"]}
