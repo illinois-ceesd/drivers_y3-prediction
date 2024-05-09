@@ -2238,15 +2238,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
         y_mix_air = np.zeros(nspecies, dtype=object)
         y_mix_fuel = np.zeros(nspecies, dtype=object)
 
-        y_mix_fuel[0] = 1
-        y_mix_air[2] = 0.232
-        y_mix_air[8] = 1 - 0.232
+        # fuel is H2:0.5 N2:0.5 mole fraction
+        y_mix_fuel[0] = 0.5*mw_h2/(0.5*mw_h2 + 0.5*mw_n2)
+        y_mix_fuel[8] = 0.5*mw_n2/(0.5*mw_h2 + 0.5*mw_n2)
+        # air is O2:0.21 N2:0.79 mole fraction
+        y_mix_air[2] = 0.21*mw_o2/(0.21*mw_o2 + 0.79*mw_n2)
+        y_mix_air[8] = 1 - y_mix_air[2]
 
         from y3prediction.mixing_layer import MixingLayerCold
         bulk_init = MixingLayerCold(
             dim=dim, nspecies=nspecies,
-            mach_fuel=0.3, mach_air=0.1,
-            temp_fuel=500, temp_air=300,
+            mach_fuel=0.2, mach_air=0.3,
+            temp_fuel=300, temp_air=500,
             y_fuel=y_mix_fuel, y_air=y_mix_air,
             vorticity_thickness=vorticity_thickness,
             pressure=pres_bkrnd
@@ -3438,12 +3441,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             def get_mesh_data():
                 from meshmode.mesh.io import read_gmsh
-                mesh_construction_kwargs = {
-                    "force_positive_orientation":  False,
-                    "skip_element_orientation_test":  True}
+                #mesh_construction_kwargs = {
+                    #"force_positive_orientation":  False,
+                    #"skip_element_orientation_test":  True}
                 mesh, tag_to_elements = read_gmsh(
                     mesh_filename, force_ambient_dim=dim,
-                    mesh_construction_kwargs=mesh_construction_kwargs,
+                    #mesh_construction_kwargs=mesh_construction_kwargs,
                     return_tag_to_elements_map=True)
                 volume_to_tags = {
                     "fluid": ["fluid"]}
@@ -5298,6 +5301,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
+    elif init_case == "mixing_layer":
+
+        top_sponge_y0 = 0.006
+        top_sponge_thickness = 0.002
+        bottom_sponge_y0 = -0.006
+        bottom_sponge_thickness = 0.002
+        sponge_init_bottom = InitSponge(x0=bottom_sponge_y0,
+                                        thickness=bottom_sponge_thickness,
+                                        amplitude=sponge_amp,
+                                        direction=-2.0)
+        sponge_init_top = InitSponge(x0=top_sponge_y0,
+                                     thickness=top_sponge_thickness,
+                                     amplitude=sponge_amp,
+                                     direction=2.0)
+
+        def _sponge_sigma(sponge_field, x_vec):
+            sponge_field = sponge_init_bottom(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
+            return sponge_field
+
     elif init_case == "unstart" or init_case == "unstart_ramp":
 
         inlet_sponge_x0 = -0.315
@@ -6824,7 +6847,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_injection_source is True:
             fluid_rhs = fluid_rhs + \
                 injection_source(x_vec=fluid_nodes, cv=cv,
-                                 eos=gas_model.eos, time=t)/current_dt
+                                 eos=gas_model.eos, time=t)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \

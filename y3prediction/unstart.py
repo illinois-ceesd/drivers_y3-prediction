@@ -204,12 +204,9 @@ class InitUnstartRamp:
         mom = mass*velocity
         internal_energy = eos.get_internal_energy(temperature,
                                                   species_mass_fractions=y)
-
         kinetic_energy = 0.5*np.dot(velocity, velocity)
         energy = mass * (internal_energy + kinetic_energy)
 
-        mom = mass*velocity
-        energy = (energy + np.dot(mom, mom)/(2.0*mass))
         return make_conserved(
             dim=self._dim,
             mass=mass,
@@ -282,9 +279,7 @@ class InitUnstartRamp:
 
         kinetic_energy = 0.5*np.dot(velocity, velocity)
         energy = mass * (internal_energy + kinetic_energy)
-
         mom = mass*velocity
-        energy = (energy + np.dot(mom, mom)/(2.0*mass))
         return make_conserved(
             dim=self._dim,
             mass=mass,
