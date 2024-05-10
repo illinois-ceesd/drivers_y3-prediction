@@ -490,58 +490,33 @@ def limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd):
     return make_obj_array([cv_lim, pressure, temperature])
 
 
-def element_average(dcoll, field, dd,
-                    positivity_preserving=False):
+def element_average(dcoll, dd, field, volumes=None):
     # Compute cell averages of the state
 
     actx = field.array_context
+    cell_avgs = op.elementwise_integral(dcoll, dd, field)
+    if volumes is None:
+        volumes = abs(op.elementwise_integral(
+            dcoll, dd, actx.zeros_like(field) + 1.0))
 
-    def cancel_polynomials(grp):
-        return actx.from_numpy(
-            np.asarray([1 if sum(mode_id) == 0
-                        else 0 for mode_id in grp.mode_ids()]))
-
-    dd_nodal = dd
-    dd_modal = dd_nodal.with_discr_tag(DISCR_TAG_MODAL)
-
-    modal_map = dcoll.connection_from_dds(dd_nodal, dd_modal)
-    nodal_map = dcoll.connection_from_dds(dd_modal, dd_nodal)
-
-    modal_discr = dcoll.discr_from_dd(dd_modal)
-    modal_field = modal_map(field)
-
-    # cancel the ``high-order"" polynomials p > 0 and keep the average
-    filtered_modal_field = DOFArray(
-        actx,
-        tuple(actx.einsum("ej,j->ej",
-                          vec_i,
-                          cancel_polynomials(grp),
-                          arg_names=("vec", "filter"),
-                          tagged=(FirstAxisIsElementsTag(),))
-              for grp, vec_i in zip(modal_discr.groups, modal_field))
-    )
-
-    # convert back to nodal to have the average at all points
-    cell_avgs = nodal_map(filtered_modal_field)
-
-    return cell_avgs
+    return cell_avgs/volumes
 
 
-def _element_average_cv(dcoll, cv, dd):
+def _element_average_cv(dcoll, dd, cv, volumes=None):
 
     nspecies = cv.nspecies
     dim = cv.dim
 
-    density = element_average(dcoll, cv.mass, dd)
+    density = element_average(dcoll, dd, cv.mass, volumes)
     momentum = make_obj_array([
-        element_average(dcoll, cv.momentum[i], dd)
+        element_average(dcoll, dd, cv.momentum[i], volumes)
         for i in range(dim)])
-    energy = element_average(dcoll, cv.energy, dd)
+    energy = element_average(dcoll, dd, cv.energy, volumes)
 
     species_mass = None
     if nspecies > 0:
         species_mass = make_obj_array([
-            element_average(dcoll, cv.species_mass[i], dd)
+            element_average(dcoll, dd, cv.species_mass[i], volumes)
             for i in range(0, nspecies)])
 
     # make a new CV with the limited variables
@@ -654,6 +629,8 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     nspecies = cv.nspecies
     dim = cv.dim
     toler = 1.e-13
+    element_vols = abs(op.elementwise_integral(dcoll, dd,
+                                               actx.zeros_like(cv.mass) + 1.0))
 
     print_stuff = False
     index = 118
@@ -686,7 +663,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     #rho_lim = elem_avg_cv.mass*0.1
     rho_lim = 1.e-6
 
-    cell_avgs = element_average(dcoll, cv.mass, dd)
+    cell_avgs = element_average(dcoll, dd, cv.mass, volumes=element_vols)
     #cell_avgs = elem_avg_cv.mass
     #print(f"rho_avg {cell_avgs}")
 
@@ -777,8 +754,9 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
             mmin = 0.
 
             #cell_avgs = elem_avg_cv.species_mass_fractions[i]
-            cell_avgs = element_average(dcoll,
-                                        cv_update_rho.species_mass_fractions[i], dd)
+            cell_avgs = element_average(
+                dcoll, dd, cv_update_rho.species_mass_fractions[i],
+                volumes=element_vols)
             cell_avgs = actx.np.where(actx.np.greater(cell_avgs, mmin), cell_avgs,
                                       mmin)
 
@@ -934,7 +912,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     #entropy = actx.np.log(pressure_updated/cv_updated.mass**1.4)
     #print(f"{entropy=}")
 
-    elem_avg_cv = _element_average_cv(dcoll, cv_updated, dd)
+    elem_avg_cv = _element_average_cv(dcoll, dd, cv_updated, volumes=element_vols)
     elem_avg_temp = gas_model.eos.temperature(
         cv=elem_avg_cv, temperature_seed=temperature_seed)
     elem_avg_pres = gas_model.eos.pressure(
@@ -6770,7 +6748,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_injection_source is True:
             fluid_rhs = fluid_rhs + \
                 injection_source(x_vec=fluid_nodes, cv=cv,
-                                 eos=gas_model.eos, time=t)/current_dt
+                                 eos=gas_model.eos, time=t)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
@@ -6970,6 +6948,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
         rhs_state = unfiltered_rhs_compiled(t, state)
+        #rhs_data_precompute = precompute_rhs_compiled(t, state)
+        #rhs_state = compute_rhs_compiled(t, rhs_data_precompute)
 
         # Use a spectral filter on the RHS
         if use_rhs_filter:
