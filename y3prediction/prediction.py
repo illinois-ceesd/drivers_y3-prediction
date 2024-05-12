@@ -3419,12 +3419,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             def get_mesh_data():
                 from meshmode.mesh.io import read_gmsh
-                #mesh_construction_kwargs = {
-                    #"force_positive_orientation":  False,
-                    #"skip_element_orientation_test":  True}
+                mesh_construction_kwargs = {
+                    "force_positive_orientation":  True,
+                    "skip_element_orientation_test":  True}
                 mesh, tag_to_elements = read_gmsh(
                     mesh_filename, force_ambient_dim=dim,
-                    #mesh_construction_kwargs=mesh_construction_kwargs,
+                    mesh_construction_kwargs=mesh_construction_kwargs,
                     return_tag_to_elements_map=True)
                 volume_to_tags = {
                     "fluid": ["fluid"]}
@@ -5090,17 +5090,17 @@ def main(actx_class, restart_filename=None, target_filename=None,
         uncoupled_fluid_boundaries, bndry_mapping)
 
     # check the boundary condition coverage
-    #from meshmode.mesh import check_bc_coverage
+    from meshmode.mesh import check_bc_coverage
     #print(f"{uncoupled_fluid_boundaries=}")
     try:
         bound_list = []
         for bound in list(uncoupled_fluid_boundaries.keys()):
             bound_list.append(bound.tag)
         #print(f"{uncoupled_fluid_boundaries=}")
-        print(f"{bound_list=}")
-        #check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
-                          #boundary_tags=bound_list,
-                          #incomplete_ok=False)
+        #print(f"{bound_list=}")
+        check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
+                          boundary_tags=bound_list,
+                          incomplete_ok=False)
     except (ValueError, RuntimeError):
         print(f"{uncoupled_fluid_boundaries=}")
         raise SimulationConfigurationError(

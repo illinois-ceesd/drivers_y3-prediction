@@ -105,7 +105,6 @@ class MixingLayerCold:
             self._pressure, self._temp_fuel,
             species_mass_fractions=self._y_fuel)
 
-
         vel_air = np.zeros(self._dim, dtype=object)
         vel_fuel = np.zeros(self._dim, dtype=object)
 
@@ -138,7 +137,8 @@ class MixingLayerCold:
         enthalpy_fuel = eos.get_enthalpy(self._temp_fuel, self._y_fuel)
         enthalpy = enthalpy_air + (enthalpy_fuel - enthalpy_air)*weight
 
-        temperature = eos.temperature_from_enthalpy(enthalpy=enthalpy, temperature_seed=400.)
+        temperature = eos.temperature_from_enthalpy(
+            enthalpy=enthalpy, temperature_seed=400., species_mass_fractions=y)
 
         # compute the density from the temperature and pressure
         mass = self._pressure/r/temperature
