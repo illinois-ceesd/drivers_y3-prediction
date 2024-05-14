@@ -137,6 +137,12 @@ class MixingLayerCold:
         enthalpy_fuel = eos.get_enthalpy(self._temp_fuel, self._y_fuel)
         enthalpy = enthalpy_air + (enthalpy_fuel - enthalpy_air)*weight
 
+        tseed = actx.np.zeros_like(enthalpy) + 400.
+
+        # need this for lazy for some reason
+        from mirgecom.utils import force_evaluation
+        enthalpy = force_evaluation(actx, enthalpy)
+
         temperature = eos.temperature_from_enthalpy(
             enthalpy=enthalpy, temperature_seed=400., species_mass_fractions=y)
 
@@ -146,8 +152,6 @@ class MixingLayerCold:
 
         kinetic_energy = 0.5 * np.dot(velocity, velocity)
         total_energy = mass*(internal_energy + kinetic_energy)
-
-        #print(f"{y=}")
 
         return make_conserved(dim=self._dim,
                               mass=mass,

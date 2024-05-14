@@ -4632,6 +4632,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # Set up flow target state       #
     ##################################
 
+    if rank == 0:
+        logger.info("Initializing target state.")
+
     if target_filename:
         if rank == 0:
             logger.info("Reading target soln.")
