@@ -1778,6 +1778,7 @@ def main(actx_class,
             
             dim = 2
             velocity = np.zeros(shape=(dim,))
+            vel_cross = np.zeros(shape=(dim,))
             mach = 2.9
             temperature = 107.1 #paper
             rho = .077 #paper
@@ -1785,6 +1786,24 @@ def main(actx_class,
             # rho = pressure/r/temperature
             c = np.sqrt(gamma*pressure/rho)
             velocity[0] = c*mach
+            
+            plane_normal = np.zeros(shape=(dim,))
+            mesh_angle = 24 - 90
+            
+            # init params
+            disc_location = np.zeros(shape=(dim,))
+            shock_loc_x = -0.0
+
+            fuel_location = np.zeros(shape=(dim,))
+            fuel_loc_x = 0.07
+
+            disc_location[0] = shock_loc_x
+            fuel_location[0] = fuel_loc_x
+            theta = mesh_angle/180.*np.pi/2.
+            plane_normal[0] = np.cos(theta)
+            plane_normal[1] = np.sin(theta)
+            plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
 
             if rank == 0:
                 print("#### Simluation initialization data: ####")
@@ -1794,13 +1813,32 @@ def main(actx_class,
                 print(f"\trho {rho}")
                 print(f"\tvelocity {velocity}")
                 
-            from mirgecom.initializers import Uniform
-            bulk_init = Uniform(
-                dim=dim,
-                velocity=velocity,
-                rho=rho,
-                pressure=pressure,
-            )
+            # from mirgecom.initializers import Uniform
+            # bulk_init = Uniform(
+            #     dim=dim,
+            #     velocity=velocity,
+            #     rho=rho,
+            #     pressure=pressure,
+            # )
+            from y3prediction.compressionRamp import InitCompressionRamp
+            bulk_init = InitCompressionRamp(dim=dim,
+                                normal_dir=plane_normal,
+                                disc_location=disc_location,
+                                disc_location_species=fuel_location,
+                                nspecies=nspecies,
+                                sigma=0.01,
+                                pressure_left=pressure,
+                                pressure_right=pressure,
+                                temperature_left=temperature,
+                                temperature_right=temperature,
+                                velocity_left=velocity,
+                                velocity_right=velocity,
+                                velocity_cross=vel_cross,
+                                #species_mass_left=y,
+                                #species_mass_right= y_fuel,
+                                temp_wall=temp_bkrnd,
+                                vel_sigma=vel_sigma,
+                                temp_sigma=temp_sigma)
 
     
     viz_path = "viz_data/"
@@ -3259,14 +3297,13 @@ def main(actx_class,
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
         
-    elif do_compression_ramp or do_compression_ramp_os or do_compression_ramp_uniform:
+    elif init_case == "CompressionRamp":
         inlet_sponge_thickness = 0.05
         inlet_sponge_x0 = -1.28 + inlet_sponge_thickness
         outlet_sponge_thickness = 0.05
-        outlet_sponge_x0 = 0.64 - outlet_sponge_thickness
+        outlet_sponge_x0 = 100 - outlet_sponge_thickness
         top_sponge_thickness = 0.1
         top_sponge_y0 = 1.0 - top_sponge_thickness
-        
 
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,

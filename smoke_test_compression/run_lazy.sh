@@ -1,3 +1,3 @@
 #!/bin/bash
 # mpirun -n 2 python -u -O -m mpi4py driver.py -i run_params.yaml --log --lazy
-mpirun -n 1 python -u -O -m mpi4py driver.py -i run_params.yaml --log --lazy > mirge-0.out &
+mpirun -n 1 python -u -O -m mpi4py driver.py -i run_params.yaml --log --lazy > mirge-0.out 

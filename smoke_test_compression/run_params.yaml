@@ -1,7 +1,7 @@
 init_case: CompressionRamp
 do_compression_ramp_uniform: True
 mesh_filename: ./em18data/compressionRamp.msh
-nviz: 10
+nviz: 200
 viz_level: 2
 wall_time_scale: 1
 wall_penalty_amount: 0
@@ -14,19 +14,21 @@ nstatus: 1
 use_av: 2
 constant_cfl: 0
 current_cfl: 0.05
-current_dt: 2e-8
-t_final: 1
-vel_sigma: -1
-temp_sigma: -1
-sponge_sigma: 10
+current_dt: 8e-8
+t_final: 50
+vel_sigma: 50
+temp_sigma: 50
+sponge_sigma: 4
 nspecies:  0
 order:  4
 integrator: compiled_lsrk54
 use_wall: False
 mu: 9e-5
-use_flow_boundary: "prescribed"
-use_wall_boundary: "adiabatic_slip"
-av2_beta0: 10.0
+outflow_pressure: 2400.0
+use_inflow_boundary: "prescribed"
+use_outflow_boundary: "pressure_outflow"
+use_wall_boundary: "isothermal_noslip"
+av2_beta0: 3.0
 
 # use_inflow_boundary: False
 # use_outflow_boundary: False

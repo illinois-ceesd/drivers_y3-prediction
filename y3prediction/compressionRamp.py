@@ -119,14 +119,28 @@ class InitCompressionRamp:
             raise ValueError(f"Position vector has unexpected dimensionality,"
                              f" expected {self._dim}.")
         
+        # y_bottom array as a function of x to make BL @ ramp
+        def y_bot_func(x_act):
+            m = 0.2895 / 0.640
+            y_bot = x_act.np.where(actx.np.greater(xpos, 0),
+                                    xpos * m, 
+                                    0.0)
+            return y_bot
+        
         #initialize each position coordinate.
         xpos = x_vec[0]
         ypos = x_vec[1]
+        
         if self._dim == 3:
             pass
             # zpos = x_vec[2]
 
         actx = xpos.array_context
+        
+        #get top and bottom y coordinates as a function of x
+        y_top = 100
+        y_bottom = y_bot_func(actx)
+        
         #if isinstance(self._disc_location, Number):
         if callable(self._disc_location):
             x0 = self._disc_location(time)
@@ -161,8 +175,6 @@ class InitCompressionRamp:
         
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
-        y_top = .512
-        y_bottom = 0.
         if self._temp_sigma > 0:
             sigma = self._temp_sigma
             wall_temperature = self._temp_wall
