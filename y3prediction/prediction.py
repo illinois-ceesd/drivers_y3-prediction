@@ -4632,6 +4632,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # Set up flow target state       #
     ##################################
 
+    if rank == 0:
+        logger.info("Initializing target state.")
+
     if target_filename:
         if rank == 0:
             logger.info("Reading target soln.")
@@ -5091,13 +5094,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # check the boundary condition coverage
     from meshmode.mesh import check_bc_coverage
-    #print(f"{uncoupled_fluid_boundaries=}")
     try:
         bound_list = []
         for bound in list(uncoupled_fluid_boundaries.keys()):
             bound_list.append(bound.tag)
-        #print(f"{uncoupled_fluid_boundaries=}")
-        #print(f"{bound_list=}")
+        print(f"{bound_list=}")
+
         check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
                           boundary_tags=bound_list,
                           incomplete_ok=False)
