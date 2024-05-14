@@ -5299,10 +5299,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     elif init_case == "unstart" or init_case == "unstart_ramp":
 
-        inlet_sponge_x0 = -0.315
-        inlet_sponge_thickness = 0.010
-        outlet_sponge_x0 = 0.666
-        outlet_sponge_thickness = 0.100
+        #inlet_sponge_x0 = -0.315
+        #inlet_sponge_thickness = 0.010
+        #outlet_sponge_x0 = 0.666
+        #outlet_sponge_thickness = 0.100
         top_sponge_x0 = 0.1
         top_sponge_thickness = 0.100
 
