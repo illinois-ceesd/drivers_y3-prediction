@@ -1,0 +1,80 @@
+init_case: flame1d
+#
+# parameters to control the mesh
+#
+#mesh_size: 0.0001
+#mesh_size: 0.0005
+mesh_size: 0.0020
+bl_ratio: 1
+interface_ratio: 1
+transfinite: True
+mesh_angle: 0.
+#
+# parameters to control the initialization
+#
+pres_bkrnd: 10000.
+temp_bkrnd: 300.
+shock_loc_x: 0.05
+#
+# boundary condition setup
+#
+#use_outflow_boundary: "none"
+#use_outflow_boundary: "prescribed"
+#outflow_pressure: 400
+#use_inflow_boundary: "prescribed"
+use_flow_boundary: "prescribed"
+#use_wall_boundary: "isothermal_noslip"
+use_wall_boundary: "adiabatic_slip"
+use_interface_boundary: "prescribed"
+#use_interface_boundary: "pressure_outflow"
+#use_interface_boundary: "isothermal_noslip"
+use_injection_boundary: "none"
+#
+#nviz: 100
+nviz: 1000
+#nviz: 10000
+#nviz: 500 
+viz_level: 3
+#viz_order: 16
+use_wall: False
+use_sponge: True
+sponge_sigma: 100.0
+use_injection: False
+nrestart: 1000
+nhealth: 1
+nstatus: 1
+#constant_cfl: 1
+nlimit: 1
+use_species_limiter: 1
+smooth_char_length: 5
+use_av: 3
+av_mu0: 0.1
+av_beta0: 6.0
+av_kappa0: 1.0
+av_d0: 2.5
+
+#physical transport properties
+use_lewis_transport: True
+constant_cfl: 0
+current_dt: 5.e-8
+#current_dt: 5.e-9
+#t_final: 1.e-2
+t_final: 1.e-3
+#t_final: 1.e-7
+vel_sigma: -1
+temp_sigma: -1
+pyro_mech: uiuc_updated
+#eos: 0
+eos: 1
+use_combustion: True
+#use_combustion: False
+#nspecies:  0
+#nspecies:  2
+nspecies:  7
+#transport: 0
+transport: 1
+order:  1
+#integrator: euler
+integrator: compiled_lsrk54
+#health_pres_min: 2828
+#health_pres_max: 274259
