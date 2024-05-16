@@ -131,11 +131,12 @@ class InitACTII:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        ytop = 0*x_vec[0]
-        actx = xpos.array_context
-        zeros = 0*xpos
+        ytop = actx.zeros_like(xpos)
+        zeros = actx.zeros_like(xpos)
         ones = zeros + 1.0
 
         mach = zeros
@@ -670,9 +671,10 @@ class InitACTII:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        actx = xpos.array_context
 
         zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
@@ -862,9 +864,10 @@ class InitACTII:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        actx = xpos.array_context
 
         zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
@@ -1395,9 +1398,10 @@ class InitACTIIRamp:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        actx = xpos.array_context
 
         zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
@@ -1550,9 +1554,10 @@ class InitACTIIRamp:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        actx = xpos.array_context
 
         zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
