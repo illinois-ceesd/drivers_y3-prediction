@@ -128,7 +128,8 @@ Physical Volume('wall_surround') = {2};
 
 Physical Surface("inflow") = {36}; // inlet
 Physical Surface("outflow") = {29}; // outlet
-Physical Surface("injection") = {38, 19}; // injection
+Physical Surface("injection") = {38}; // injection
+Physical Surface("upstream_injection") = {19}; // injection
 Physical Surface("flow") = {36, 29, 38, 19}; // injection
 Physical Surface('isothermal_wall') = {
     22, // fore wall
@@ -293,6 +294,35 @@ Field[14].DistMin = 0.001;
 Field[14].DistMax = 1.0;
 Field[14].StopAtDistMax = 1;
 
+// Create distance field from corners for wall meshing, excludes cavity, injector
+Field[4001] = Distance;
+Field[4001].CurvesList = {
+    37, 86 // injector/isolator edge
+};
+Field[4001].Sampling = 1000;
+////
+//Create threshold field that varrries element size near boundaries
+blratiocorner = boundratioinjector;
+//blratiocorner = boundratioinjector;
+Field[4002] = Threshold;
+Field[4002].InField = 4001;
+Field[4002].SizeMin = injectorsize/blratiocorner;
+Field[4002].SizeMax = injectorsize/blratiocorner*(2.-1./blratiocorner);
+Field[4002].DistMin = 0.02;
+Field[4002].DistMax = 2.0;
+Field[4002].StopAtDistMax = 1;
+
+// a smaller region right at the corner
+blratiocorner = boundratioinjector;
+//blratiocorner = boundratioinjector;
+Field[4003] = Threshold;
+Field[4003].InField = 4001;
+Field[4003].SizeMin = injectorsize/blratiocorner;
+Field[4003].SizeMax = injectorsize/blratiocorner*(2.-1./blratiocorner);
+Field[4003].DistMin = 0.02;
+Field[4003].DistMax = 1.0;
+Field[4003].StopAtDistMax = 1;
+
 // Create distance field from curves, inside wall only
 Field[15] = Distance;
 Field[15].SurfacesList = {
@@ -397,14 +427,6 @@ injector_start_y = -10;
 injector_end_y = -13;
 injector_start_z = -3;
 injector_end_z = 3;
-//Field[7] = Box;
-//Field[7].XMin = injector_start_x;
-//Field[7].XMax = injector_end_x;
-//Field[7].YMin = injector_start_y;
-//Field[7].YMax = injector_end_y;
-//Field[7].ZMin = injector_start_z;
-//Field[7].ZMax = injector_end_z;
-//Field[7].Thickness = 100;    // interpolate from VIn to Vout over a distance around the cylinder
 Field[7] = Cylinder;
 Field[7].XAxis = injector_end_x - injector_start_x;
 Field[7].XCenter = injector_start_x;
@@ -415,13 +437,6 @@ Field[7].VIn = injectorsize;
 Field[7].VOut = bigsize;
 
 // background mesh size in the upstream injection region
-//injector_start_x = 530;
-//injector_end_x = 610;
-//injector_start_y = -0.0225*1000;
-//injector_start_y = -5;
-//injector_end_y = -8;
-//injector_start_z = -3;
-//injector_end_z = 3;
 Field[217] = Cylinder;
 Field[217].YAxis = 17.5;
 Field[217].XCenter =  533.2;
@@ -430,33 +445,37 @@ Field[217].ZCenter = 0.;
 Field[217].Radius = 3;
 Field[217].VIn = injectorsize;
 Field[217].VOut = bigsize;
-//Field[117] = Box;
-//Field[117].XMin = injector_start_x;
-//Field[117].XMax = injector_end_x;
-//Field[117].YMin = injector_start_y;
-//Field[117].YMax = injector_end_y;
-//Field[117].ZMin = injector_start_z;
-//Field[117].ZMax = injector_end_z;
-//Field[117].Thickness = 100;    // interpolate from VIn to Vout over a distance around the cylinder
-//Field[117].VIn = injectorsize;
-//Field[117].VOut = bigsize;
 //
 // background mesh size between upstream injection and cavity
-//injector_start_x = 530;
-//injector_end_x = 610;
-//injector_start_y = -0.0225*1000;
-//injector_start_y = -5;
-//injector_end_y = -8;
-//injector_start_z = -3;
-//injector_end_z = 3;
 Field[218] = Cylinder;
 Field[218].XAxis = 65;
-Field[218].XCenter =  580;
+Field[218].XCenter =  590;
 Field[218].YCenter = -9;
 Field[218].ZCenter = 0.;
-Field[218].Radius = 6;
-Field[218].VIn = injectorsize;
+Field[218].Radius = 5;
+Field[218].VIn = isosize/boundratio/1.5;
 Field[218].VOut = bigsize;
+
+// background mesh size between upstream injection and cavity
+Field[219] = Cylinder;
+Field[219].XAxis = 85;
+Field[219].XCenter =  590;
+Field[219].YCenter = -9;
+Field[219].ZCenter = 0.;
+Field[219].Radius = 9;
+Field[219].VIn = isosize/boundratio;
+Field[219].VOut = bigsize;
+
+// background mesh size between upstream injection and cavity
+Field[220] = Cylinder;
+Field[220].XAxis = 5;
+Field[220].XCenter =  535;
+Field[220].YCenter = -9;
+Field[220].ZCenter = 0.;
+Field[220].Radius = 5;
+Field[220].VIn = isosize/boundratio/2.;
+//Field[218].VIn = injectorsize + 0.5*(isosize/boundratio - injectorsize);
+Field[220].VOut = bigsize;
 
 // background mesh size in the sample region
 //Field[8] = Constant;
@@ -537,7 +556,7 @@ Field[23].InField = 8;
 // take the minimum of all defined meshing fields
 Field[100] = Min;
 Field[100].FieldsList = {
-    3002, 
+    3002, 4002, 4003,
     2010, 
     2011, 
     3, 
@@ -554,7 +573,8 @@ Field[100].FieldsList = {
     23, 
     102, 
     105, 
-    221 
+    221 ,
+    217, 218, 219, 220
     };
 //Field[100].FieldsList = {3002, 2010, 2011, 3, 4, 5, 9, 12, 16, 18, 20, 21, 22, 23, 102, 105, 118, 221, 218};
 Background Field = 100;
