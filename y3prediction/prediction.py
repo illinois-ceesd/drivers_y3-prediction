@@ -97,7 +97,8 @@ from mirgecom.diffusion import (
 from mirgecom.initializers import Uniform, MulticomponentLump
 from mirgecom.eos import (
     IdealSingleGas, PyrometheusMixture,
-    MixtureDependentVars, GasDependentVars
+    MixtureDependentVars, GasDependentVars,
+    FlameletMixture
 )
 from mirgecom.transport import (SimpleTransport,
                                 PowerLawTransport,
@@ -1296,6 +1297,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     spec_diff = configurate("spec_diff", input_data, 1.e-4)
     eos_type = configurate("eos", input_data, 0)
+    flamelet_eos_type = 2
     transport_type = configurate("transport", input_data, 0)
     use_lewis_transport = configurate("use_lewis_transport", input_data, False)
     # for pyrometheus, number of newton iterations
@@ -1844,8 +1846,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if nspecies < 3:
         use_combustion = False
 
+    # Flamelet: hrm, maybe just check extra param
     if nspecies > 3:
         eos_type = 1
+        # if flamelet: eos_type = flamelet_eos_type
 
     pyro_mech_name = configurate("pyro_mech", input_data, "uiuc_sharp")
     pyro_mech_name_full = f"y3prediction.pyro_mechs.{pyro_mech_name}"
@@ -1877,9 +1881,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if eos_type == 0:
             print("\tIdeal Gas EOS")
-        elif eos_type == 1:
+        else:
             print("\tPyrometheus EOS")
-            print(f"\tPyro mechanism {pyro_mech_name}")
+            print(f"\tPyro mechanism: {pyro_mech_name}")
+            if eos_type == 1:
+                print("\tMixture species EOS")
+            elif eos_type == flamelet_eos_type:
+                print("\tFlamelet mixture EOS")
 
         if use_species_limiter == 1:
             print("\nSpecies mass fractions limited to [0:1]")
@@ -1932,14 +1940,22 @@ def main(actx_class, restart_filename=None, target_filename=None,
         pyro_mech = get_pyrometheus_wrapper_class(
             pyro_class=pyromechlib.Thermochemistry, temperature_niter=pyro_temp_iter,
             zero_level=chem_source_tol)(actx.np)
-        eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
-        # seperate gas model for initialization,
-        # just to make sure we get converged temperature
         pyro_mech_init = get_pyrometheus_wrapper_class(
             pyro_class=pyromechlib.Thermochemistry, temperature_niter=5,
             zero_level=chem_source_tol)(actx.np)
-        eos_init = PyrometheusMixture(pyro_mech_init,
-                                      temperature_guess=init_temperature)
+        # Should just make an EOS class chooser, set params with *set* func later
+        if eos_type == flamelet_eos_type:
+            eos = FlameletMixture(pyro_mech, temperature_guess=init_temperature)
+            # seperate gas model for initialization,
+            # just to make sure we get converged temperature
+            eos_init = FlameletMixture(pyro_mech_init,
+                                       temperature_guess=init_temperature)
+        else:
+            eos = PyrometheusMixture(pyro_mech, temperature_guess=init_temperature)
+            # seperate gas model for initialization,
+            # just to make sure we get converged temperature
+            eos_init = PyrometheusMixture(pyro_mech_init,
+                                          temperature_guess=init_temperature)
 
     # set the species names
     if eos_type == 0:
@@ -2216,6 +2232,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
+
     if init_case == "mixing_layer":
         temperature = 300.
         pressure = 101325.
@@ -2230,15 +2247,24 @@ def main(actx_class, restart_filename=None, target_filename=None,
         y_mix_air[2] = 0.21*mw_o2/(0.21*mw_o2 + 0.79*mw_n2)
         y_mix_air[8] = 1 - y_mix_air[2]
 
+        # Need h_mix_fuel, h_mix_air for Flamelet EOS
+        h_mix_fuel = np.zeros(nspecies, dtype=object)
+        h_mix_air = np.zeros(nspecies, dtype=object)
+        if eos_type == flamelet_eos_type:
+            eos.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air,
+                                    h_fu=h_mix_fuel, h_ox=h_mix_air)
+
         from y3prediction.mixing_layer import MixingLayerCold
         bulk_init = MixingLayerCold(
             dim=dim, nspecies=nspecies,
             mach_fuel=0.2, mach_air=0.3,
             temp_fuel=300, temp_air=500,
             y_fuel=y_mix_fuel, y_air=y_mix_air,
+            h_fuel=h_mix_fuel, h_air=h_mix_air,
             vorticity_thickness=vorticity_thickness,
             pressure=pres_bkrnd
         )
+
     if init_case == "flame1d":
 
         # init params

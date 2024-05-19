@@ -18,11 +18,12 @@ class MixingLayerCold:
     """
 
     def __init__(
-            self, *, dim=2, nspecies=0,
-            mach_fuel, mach_air,
-            temp_fuel, temp_air,
-            y_fuel, y_air,
-            vorticity_thickness, pressure
+            self, *, dim=2, nspecies=0, nmix=1, flamelet=False,
+            mach_fuel=None, mach_air=None,
+            temp_fuel=None, temp_air=None,
+            y_fuel=None, y_air=None,
+            h_fuel=None, h_air=None,
+            vorticity_thickness=None, pressure=None
     ):
         r"""Initialize mixture parameters.
 
@@ -32,6 +33,12 @@ class MixingLayerCold:
             specifies the number of dimensions for the solution
         nspecies: int
             specifies the number of mixture species
+        nmix: int
+            number of fuel sources for flamelet mixture
+        flamelet: bool
+            indicates whether this is a flamelet model
+        h_fuel: numpy.ndarray
+            fuel stream species enthalpies
         y_fuel: numpy.ndarray
             fuel stream species mass fractions
         mach_fuel: float
@@ -40,6 +47,8 @@ class MixingLayerCold:
             fuel stream temperature
         y_air: numpy.ndarray
             air stream species mass fractions
+        h_air: numpy.ndarray
+            air stream species enthalpies
         mach_air: float
             air stream mach number
         temp_air: float
@@ -54,11 +63,13 @@ class MixingLayerCold:
             y_fuel = np.zeros(nspecies, dtype=object)
         if y_air is None:
             y_air = np.zeros(nspecies, dtype=object)
-
-        self._y_fuel = y_fuel
-        self._y_air = y_air
+        if h_fuel is None:
+            h_fuel = np.zeros(nspecies, dtype=object)
+        if h_air is None:
+            h_air = np.zeros(nspecies, dtype=object)
 
         self._nspecies = nspecies
+        self._nmix = nmix
         self._dim = dim
         self._pressure = pressure
         self._mach_fuel = mach_fuel
@@ -66,6 +77,11 @@ class MixingLayerCold:
         self._mach_air = mach_air
         self._temp_air = temp_air
         self._vorticity_thickness = vorticity_thickness
+        self._y_fuel = y_fuel
+        self._y_air = y_air
+        self._h_fuel = h_fuel
+        self._h_air = h_air
+        self._is_flamelet = flametlet
 
     def __call__(self, dcoll, x_vec, eos, *, time=0.0):
         """Create the mixture state at locations *x_vec*.
@@ -92,33 +108,37 @@ class MixingLayerCold:
 
         # get the species mass fractions first
         xtanh = ypos/self._vorticity_thickness
-        weight = 0.5*(1. - actx.np.tanh(xtanh))
-        y = self._y_air + (self._y_fuel - self._y_air)*weight
+        z = 0.5*(1. - actx.np.tanh(xtanh))
+        y = self._y_air + (self._y_fuel - self._y_air)*z
+        y_or_z = z if self._is_flamelet else z
 
         print(f"{self._y_air=}")
         print(f"{self._y_fuel=}")
 
+        y_or_z_air = z if self._is_flamelet else self._y_air 
         mass_air = eos.get_density(
             self._pressure, self._temp_air,
-            species_mass_fractions=self._y_air)
+            species_mass_fractions=y_or_z_air)
+        y_or_z_fuel = z if self._is_flamelet else self._y_fuel
         mass_fuel = eos.get_density(
             self._pressure, self._temp_fuel,
-            species_mass_fractions=self._y_fuel)
+            species_mass_fractions=y_or_z_fuel)
 
         vel_air = np.zeros(self._dim, dtype=object)
         vel_fuel = np.zeros(self._dim, dtype=object)
 
         # we need cv to get gamma
+        
         cv_air = make_conserved(dim=self._dim,
                                 mass=mass_air,
                                 energy=0.,
                                 momentum=mass_air*vel_air,
-                                species_mass=mass_air*self._y_air)
+                                species_mass=mass_air*y_or_z_air)
         cv_fuel = make_conserved(dim=self._dim,
                                 mass=mass_fuel,
                                 energy=0.,
                                 momentum=mass_fuel*vel_fuel,
-                                species_mass=mass_fuel*self._y_fuel)
+                                species_mass=mass_fuel*y_or_z_fuel)
 
         gamma_air = eos.gamma(cv_air, self._temp_air)
         gamma_fuel = eos.gamma(cv_fuel, self._temp_fuel)
@@ -128,25 +148,26 @@ class MixingLayerCold:
 
         vel_air[0] = self._mach_air*c_air
         vel_fuel[0] = self._mach_fuel*c_fuel
-        velocity = vel_air + (vel_fuel - vel_air)*weight
+        velocity = vel_air + (vel_fuel - vel_air)*z
 
-        r = eos.gas_const(species_mass_fractions=y)
+        r = eos.gas_const(species_mass_fractions=y_or_z)
 
         # enthalpy
-        enthalpy_air = eos.get_enthalpy(self._temp_air, self._y_air)
-        enthalpy_fuel = eos.get_enthalpy(self._temp_fuel, self._y_fuel)
-        enthalpy = enthalpy_air + (enthalpy_fuel - enthalpy_air)*weight
+        enthalpy_air = eos.get_enthalpy(self._temp_air, y_or_z_air)
+        enthalpy_fuel = eos.get_enthalpy(self._temp_fuel, y_or_z_fuel)
+        enthalpy = enthalpy_air + (enthalpy_fuel - enthalpy_air)*z
 
         # need this for lazy for some reason
         from mirgecom.utils import force_evaluation
         enthalpy = force_evaluation(actx, enthalpy)
 
         temperature = eos.temperature_from_enthalpy(
-            enthalpy=enthalpy, temperature_seed=400., species_mass_fractions=y)
+            enthalpy=enthalpy, temperature_seed=400.,
+            species_mass_fractions=y_or_z)
 
         # compute the density from the temperature and pressure
         mass = self._pressure/r/temperature
-        internal_energy = eos.get_internal_energy(temperature, y)
+        internal_energy = eos.get_internal_energy(temperature, y_or_z)
 
         kinetic_energy = 0.5 * np.dot(velocity, velocity)
         total_energy = mass*(internal_energy + kinetic_energy)
@@ -155,7 +176,7 @@ class MixingLayerCold:
                               mass=mass,
                               energy=total_energy,
                               momentum=mass*velocity,
-                              species_mass=mass*y)
+                              species_mass=mass*y_or_z)
 
 
 def get_mesh(dim, size, layer_ratio, vorticity_thickness,
