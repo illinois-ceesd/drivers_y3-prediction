@@ -1296,8 +1296,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nspecies = configurate("nspecies", input_data, 0)
 
     spec_diff = configurate("spec_diff", input_data, 1.e-4)
-    eos_type = configurate("eos", input_data, 0)
+    eos_type = configurate("eos_type", input_data, 0)
     flamelet_eos_type = 2
+    using_flamelet = eos_type == flamelet_eos_type
     transport_type = configurate("transport", input_data, 0)
     use_lewis_transport = configurate("use_lewis_transport", input_data, False)
     # for pyrometheus, number of newton iterations
@@ -1849,7 +1850,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # Flamelet: hrm, maybe just check extra param
     if nspecies > 3:
         eos_type = 1
-        # if flamelet: eos_type = flamelet_eos_type
+        if using_flamelet:
+            eos_type = flamelet_eos_type
 
     pyro_mech_name = configurate("pyro_mech", input_data, "uiuc_sharp")
     pyro_mech_name_full = f"y3prediction.pyro_mechs.{pyro_mech_name}"
@@ -2248,19 +2250,19 @@ def main(actx_class, restart_filename=None, target_filename=None,
         y_mix_air[8] = 1 - y_mix_air[2]
 
         # Need h_mix_fuel, h_mix_air for Flamelet EOS
-        h_mix_fuel = np.zeros(nspecies, dtype=object)
-        h_mix_air = np.zeros(nspecies, dtype=object)
+        # h_mix_fuel = np.zeros(nspecies, dtype=object)
+        # h_mix_air = np.zeros(nspecies, dtype=object)
         if eos_type == flamelet_eos_type:
-            eos.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air,
-                                    h_fu=h_mix_fuel, h_ox=h_mix_air)
+            eos.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air)
+            eos_init.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air)
 
         from y3prediction.mixing_layer import MixingLayerCold
         bulk_init = MixingLayerCold(
-            dim=dim, nspecies=nspecies,
+            dim=dim, nspecies=nspecies, flamelet=using_flamelet,
             mach_fuel=0.2, mach_air=0.3,
             temp_fuel=300, temp_air=500,
             y_fuel=y_mix_fuel, y_air=y_mix_air,
-            h_fuel=h_mix_fuel, h_air=h_mix_air,
+            # h_fuel=h_mix_fuel, h_air=h_mix_air,
             vorticity_thickness=vorticity_thickness,
             pressure=pres_bkrnd
         )
@@ -5211,13 +5213,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
                               (2*spark_duration*spark_duration))
         return expterm
 
+    ignition_source = None
     if use_ignition == 2:
         from y3prediction.utils import HeatSource
         ignition_source = HeatSource(dim=dim, center=spark_center,
                                       amplitude=spark_strength,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
-    else:
+    elif use_ignition > 0:
         from y3prediction.utils import SparkSource
         ignition_source = SparkSource(dim=dim, center=spark_center,
                                       amplitude=spark_strength,
@@ -5242,7 +5245,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
         source_mom[2] = injection_source_mom_z
     source_energy = injection_source_energy
     source_y = y_fuel
-    injection_source = StateSource(dim=dim, nspecies=nspecies,
+    nspecies_inj = nspecies
+    if using_flamelet:
+        source_y = make_obj_array([1.])
+        nspecies_inj = 1
+
+    injection_source = StateSource(dim=dim, nspecies=nspecies_inj,
                                    center=injection_source_center,
                                    mass_amplitude=source_mass,
                                    mom_amplitude=source_mom,
@@ -5510,10 +5518,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
         tmax = vol_max(dd_vol_fluid, dv.temperature)
 
         from pytools.obj_array import obj_array_vectorize
+        y = eos.get_species_mass_fractions(cv=cv)
         y_min = obj_array_vectorize(lambda x: vol_min(dd_vol_fluid, x),
-                                      cv.species_mass_fractions)
+                                      y)
         y_max = obj_array_vectorize(lambda x: vol_max(dd_vol_fluid, x),
-                                      cv.species_mass_fractions)
+                                      y)
 
         dv_status_msg = (
             f"\n------ P       (min, max) (Pa) = ({pmin:1.9e}, {pmax:1.9e})")
@@ -5767,8 +5776,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             fluid_viz_fields.extend(fluid_viz_ext)
 
             # species mass fractions
+            y = eos.get_species_mass_fractions(cv=cv)
             fluid_viz_fields.extend(
-                ("Y_"+species_names[i], cv.species_mass_fractions[i])
+                ("Y_"+species_names[i], y[i])
                 for i in range(nspecies))
 
             # entropy
@@ -6144,14 +6154,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"{rank=}: Local Wall Temperature Range "
                       f"({t_min_loc:1.9e}, {t_max_loc:1.9e})")
 
+        y = eos.get_species_mass_fractions(cv=cv)
         for i in range(nspecies):
-            if global_range_check(dd_vol_fluid, cv.species_mass_fractions[i],
+            if global_range_check(dd_vol_fluid, y[i],
                                   health_mass_frac_min, health_mass_frac_max):
                 health_error = True
-                y_min = vol_min(dd_vol_fluid, cv.species_mass_fractions[i])
-                y_max = vol_max(dd_vol_fluid, cv.species_mass_fractions[i])
-                y_min_loc = vol_min_loc(dd_vol_fluid, cv.species_mass_fractions[i])
-                y_max_loc = vol_max_loc(dd_vol_fluid, cv.species_mass_fractions[i])
+                y_min = vol_min(dd_vol_fluid, y[i])
+                y_max = vol_max(dd_vol_fluid, y[i])
+                y_min_loc = vol_min_loc(dd_vol_fluid, y[i])
+                y_max_loc = vol_max_loc(dd_vol_fluid, y[i])
                 if rank == 0:
                     logger.info("Species mass fraction range violation:\n"
                                  "\tSpecified Limits "
@@ -6165,7 +6176,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"{rank=}: "
                       f"Local Range      {species_names[i]}: "
                       f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
-                report_violators(cv.species_mass_fractions[i],
+                report_violators(y[i],
                                  health_mass_frac_min, health_mass_frac_max)
 
         if eos_type == 1:

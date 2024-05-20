@@ -2,6 +2,7 @@
 import numpy as np
 from mirgecom.fluid import make_conserved
 from functools import partial
+from pytools.obj_array import make_obj_array
 
 
 class MixingLayerCold:
@@ -22,7 +23,7 @@ class MixingLayerCold:
             mach_fuel=None, mach_air=None,
             temp_fuel=None, temp_air=None,
             y_fuel=None, y_air=None,
-            h_fuel=None, h_air=None,
+            # h_fuel=None, h_air=None,
             vorticity_thickness=None, pressure=None
     ):
         r"""Initialize mixture parameters.
@@ -37,8 +38,6 @@ class MixingLayerCold:
             number of fuel sources for flamelet mixture
         flamelet: bool
             indicates whether this is a flamelet model
-        h_fuel: numpy.ndarray
-            fuel stream species enthalpies
         y_fuel: numpy.ndarray
             fuel stream species mass fractions
         mach_fuel: float
@@ -47,8 +46,6 @@ class MixingLayerCold:
             fuel stream temperature
         y_air: numpy.ndarray
             air stream species mass fractions
-        h_air: numpy.ndarray
-            air stream species enthalpies
         mach_air: float
             air stream mach number
         temp_air: float
@@ -63,10 +60,6 @@ class MixingLayerCold:
             y_fuel = np.zeros(nspecies, dtype=object)
         if y_air is None:
             y_air = np.zeros(nspecies, dtype=object)
-        if h_fuel is None:
-            h_fuel = np.zeros(nspecies, dtype=object)
-        if h_air is None:
-            h_air = np.zeros(nspecies, dtype=object)
 
         self._nspecies = nspecies
         self._nmix = nmix
@@ -79,9 +72,9 @@ class MixingLayerCold:
         self._vorticity_thickness = vorticity_thickness
         self._y_fuel = y_fuel
         self._y_air = y_air
-        self._h_fuel = h_fuel
-        self._h_air = h_air
-        self._is_flamelet = flametlet
+        # self._h_fuel = h_fuel
+        # self._h_air = h_air
+        self._is_flamelet = flamelet
 
     def __call__(self, dcoll, x_vec, eos, *, time=0.0):
         """Create the mixture state at locations *x_vec*.
@@ -110,16 +103,16 @@ class MixingLayerCold:
         xtanh = ypos/self._vorticity_thickness
         z = 0.5*(1. - actx.np.tanh(xtanh))
         y = self._y_air + (self._y_fuel - self._y_air)*z
-        y_or_z = z if self._is_flamelet else z
+        y_or_z = z if self._is_flamelet else y
 
-        print(f"{self._y_air=}")
-        print(f"{self._y_fuel=}")
-
-        y_or_z_air = z if self._is_flamelet else self._y_air 
+        z_air = make_obj_array([0.])
+        y_or_z_air = z_air if self._is_flamelet else self._y_air
         mass_air = eos.get_density(
             self._pressure, self._temp_air,
             species_mass_fractions=y_or_z_air)
-        y_or_z_fuel = z if self._is_flamelet else self._y_fuel
+
+        z_fuel = make_obj_array([1.])
+        y_or_z_fuel = z_fuel if self._is_flamelet else self._y_fuel
         mass_fuel = eos.get_density(
             self._pressure, self._temp_fuel,
             species_mass_fractions=y_or_z_fuel)
@@ -128,7 +121,7 @@ class MixingLayerCold:
         vel_fuel = np.zeros(self._dim, dtype=object)
 
         # we need cv to get gamma
-        
+
         cv_air = make_conserved(dim=self._dim,
                                 mass=mass_air,
                                 energy=0.,
@@ -172,11 +165,15 @@ class MixingLayerCold:
         kinetic_energy = 0.5 * np.dot(velocity, velocity)
         total_energy = mass*(internal_energy + kinetic_energy)
 
+        spmass = mass*y_or_z
+        if self._is_flamelet:
+            spmass = make_obj_array([spmass])
+
         return make_conserved(dim=self._dim,
                               mass=mass,
                               energy=total_energy,
                               momentum=mass*velocity,
-                              species_mass=mass*y_or_z)
+                              species_mass=spmass)
 
 
 def get_mesh(dim, size, layer_ratio, vorticity_thickness,

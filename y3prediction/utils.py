@@ -340,7 +340,6 @@ class StateSource:
         x_vec: numpy.ndarray
             Nodal coordinates
         """
-
         t = time
         if self._amplitude_func is not None:
             time_amplitude = self._amplitude_func(t)
