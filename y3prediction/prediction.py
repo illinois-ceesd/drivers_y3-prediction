@@ -1627,6 +1627,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print("\tInitializing flow to mixing_layer")
             print(f"Vorticity thickness {vorticity_thickness}")
             print(f"Ambient pressure {pres_bkrnd}")
+        elif init_case == "mixing_layer_hot":
+            print("\tInitializing flow to mixing_layer_hot")
+            print(f"Vorticity thickness {vorticity_thickness}")
+            print(f"Ambient pressure {pres_bkrnd}")
         elif init_case == "flame1d":
             print("\tInitializing flow to flame1d")
             print(f"Ambient pressure {pres_bkrnd}")
@@ -1657,6 +1661,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "\t flame1d"
                 "\t wedge"
                 "\t mixing_layer"
+                "\t mixing_layer_hot"
                 "\t species_diffusion"
             )
         print("#### Simluation initialization data: ####")
@@ -2216,6 +2221,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
+
     if init_case == "mixing_layer":
         temperature = 300.
         pressure = 101325.
@@ -2239,7 +2245,38 @@ def main(actx_class, restart_filename=None, target_filename=None,
             vorticity_thickness=vorticity_thickness,
             pressure=pres_bkrnd
         )
-    if init_case == "flame1d":
+    if init_case == "mixing_layer_hot":
+        if rank == 0:
+            print("Initializing hot mixing layer")
+
+        import h5py
+
+        def get_data_from_hdf5(group):
+            data_dict = {}
+            for key in group.keys():
+                if isinstance(group[key], h5py.Group):
+                    # If the key is a group, recursively explore it
+                    subgroup_data = get_data_from_hdf5(group[key])
+                    data_dict.update(subgroup_data)
+                elif isinstance(group[key], h5py.Dataset):
+                    # If it's a dataset, add it to the dictionary
+                    data_dict[key] = group[key][()]
+            return data_dict
+
+        # Usage example
+        inflow_fname = "r_mixing_layer_inflow.h5"
+        with h5py.File(inflow_fname, "r") as hf:
+            inflow_data = get_data_from_hdf5(hf)
+
+        #print(f"{inflow_data=}")
+
+        from y3prediction.mixing_layer import MixingLayerHot
+        bulk_init = MixingLayerHot(
+            dim=dim, nspecies=nspecies,
+            inflow_profile=inflow_data
+        )
+
+    elif init_case == "flame1d":
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -3371,7 +3408,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
 
                 return mesh, tag_to_elements, volume_to_tags
-        elif init_case == "mixing_layer":
+        elif init_case == "mixing_layer" or init_case == "mixing_layer_hot":
             if rank == 0:
                 print("Generating mesh from scratch")
 
