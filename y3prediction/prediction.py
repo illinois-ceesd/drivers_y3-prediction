@@ -1014,28 +1014,17 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         pressure_final = gas_model.eos.pressure(
             cv=cv_lim, temperature=temperature_final)
 
-        def get_temperature_update_limit(cv, temperature):
-            y = cv.species_mass_fractions
-            e = gas_model.eos.internal_energy(cv)/cv.mass
-            return actx.np.abs(
-                gas_model.eos._pyrometheus_mech.get_temperature_update_energy(
-                    e, temperature, y))
-
-        temp_resid = get_temperature_update_limit(
-            cv_lim, temperature_final)/temperature_final
+        temp_resid = gas_model.eos.get_temperature_resid(cv, temperature_final)
 
         # run through a temperature solve manually, print out the updates
 
         num_iter = 20
 
         def do_temperature_iter(cv, tseed):
-            y = cv.species_mass_fractions
             t_i = temperature_seed
             print(f" First: {actx.to_numpy(t_i)[0][index]=}")
-            e = gas_model.eos.internal_energy(cv)/cv.mass
             for _ in range(num_iter):
-                t_resid = (gas_model.eos._pyrometheus_mech.
-                    get_temperature_update_energy(e, t_i, y))
+                t_resid = gas_model.eos.get_temperature_resid(cv, t_i)
                 t_i = t_i + t_resid
                 data_t_i = actx.to_numpy(t_i)[0][index]
                 data_t_resid = actx.to_numpy(t_resid)[0][index]
