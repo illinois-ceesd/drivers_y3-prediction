@@ -670,9 +670,10 @@ class InitACTII:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        actx = xpos.array_context
 
         zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0
@@ -862,9 +863,10 @@ class InitACTII:
 
         xpos = x_vec[0]
         ypos = x_vec[1]
+        actx = xpos.array_context
+        zpos = actx.np.zeros_like(xpos)
         if self._dim == 3:
             zpos = x_vec[2]
-        actx = xpos.array_context
 
         zeros = actx.np.zeros_like(xpos)
         ones = zeros + 1.0

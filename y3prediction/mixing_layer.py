@@ -4,6 +4,153 @@ from mirgecom.fluid import make_conserved
 from functools import partial
 
 
+class MixingLayerHot:
+    r"""Solution initializer for flow with a discontinuity.
+
+    This initializer creates a physics-consistent flow solution
+    given an initial thermal state (pressure, temperature) and an EOS.
+
+    The solution varies across a planar interface defined by a tanh function
+    located at disc_location for pressure, temperature, velocity, and mass fraction
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+
+    def __init__(
+            self, *, dim=2, nspecies=0,
+            inflow_profile,
+            pressure
+    ):
+        r"""Initialize mixture parameters.
+
+        Parameters
+        ----------
+        dim: int
+            specifies the number of dimensions for the solution
+        nspecies: int
+            specifies the number of mixture species
+        inflow_profile: dict
+            inflow profile
+        """
+
+        self._dim = dim
+        self._nspecies = nspecies
+        self._pressure = pressure
+
+        self._inflow_y = inflow_profile["y"]
+        self._inflow_rho = inflow_profile["rho"]
+        self._inflow_e = inflow_profile["e_int"]
+        self._inflow_temp = inflow_profile["temp"]
+        self._inflow_vel = inflow_profile["u"]
+        self._inflow_mass_frac = inflow_profile["mass_frac"]
+
+    def __call__(self, dcoll, x_vec, eos, *, time=0.0):
+        """Create the mixture state at locations *x_vec*.
+
+        Parameters
+        ----------
+        x_vec: numpy.ndarray
+            Coordinates at which solution is desired
+        eos:
+            Mixture-compatible equation-of-state object must provide
+            these functions:
+            `eos.get_density`
+            `eos.get_internal_energy`
+        time: float
+            Time at which solution is desired. The location is (optionally)
+            dependent on time
+        """
+        if x_vec.shape != (self._dim,):
+            raise ValueError(f"Position vector has unexpected dimensionality,"
+                             f" expected {self._dim}.")
+
+        y_offset = 0.
+        ypos = x_vec[1] + y_offset
+        actx = ypos.array_context
+
+        zeros = actx.np.zeros_like(ypos)
+        rho = zeros
+        vmag = zeros
+        velocity = np.zeros(self._dim, dtype=object)*zeros
+        energy = zeros
+        temperature = zeros
+        mf = np.zeros(self._nspecies, dtype=object)*zeros
+
+        rho_bottom = self._inflow_rho[0]
+        vel_bottom = self._inflow_vel[0]
+        temp_bottom = self._inflow_temp[0]
+        e_bottom = self._inflow_e[0]
+        mf_bottom = self._inflow_mass_frac[:, 0]
+        y_bottom = self._inflow_y[0] + y_offset
+
+        # iterate over every interval in the profile
+        # this is expensive for large input data sets
+        for ind in range(1, self._inflow_y.shape[0]):
+
+            rho_top = self._inflow_rho[ind]
+            vel_top = self._inflow_vel[ind]
+            temp_top = self._inflow_temp[ind]
+            e_top = self._inflow_e[ind]
+            mf_top = self._inflow_mass_frac[:, ind]
+
+            # interpolate our data
+            y_top = self._inflow_y[ind] + y_offset
+
+            dy = (y_top - y_bottom)
+            drho = rho_top - rho_bottom
+            dvel = vel_top - vel_bottom
+            dtemp = temp_top - temp_bottom
+            de = e_top - e_bottom
+            dmf = mf_top - mf_bottom
+
+            local_rho = rho_bottom + (ypos - y_bottom)*drho/dy
+            local_vel = vel_bottom + (ypos - y_bottom)*dvel/dy
+            local_temp = temp_bottom + (ypos - y_bottom)*dtemp/dy
+            local_e = e_bottom + (ypos - y_bottom)*de/dy
+            local_mf = mf_bottom + (ypos - y_bottom)*dmf/dy
+
+            # extend just a a little bit to catch the edges
+            bottom_edge = actx.np.greater(ypos, y_bottom - 1.e-12)
+            top_edge = actx.np.less(ypos, y_top + 1.e-12)
+            inside_block = bottom_edge*top_edge
+
+            rho = actx.np.where(inside_block, local_rho, rho)
+            vmag = actx.np.where(inside_block, local_vel, vmag)
+            temperature = actx.np.where(inside_block, local_temp, temperature)
+            energy = actx.np.where(inside_block, local_e, energy)
+            for i in range(self._nspecies):
+                mf[i] = actx.np.where(inside_block, local_mf[i], mf[i])
+
+            y_bottom = y_top
+            rho_bottom = rho_top
+            vel_bottom = vel_top
+            temp_bottom = temp_top
+            e_bottom = e_top
+            mf_bottom = mf_top
+
+        # recompute the density from the temperature and pressure
+        # this avoids initial pertubations
+        r = eos.gas_const(species_mass_fractions=mf)
+        # compute the density from the temperature and pressure
+        rho = self._pressure/r/temperature
+        internal_energy = eos.get_internal_energy(temperature, mf)
+
+        velocity[0] = vmag
+        mom = velocity*rho
+        #internal_energy = eos.get_internal_energy(temperature, mf)
+        #internal_energy = energy
+
+        kinetic_energy = 0.5 * np.dot(velocity, velocity)
+        total_energy = rho*(internal_energy + kinetic_energy)
+
+        return make_conserved(dim=self._dim,
+                              mass=rho,
+                              energy=total_energy,
+                              momentum=mom,
+                              species_mass=rho*mf)
+
+
 class MixingLayerCold:
     r"""Solution initializer for flow with a discontinuity.
 
@@ -136,8 +283,6 @@ class MixingLayerCold:
         enthalpy_air = eos.get_enthalpy(self._temp_air, self._y_air)
         enthalpy_fuel = eos.get_enthalpy(self._temp_fuel, self._y_fuel)
         enthalpy = enthalpy_air + (enthalpy_fuel - enthalpy_air)*weight
-
-        tseed = actx.np.zeros_like(enthalpy) + 400.
 
         # need this for lazy for some reason
         from mirgecom.utils import force_evaluation
