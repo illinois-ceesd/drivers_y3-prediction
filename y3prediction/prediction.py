@@ -2250,11 +2250,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
         y_mix_air[8] = 1 - y_mix_air[2]
 
         # Need h_mix_fuel, h_mix_air for Flamelet EOS
-        # h_mix_fuel = np.zeros(nspecies, dtype=object)
-        # h_mix_air = np.zeros(nspecies, dtype=object)
         if eos_type == flamelet_eos_type:
-            eos.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air)
-            eos_init.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air)
+            h_a = eos._get_enthalpy(500., y_mix_air)
+            h_f = eos._get_enthalpy(300., y_mix_fuel)
+            eos.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air,
+                                    h_fu=h_f, h_ox=h_a)
+            eos_init.set_flamelet_params(y_fu=y_mix_fuel, y_ox=y_mix_air,
+                                         h_fu=h_f, h_ox=h_a)
 
         from y3prediction.mixing_layer import MixingLayerCold
         bulk_init = MixingLayerCold(
