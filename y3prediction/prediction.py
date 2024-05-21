@@ -5947,8 +5947,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if dim == 3:
                 viz_ext.extend([("grad_rhow", grad_cv.momentum[2])])
 
-            viz_ext.extend(("grad_rhoY_"+species_names[i], grad_cv.species_mass[i])
-                           for i in range(nspecies))
+            if using_flamelet:
+                viz_ext.extend([("grad_rhoZ", grad_cv.species_mass[0])])
+            else:
+                viz_ext.extend(("grad_rhoY_"+species_names[i],
+                                grad_cv.species_mass[i])
+                               for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
             viz_ext = [("grad_temperature", grad_fluid_t),
@@ -5957,8 +5961,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if dim == 3:
                 viz_ext.extend([("grad_v_z", grad_v[2])])
 
-            viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
-                           for i in range(nspecies))
+            if using_flamelet:
+                viz_ext.extend([("grad_Z", grad_y[0])])
+            else:
+                viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
+                               for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
             """
