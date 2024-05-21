@@ -36,7 +36,7 @@ use_interface_boundary: "none"
 use_injection_boundary: "none"
 #
 nviz: 5
-viz_level: 3
+viz_level: 2
 viz_interval_type: 0
 use_wall: False
 use_sponge: False
