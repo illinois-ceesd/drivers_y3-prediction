@@ -19,7 +19,8 @@ class MixingLayerHot:
 
     def __init__(
             self, *, dim=2, nspecies=0,
-            inflow_profile
+            inflow_profile,
+            pressure
     ):
         r"""Initialize mixture parameters.
 
@@ -35,6 +36,7 @@ class MixingLayerHot:
 
         self._dim = dim
         self._nspecies = nspecies
+        self._pressure = pressure
 
         self._inflow_y = inflow_profile["y"]
         self._inflow_rho = inflow_profile["rho"]
@@ -127,10 +129,17 @@ class MixingLayerHot:
             e_bottom = e_top
             mf_bottom = mf_top
 
+        # recompute the density from the temperature and pressure
+        # this avoids initial pertubations
+        r = eos.gas_const(species_mass_fractions=mf)
+        # compute the density from the temperature and pressure
+        rho = self._pressure/r/temperature
+        internal_energy = eos.get_internal_energy(temperature, mf)
+
         velocity[0] = vmag
         mom = velocity*rho
         #internal_energy = eos.get_internal_energy(temperature, mf)
-        internal_energy = energy
+        #internal_energy = energy
 
         kinetic_energy = 0.5 * np.dot(velocity, velocity)
         total_energy = rho*(internal_energy + kinetic_energy)

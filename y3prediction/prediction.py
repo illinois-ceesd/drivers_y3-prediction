@@ -2270,10 +2270,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         #print(f"{inflow_data=}")
 
+        pressure = 101325.
         from y3prediction.mixing_layer import MixingLayerHot
         bulk_init = MixingLayerHot(
             dim=dim, nspecies=nspecies,
-            inflow_profile=inflow_data
+            inflow_profile=inflow_data,
+            pressure=pressure
         )
 
     elif init_case == "flame1d":
