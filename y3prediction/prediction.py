@@ -2268,6 +2268,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
         with h5py.File(inflow_fname, "r") as hf:
             inflow_data = get_data_from_hdf5(hf)
 
+        inflow_data = None
+        if rank == 0:
+            inflow_fname = "r_mixing_layer_inflow.h5"
+            with h5py.File(inflow_fname, "r") as hf:
+                inflow_data = get_data_from_hdf5(hf)
+
+        inflow_data = comm.bcast(inflow_data, root=0)
         #print(f"{inflow_data=}")
 
         pressure = 101325.
