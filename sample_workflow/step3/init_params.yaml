@@ -1,0 +1,57 @@
+##############
+# run control
+##############
+mesh_filename: data/actii_2d.msh
+use_1d_part: True
+advance_time: False
+
+##############
+# wall model
+##############
+wall_time_scale: 1
+wall_penalty_amount: 0
+wall_material: 2
+use_wall_mass: True
+use_wall_ox: True
+
+##############
+# model control
+##############
+use_species_limiter: 0
+smooth_char_length_alpha: 0.025
+smooth_char_length: 5
+smoothness_alpha: 0.1
+smoothness_tau: 0.1
+use_av: 2
+av2_mu0: 0.1
+av2_beta0: 6.0
+av2_kappa0: 1.0
+av2_prandtl0: 0.9
+
+order:  3
+dimen: 2
+use_injection: False
+noslip: True
+adiabatic: False
+mu: 5.0e-5
+
+##############
+# equation of state
+##############
+eos_type: 1
+nspecies: 7
+pyro_temp_iter: 1
+pyro_temp_tol: 1.
+transport: 1
+integrator: compiled_lsrk54
+
+##############
+# initialization
+##############
+vel_sigma: 500
+temp_sigma: 750
+vel_sigma_inj: 5000
+temp_sigma_inj: 5000
+sponge_sigma: 10
+sponge_x0: 0.89
+sponge_thickness: 0.04

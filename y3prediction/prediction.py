@@ -1076,6 +1076,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
 @mpi_entry_point
 def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
+         disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
          disable_fallbacks=False):
 
@@ -1111,16 +1112,17 @@ def main(actx_class, restart_filename=None, target_filename=None,
         casename = "mirgecom"
 
     # logging and profiling
-    logname = log_path + "/" + casename + ".sqlite"
+    logmgr = None
+    if not disable_logpyle:
+        logname = log_path + "/" + casename + ".sqlite"
+        if rank == 0:
+            log_dir = os.path.dirname(logname)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+        comm.Barrier()
 
-    if rank == 0:
-        log_dir = os.path.dirname(logname)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-    comm.Barrier()
-
-    logmgr = initialize_logmgr(True,
-        filename=logname, mode="wu", mpi_comm=comm)
+        logmgr = initialize_logmgr(True,
+            filename=logname, mode="wu", mpi_comm=comm)
 
     # set up driver parameters
     from mirgecom.simutil import configurate
@@ -5472,7 +5474,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_wall:
             wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall,
                                               vis_order=viz_order)
-
     #    initname = initializer.__class__.__name__
     eosname = eos.__class__.__name__
     init_message = make_init_message(dim=dim, order=order, nelements=local_nelements,

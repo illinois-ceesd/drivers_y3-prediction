@@ -1,0 +1,39 @@
+workflow for running the Y3 prediction.
+main driver and data are link at the top of the directory structure
+
+target_states holds initialization runs that can be used as target states
+for the proper steps
+
+A brief description of each step.
+
+################
+(Argon) cold flow
+################
+
+step1:  Initialization and stabilization
+				ideal gas, single species, constant transport, no injection
+
+step2: switch to realistic transport, power law transport
+step3: switch to multi-species, N2/O2,
+step4: elevated wall timescale to reach ARC activation
+
+#######
+ARC on
+#######
+			
+step5: elevate stagnation pressure/temperature
+step6: elevated wall timescale to reach injection start
+
+#######
+Fuel injection on
+#######
+			
+step7: begin fuel injection, add full reaction mechanism
+step8: elevated wall timescale to reach ignition
+
+#######
+Combustion
+#######
+			
+step9: ignition and to sustained combustion
+step10: elevated wall timescale to for full wall heating

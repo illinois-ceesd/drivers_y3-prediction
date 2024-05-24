@@ -1,43 +1,57 @@
 # Import Paraview functions
 import sys
 #from contour import *
-from slice import SimpleSlice
-import slice
+from slice import SimpleSlice, SimpleSlice3D, SliceData
 
 
-def main(user_input_file, viz_path, dump_index):
+def main(user_input_file, viz_path, dump_index, fluid_viz_file, wall_viz_file):
 
     # read input file to configure plot
 
     # camera location (x, y, zoom)
     # camera location (bigger moves right, bigger moves up , smaller to zoom in)
-    camera = [0.625, -0.0, 0.023]
-    pixels = [1300, 700]
+    #camera = [0.625, -0.0, 0.023]
+    #pixels = [1300, 700]
     prefix = ""
 
-    print(f"{viz_path}")
-    print(f"{dump_index}")
-    print(f"{prefix}")
+    #print(f"{viz_path=}")
+    #print(f"{dump_index=}")
+    #print(f"{prefix=}")
+    sys.path.insert(0, '.')
+    #print(sys.path)
 
-    slice_data = slice.SliceData(
-        dataName="cv_mass",
-        dataRange=[0.02, 0.1],
-        camera=[0.625, 0.0, 0.023],
-        colorScheme="erdc_rainbow_dark",
-        logScale=0,
-        invert=0,
-        cbTitle="Density [kg/m^3]",
-        pixels=[1300, 700],
-        normal=[0, 0, 1],
-        origin=[0, 0, 0]
-    )
+    try:
+        import viz_config as input_data
+        # these are really surface plots for 2D
+        for plt in input_data.slice_data:
+            print(plt)
+            SimpleSlice(dir=viz_path, iter=dump_index,
+                        solutionData=fluid_viz_file, sliceData=plt)
 
-    print(slice_data)
+        # process 3D slices
+        for plt in input_data.slice_data_3d:
+            print(plt)
+            SimpleSlice3D(dir=viz_path, iter=dump_index,
+                          solutionData=fluid_viz_file, sliceData=plt)
 
-    SimpleSlice(viz_path, dump_index, "cv_mass", [0.02, 0.1], camera,
-                invert=1, logScale=1, colorScheme="erdc_rainbow_dark",
-                prefix=prefix, pixels=pixels,
-                cbTitle="Density [kg/m^3]")
+    except ModuleNotFoundError:
+        print("WARNING! Missing visualization configuration file, viz_config.py")
+        print("WARNING! Using default configuration")
+        slice_data = SliceData(
+            dataName="cv_mass",
+            dataRange=[0.02, 0.1],
+            camera=[0.625, 0.0, 0.023],
+            colorScheme="erdc_rainbow_dark",
+            logScale=0,
+            invert=0,
+            cbTitle="Density [kg/m^3]",
+            pixels=[1300, 700],
+            normal=[0, 0, 1],
+            origin=[0, 0, 0]
+        )
+        print(slice_data)
+        SimpleSlice(viz_path, dump_index, slice_data)
+        pass
 
     """
     simpleSlice(dir, dump_index, "dv_pressure", 1500.0, 10000, camera, invert=1,
@@ -67,8 +81,14 @@ if __name__ == "__main__":
         description="Y3 paraview visualization driver")
     parser.add_argument("-d", "--dump_index", type=int, dest="dump_index",
                         nargs="?", action="store", help="simulation viz dump index")
-    parser.add_argument("-p", "--viz_path", type=ascii, dest="viz_path",
-                        nargs="?", action="store", help="full path to viz data")
+    parser.add_argument("-p", "--path", type=ascii, dest="path",
+                        nargs="?", action="store", help="path for image file")
+    parser.add_argument("-f", "--fluid_viz_file", type=ascii, dest="fluid_viz_file",
+                        nargs="?", action="store",
+                        help="full path to fluid viz file")
+    parser.add_argument("-w", "--wall_viz_file", type=ascii, dest="wall_viz_file",
+                        nargs="?", action="store",
+                        help="full path to wall viz file")
     parser.add_argument("-i", "--input_file", type=ascii, dest="input_file",
                         nargs="?", action="store", help="simulation config file")
 
@@ -79,15 +99,26 @@ if __name__ == "__main__":
         input_file = args.input_file.replace("'", "")
         print(f"Using user input from file: {input_file}")
 
-    viz_path = "viz_data"
-    if args.viz_path:
-        viz_path = args.viz_path.replace("'", "")
+    fluid_viz_file = ""
+    if args.fluid_viz_file:
+        fluid_viz_file = args.fluid_viz_file.replace("'", "")
+
+    wall_viz_file = ""
+    if args.wall_viz_file:
+        wall_viz_file = args.wall_viz_file.replace("'", "")
+
+    import os
+    path = os.getcwd()
+    if args.path:
+        path = args.path.replace("'", "")
 
     dump_index = 0
     if args.dump_index:
-        dump_index = args.dump_index.replace("'", "")
+        dump_index = args.dump_index
 
     print(f"Running {sys.argv[0]}\n")
 
-    main(user_input_file=input_file, viz_path=viz_path,
+    main(user_input_file=input_file, viz_path=path,
+         fluid_viz_file=fluid_viz_file,
+         wall_viz_file=wall_viz_file,
          dump_index=dump_index)
