@@ -4,7 +4,7 @@ import sys
 from slice import SimpleSlice, SimpleSlice3D, SliceData
 
 
-def main(user_input_file, viz_path, dump_index):
+def main(user_input_file, viz_path, dump_index, fluid_viz_file, wall_viz_file):
 
     # read input file to configure plot
 
@@ -25,12 +25,14 @@ def main(user_input_file, viz_path, dump_index):
         # these are really surface plots for 2D
         for plt in input_data.slice_data:
             print(plt)
-            SimpleSlice(viz_path, dump_index, plt)
+            SimpleSlice(dir=viz_path, iter=dump_index,
+                        solutionData=fluid_viz_file, sliceData=plt)
 
         # process 3D slices
         for plt in input_data.slice_data_3d:
             print(plt)
-            SimpleSlice3D(viz_path, dump_index, plt)
+            SimpleSlice3D(dir=viz_path, iter=dump_index,
+                          solutionData=fluid_viz_file, sliceData=plt)
 
     except ModuleNotFoundError:
         print("WARNING! Missing visualization configuration file, viz_config.py")
@@ -79,8 +81,8 @@ if __name__ == "__main__":
         description="Y3 paraview visualization driver")
     parser.add_argument("-d", "--dump_index", type=int, dest="dump_index",
                         nargs="?", action="store", help="simulation viz dump index")
-    parser.add_argument("-p", "--prefix", type=ascii, dest="prefix",
-                        nargs="?", action="store", help="prefix for image file name")
+    parser.add_argument("-p", "--path", type=ascii, dest="path",
+                        nargs="?", action="store", help="path for image file")
     parser.add_argument("-f", "--fluid_viz_file", type=ascii, dest="fluid_viz_file",
                         nargs="?", action="store",
                         help="full path to fluid viz file")
@@ -102,12 +104,13 @@ if __name__ == "__main__":
         fluid_viz_file = args.fluid_viz_file.replace("'", "")
 
     wall_viz_file = ""
-    if args.fluid_viz_file:
+    if args.wall_viz_file:
         wall_viz_file = args.wall_viz_file.replace("'", "")
 
-    prefix = "paraview"
-    if args.prefix:
-        prefix = args.prefix.replace("'", "")
+    import os
+    path = os.getcwd()
+    if args.path:
+        path = args.path.replace("'", "")
 
     dump_index = 0
     if args.dump_index:
@@ -115,4 +118,7 @@ if __name__ == "__main__":
 
     print(f"Running {sys.argv[0]}\n")
 
-    main(user_input_file=input_file, viz_path=prefix, dump_index=dump_index)
+    main(user_input_file=input_file, viz_path=path,
+         fluid_viz_file=fluid_viz_file,
+         wall_viz_file=wall_viz_file,
+         dump_index=dump_index)

@@ -46,7 +46,7 @@ class SliceData():
             self.camera, self.origin, self.normal, self.colorScheme)
 
 
-def SimpleSlice3D(dir, iter, sliceData):
+def SimpleSlice3D(dir, iter, solutionData, sliceData):
 
     varName = sliceData.dataName
     camera_position = sliceData.camera
@@ -67,7 +67,7 @@ def SimpleSlice3D(dir, iter, sliceData):
         imageFile = f"{slice_img_dir}/{prefix}-{varName}_{iter:09d}.png"
     else:
         imageFile = f"{slice_img_dir}/{varName}_{iter:09d}.png"
-    solutionFile = "{}/prediction-fluid-{:09d}.pvtu".format(dir, iter)
+    solutionFile = solutionData
 
     # If func not provided, simply set it to varName -- everything is a Calculator
     #if (not func):
@@ -213,7 +213,7 @@ def SimpleSlice3D(dir, iter, sliceData):
     Delete(colorbar)
 
 
-def SimpleSlice(dir, iter, sliceData):
+def SimpleSlice(dir, iter, solutionData, sliceData):
 
     varName = sliceData.dataName
     camera = sliceData.camera
@@ -256,8 +256,7 @@ def SimpleSlice(dir, iter, sliceData):
         imageFile = f"{slice_img_dir}/{prefix}-{varName}_{iter:09d}.png"
     else:
         imageFile = f"{slice_img_dir}/{varName}_{iter:09d}.png"
-    solutionFile = "{}/prediction-fluid-{:09d}.pvtu".format(dir, iter)
-    #solutionFileWall = "{}/prediction-wall-{:09d}.pvtu".format(dir, iter)
+    solutionFile = solutionData
 
     # If func not provided, simply set it to varName -- everything is a Calculator
     #if (not func):
