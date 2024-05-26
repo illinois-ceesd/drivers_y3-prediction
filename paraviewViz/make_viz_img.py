@@ -110,8 +110,7 @@ def main():
     #######
 
     # get a list of the output files
-    # we need to know a priori what the outfiles files generated will be,
-    # so parsl can generate futures for data dependency
+    # this just runs viz on every *.pvtu in viz_data
     import os
     import re
     path = os.getcwd()
@@ -156,100 +155,6 @@ def main():
 
     #run_paraview.result()  # wait until it is done
     outputs = [r.result() for r in run_paraview]
-    #print(run_mirge)
-    #print(run_mirge.outputs)
-    """
-
-    #######
-    # 2. monitor the mirgecom restart files to determine when they become available
-    #    we do this seperately from the run future, as it won't tell us the files
-    #    are complete until the app completes
-    #######
-
-    monitor_restart_data = []
-    for future in run_mirge.outputs:
-        print(future.filename)
-
-        # run mirge and make the viz files
-        monitor_restart_data.append(
-            monitor_restart(
-                file=os.path.basename(future.filename),
-                start_time=start_time,
-                #outputs=[File(f"{future.filename}.exists")]
-                outputs=[File(future.filename)]
-            )
-        )
-
-    print(monitor_restart_data)
-
-    #######
-    # 3. run mirgecom and generate viz_data from restart data
-    #######
-    make_viz_data = []
-    for app_future in monitor_restart_data:
-        # first figure out the names of the viz files to be created
-        # so we can make data futures for them
-        #print(future.filename)
-        #print(app_future)
-        #print(app_future.outputs)
-        future = app_future.outputs[0]
-        #print(future.filename)
-        restart_name = os.path.basename(future.filename)
-        # remove extension
-        restart_name = os.path.splitext(restart_name)[0]
-        # remove rank number
-        restart_name = restart_name[:len(restart_name)-5]
-        # get dump number and the casename
-        dump_number = restart_name[len(restart_name)-9:]
-        case_name = restart_name[:len(restart_name)-10]
-        #print(restart_name)
-        #print(case_name)
-        #print(dump_number)
-        # construct dump name
-        viz_name_fluid = (f"viz_data/{case_name}-fluid-{dump_number}.pvtu")
-        viz_name_wall = (f"viz_data/{case_name}-wall-{dump_number}.pvtu")
-        #print(viz_name_fluid)
-        #print(viz_name_wall)
-
-        parsl_viz_outfile = []
-        parsl_viz_outfile.append(File(os.path.join(os.getcwd(), viz_name_fluid),))
-        parsl_viz_outfile.append(File(os.path.join(os.getcwd(), viz_name_wall),))
-
-        # run mirge and make the viz files
-        mirge_viz_cmd = build_execution_string(
-            yml="make_viz_params.yaml",
-            r=f"restart_data/{restart_name}",
-            log=False,
-            lazy=False)
-        make_viz_data.append(
-            execute(execution_string=mirge_viz_cmd,
-                    stderr="viz_stderr.txt",
-                    stdout="viz_stdout.txt",
-                    inputs=[future],
-                    outputs=parsl_viz_outfile)
-        )
-
-    #make_viz_data[0].result()  # wait until it is done
-    #print(make_viz_data[0].outputs)
-    print("waiting for viz to finish?")
-    print(len(make_viz_data))
-    print(make_viz_data)
-    loop_ind = 0
-    for i in make_viz_data:
-        print(f"{loop_ind=}")
-        print(i)
-        print(i.task_status())
-        i.result()
-        print("after result")
-        print(i.outputs)
-        print("after outputs")
-        loop_ind = loop_ind + 1
-
-    #viz_output = [i.result() for i in make_viz_data]
-    #print(viz_output)
-    """
-
-    #run_mirge.result()  # wait until mirge execution is done
 
 if __name__ == "__main__":
     main()
