@@ -3464,12 +3464,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             def get_mesh_data():
                 from meshmode.mesh.io import read_gmsh
-                mesh_construction_kwargs = {
-                    "force_positive_orientation":  True,
-                    "skip_element_orientation_test":  True}
+                #mesh_construction_kwargs = {
+                    #"force_positive_orientation":  True,
+                    #"skip_element_orientation_test":  True}
                 mesh, tag_to_elements = read_gmsh(
                     mesh_filename, force_ambient_dim=dim,
-                    mesh_construction_kwargs=mesh_construction_kwargs,
+                    #mesh_construction_kwargs=mesh_construction_kwargs,
                     return_tag_to_elements_map=True)
                 volume_to_tags = {
                     "fluid": ["fluid"]}
@@ -5327,7 +5327,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
-    elif init_case == "mixing_layer":
+    elif init_case == "mixing_layer" or init_case == "mixing_layer_hot":
 
         top_sponge_y0 = 0.006
         top_sponge_thickness = 0.002
