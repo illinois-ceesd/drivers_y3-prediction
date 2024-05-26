@@ -45,6 +45,7 @@ def main(user_input_file, viz_path, dump_index, fluid_viz_file, wall_viz_file):
             logScale=0,
             invert=0,
             cbTitle="Density [kg/m^3]",
+            cbBackground=0,
             pixels=[1300, 700],
             normal=[0, 0, 1],
             origin=[0, 0, 0]

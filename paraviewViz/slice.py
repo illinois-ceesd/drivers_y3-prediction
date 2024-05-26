@@ -4,9 +4,12 @@ from paraview.simple import (
     GetActiveViewOrCreate,
     GetDisplayProperties,
     GetMaterialLibrary,
+    GetSettingsProxy,
     Calculator,
+    Gradient,
     Delete,
     Show,
+    Transform,
     ColorBy,
     GetColorTransferFunction,
     GetOpacityTransferFunction,
@@ -22,8 +25,15 @@ import numpy as np
 
 class SliceData():
     def __init__(self, dataName, dataRange, camera, colorScheme,
-                 logScale, invert, cbTitle, pixels, normal, origin,
+                 logScale, invert, pixels, normal, origin,
+                 cbTitle, cbBackground, cbLabels=None, cbLabelFormat=None,
+                 blueRedDivergentColorCenter=None,
+                 backgroundColor=[0., 0., 0.],
+                 rotation=None, reflection=None,
+                 computeGradient=0,
+                 vectorComponent=None,
                  prefix=""):
+
         self.dataName = dataName
         self.dataRange = dataRange
         self.camera = camera
@@ -31,9 +41,18 @@ class SliceData():
         self.logScale = logScale
         self.invert = invert
         self.cbTitle = cbTitle
+        self.cbLabels = cbLabels
+        self.cbLabelFormat = cbLabelFormat
+        self.cbBackground = cbBackground
+        self.backgroundColor = backgroundColor
+        self.blueRedDivergentColorCenter = blueRedDivergentColorCenter
         self.pixels = pixels
         self.normal = normal
         self.origin = origin
+        self.rotation = rotation
+        self.reflection = reflection
+        self.computeGradient = computeGradient
+        self.vectorComponent = vectorComponent
 
         self.hasPrefix = False
         if prefix:
@@ -114,20 +133,20 @@ def SimpleSlice3D(dir, iter, solutionData, sliceData):
     slice.SliceType.Origin = sliceData.origin
     slice.SliceType.Normal = sliceData.normal
 
-    origin_x = [0.63, 0, 0]
-    normal_x = [1.0, 0, 0]
-    slice_x = Slice(Input=var)
-    slice_x.SliceType.Origin = origin_x
-    slice_x.SliceType.Normal = normal_x
+    #origin_x = [0.63, 0, 0]
+    #normal_x = [1.0, 0, 0]
+    #slice_x = Slice(Input=var)
+    #slice_x.SliceType.Origin = origin_x
+    #slice_x.SliceType.Normal = normal_x
 
     sliceDisplay = Show(slice, renderView)
     ColorBy(sliceDisplay, ("POINTS", varName))
     sliceDisplay.SetScalarBarVisibility(renderView, True)
 
-    sliceDisplay_x = Show(slice_x, renderView)
-    ColorBy(sliceDisplay_x, ("POINTS", varName))
-    sliceDisplay_x.SetScalarBarVisibility(renderView, False)
-
+    #sliceDisplay_x = Show(slice_x, renderView)
+    #ColorBy(sliceDisplay_x, ("POINTS", varName))
+    #sliceDisplay_x.SetScalarBarVisibility(renderView, False)
+#
     # Gets rid of "Failed to determine the LookupTable being used" error
     #calculatorDisplay = Show(var, renderView)
     #ColorBy(calculatorDisplay, ("POINTS", varName))
@@ -157,7 +176,7 @@ def SimpleSlice3D(dir, iter, solutionData, sliceData):
     colorbar.TitleJustification = "Centered"
     colorbar.TitleBold = 1
     colorbar.TitleItalic = 0
-    colorbar.TitleShadow = 1
+    colorbar.TitleShadow = 0
     colorbar.TitleFontSize = 20
     colorbar.LabelBold = 1
     colorbar.LabelItalic = 0
@@ -166,6 +185,8 @@ def SimpleSlice3D(dir, iter, solutionData, sliceData):
     colorbar.ScalarBarLength = 0.33
     colorbar.WindowLocation = "Upper Center"
     colorbar.Orientation = "Horizontal"
+    colorbar.DrawScalarBarOutline = 1
+    colorbar.ScalarBarOutlineColor = [1., 1., 1.]
 
     drawTime = time.time() - t0 - readTime
 
@@ -217,32 +238,10 @@ def SimpleSlice(dir, iter, solutionData, sliceData):
 
     varName = sliceData.dataName
     camera = sliceData.camera
-
-    #if camera is None:
-        #camera = [0.625, -0.0, 0.023]
-
     varRange = sliceData.dataRange
-
-    #if varRange is None:
-        #camera = [0.02, 0.1]
-
     pixels = sliceData.pixels
-
-    #if pixels is None:
-        #pixels = [1200, 600]
-        ##pixels = np.zeros(shape=(2,))
-        ##pixels[0] = 1200
-        ##pixels[1] = 600
-
     sliceNormal = sliceData.normal
-    #if sliceNormal is None:
-        #sliceNormal = [0., 0., 1.0]
-        ##sliceNormal[2] = 1.0
-
     sliceOrigin = sliceData.origin
-    #if sliceOrigin is None:
-        ##sliceOrigin = np.zeros(shape=(3,))
-        #sliceOrigin = [0., 0., 0.]
 
     import os
     slice_img_dir = dir + "/slice_img"
@@ -265,19 +264,11 @@ def SimpleSlice(dir, iter, solutionData, sliceData):
     # disable automatic camera reset on 'Show'
     _DisableFirstRenderCameraReset()
 
-    #print('func={},prefix={},camera={},pixels={}'.format(func,prefix,camera,pixels))
-
     # Read solution file
     t0 = time.time()
 
     # Open XDMF
     data = XMLPartitionedUnstructuredGridReader(FileName=[solutionFile])
-    #data.PointArrayStatus = ["cv_mass", "cv_energy", "cv_momentum",
-                             #"dv_temperature", "dv_pressure",
-                             #"mach", "velocity", "sponge_sigma",
-                             #"cfl",
-                             #"Y_C2H4", "Y_H2", "Y_H2O",
-                             #"Y_O2", "Y_CO", "Y_fuel", "Y_air", "mu"]
     data.PointArrayStatus = varName
     readTime = time.time() - t0
 
@@ -298,16 +289,42 @@ def SimpleSlice(dir, iter, solutionData, sliceData):
     var.Function = func
     Delete(data)
 
-    # Gets rid of "Failed to determine the LookupTable being used" error
-    calculatorDisplay = Show(var, renderView)
-    ColorBy(calculatorDisplay, ("POINTS", varName))
-    calculatorDisplay.SetScalarBarVisibility(renderView, True)
-    #Hide(var,renderView)
+    # Compute the gradient of the field in question
+    # We rename the gradient data to the original variable name
+    # all the processing that follows will use the new data
+    grad_data = var
+    if sliceData.computeGradient > 0:
+        grad_data = Gradient(registrationName="varGrad", Input=data)
+        grad_data.ScalarArray = ["POINTS", varName]
+        grad_data.ResultArrayName = varName
 
-    #dataObject = Show(data, renderView, 'UnstructuredGridRepresentation')
-    #dataObject.Representation = 'Surface'
+    filter_data = grad_data
+    if sliceData.rotation is not None:
+        filter_data = Transform(Input=filter_data)
+        filter_data.Transform.Rotate = sliceData.rotation
 
-    #ColorBy(mainDisplay, ('POINTS', 'mach'))
+    display = Show(filter_data, renderView)
+
+    if sliceData.reflection is not None:
+        reflection_filter_data = Transform(Input=filter_data)
+        reflection_filter_data.Transform.Scale = sliceData.reflection
+        display_reflection = Show(reflection_filter_data, renderView)
+        if sliceData.vectorComponent is not None:
+            ColorBy(display_reflection, ("POINTS", varName, sliceData.vectorComponent))
+        else:
+            ColorBy(display_reflection, ("POINTS", varName))
+
+    if sliceData.vectorComponent is not None:
+        ColorBy(display, ("POINTS", varName, sliceData.vectorComponent))
+    else:
+        ColorBy(display, ("POINTS", varName))
+
+    display.SetScalarBarVisibility(renderView, True)
+
+    # set the background color
+    if sliceData.backgroundColor is not None:
+        colorPalette = GetSettingsProxy('ColorPalette')
+        colorPalette.Background = sliceData.backgroundColor
 
     # Color scheme settings
     colorTF = GetColorTransferFunction(varName)
@@ -321,26 +338,51 @@ def SimpleSlice(dir, iter, solutionData, sliceData):
         colorTF.MapControlPointsToLogSpace()
         colorTF.UseLogScale = 1
 
+
     # Invert color scheme, if requested
     invert = sliceData.invert
     if (invert == 1):
         colorTF.InvertTransferFunction()
 
+    # custom divergent color mapping
+    # centers the data at a particular value, along with the defined min and max
+    if sliceData.blueRedDivergentColorCenter is not None:
+        colorTF.RGBPoints = \
+            [varRange[0], 0.23137254902, 0.298039215686, 0.752941176471,
+             sliceData.blueRedDivergentColorCenter, 0.865, 0.865, 0.865,
+             varRange[1], 0.705882352941, 0.0156862745098, 0.149019607843]
+        colorTF.ColorSpace = "Diverging"
+
     # Colorbar
     colorbar = GetScalarBar(colorTF, renderView)
     colorbar.Title = sliceData.cbTitle
     colorbar.TitleJustification = "Centered"
+    colorbar.DrawBackground = sliceData.cbBackground
     colorbar.TitleBold = 1
+
+    if sliceData.cbLabelFormat is not None:
+        colorbar.AutomaticLabelFormat = 0
+        colorbar.LabelFormat = sliceData.cbLabelFormat
+        colorbar.RangeLabelFormat = sliceData.cbLabelFormat
+        #colorbar.RangeLabelFormat = '%-#6.1f'
+
+    if sliceData.cbLabels is not None:
+        colorbar.UseCustomLabels = 1
+        colorbar.CustomLabels = sliceData.cbLabels
+
+
     colorbar.TitleItalic = 0
-    colorbar.TitleShadow = 1
-    colorbar.TitleFontSize = 20
+    colorbar.TitleShadow = 0
+    colorbar.TitleFontSize = 24
     colorbar.LabelBold = 1
     colorbar.LabelItalic = 0
-    colorbar.LabelShadow = 1
-    colorbar.LabelFontSize = 15
+    colorbar.LabelShadow = 0
+    colorbar.LabelFontSize = 20
     colorbar.ScalarBarLength = 0.33
     colorbar.WindowLocation = "Upper Center"
     colorbar.Orientation = "Horizontal"
+    colorbar.DrawScalarBarOutline = 1
+    colorbar.ScalarBarOutlineColor = [0., 0., 0.]
 
     drawTime = time.time() - t0 - readTime
 
