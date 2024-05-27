@@ -26,7 +26,7 @@ import numpy as np
 class SliceData():
     def __init__(self, dataName, dataRange, camera, colorScheme,
                  logScale, invert, pixels, normal, origin,
-                 cbTitle, cbBackground, cbLabels=None, cbLabelFormat=None,
+                 cbTitle, cbBackground=0, cbLabels=None, cbLabelFormat=None,
                  blueRedDivergentColorCenter=None,
                  backgroundColor=[0., 0., 0.],
                  rotation=None, reflection=None,
