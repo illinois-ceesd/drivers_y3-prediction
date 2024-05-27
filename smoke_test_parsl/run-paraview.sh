@@ -1,1 +1,0 @@
-../paraviewViz/run-paraview.sh

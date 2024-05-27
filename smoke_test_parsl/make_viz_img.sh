@@ -1,8 +1,15 @@
 #!/bin/bash
 #
-restart_files=`ls viz_data/*fluid*.pvtu`
-for file in ${restart_files[@]}; do
+export pvpath="/Applications/ParaView-5.11.0.app/Contents/bin"
+cd viz_data
+viz_files=`ls *fluid*.pvtu`
+cd ..
+directory="`pwd`/viz_data"
+
+for file in ${viz_files[@]}; do
   echo "making viz images from ${file}"
-  #./run-paraview.sh viz_data/${file} > /dev/null 2>&1 
-  ./run-paraview.sh ${file}
+  dump=${file%.pvtu}
+  dump_index=`echo $dump | cut -d - -f 3`
+  echo "Running paraview in ${directory} on dump $dump_index"
+  ${pvpath}/pvpython paraview-driver.py -f $directory/$file -p $directory -d $dump_index -i viz_config.py
 done
