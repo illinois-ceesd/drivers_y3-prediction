@@ -83,6 +83,7 @@ from mirgecom.steppers import advance_state
 from mirgecom.boundary import (
     PrescribedFluidBoundary,
     IsothermalWallBoundary,
+    IsothermalSlipWallBoundary,
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
     PressureOutflowBoundary,
@@ -466,11 +467,14 @@ def limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd):
         for i in range(nspecies)
     ])
 
+
     # limit the sum to 1.0
-    aux = actx.np.zeros_like(cv.mass)
-    for i in range(0, nspecies):
-        aux = aux + spec_lim[i]
-    spec_lim = spec_lim/aux
+    # not applicable for the flamelet model
+    if not isinstance(gas_model.eos, FlameletMixture):
+        aux = actx.np.zeros_like(cv.mass)
+        for i in range(0, nspecies):
+            aux = aux + spec_lim[i]
+        spec_lim = spec_lim/aux
 
     kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
 
@@ -787,12 +791,14 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                                cell_avgs - cv_update_rho.species_mass_fractions[i]))
 
         # limit the species mass fraction sum to 1.0
-        aux = actx.np.zeros_like(cv_update_rho.mass)
-        sum_theta_y = actx.np.zeros_like(cv_update_rho.mass)
-        for i in range(0, nspecies):
-            aux = aux + spec_lim[i]
-            sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
-        spec_lim = spec_lim/aux
+        # not applicable for the flamelet model
+        if not isinstance(gas_model.eos, FlameletMixture):
+            aux = actx.np.zeros_like(cv_update_rho.mass)
+            sum_theta_y = actx.np.zeros_like(cv_update_rho.mass)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+                sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
+            spec_lim = spec_lim/aux
 
         # tseed is the best guess at a reasonable temperature after the limiting
         # assume that whatever pressure and temperature that was computed was bogus
@@ -1261,6 +1267,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "none",
         "isothermal_noslip",
         "isothermal_slip",
+        "isothermal_slip_top",
+        "isothermal_slip_bottom",
         "adiabatic_noslip",
         "adiabatic_slip",
         "pressure_outflow",
@@ -1411,6 +1419,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     vel_sigma_inj = configurate("vel_sigma_inj", input_data, 5000)
     temp_sigma_inj = configurate("temp_sigma_inj", input_data, 5000)
     temp_wall = 300
+    injection_wall_temp = configurate("injection_wall_temp", input_data, 300.)
+    upstream_injection_wall_temp = configurate("upstream_injection_wall_temp", input_data, 300.)
 
     # wall stuff
     wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
@@ -3592,6 +3602,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     bndry_mapping = {
         "isothermal_noslip": IsothermalWallBoundary(temp_wall),
+        # MJA this is really awkward and just a trick to get different temperature top and bottom walls
+        "isothermal_slip": IsothermalSlipWallBoundary(temp_wall),
+        "isothermal_slip_top": IsothermalSlipWallBoundary(upstream_injection_wall_temp),
+        "isothermal_slip_bottom": IsothermalSlipWallBoundary(injection_wall_temp),
         "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
         "adiabatic_slip": AdiabaticSlipBoundary(),
         "pressure_outflow": PressureOutflowBoundary(outflow_pressure)

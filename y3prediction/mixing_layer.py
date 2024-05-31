@@ -250,6 +250,8 @@ def get_mesh(dim, size, layer_ratio, vorticity_thickness,
             Physical Curve('inflow') = {1,2,3};
             Physical Curve('outflow') = {4,5,6};
             Physical Curve('wall') = {7,10};
+            Physical Curve('injection') = {7}; // the bottom wall
+            Physical Curve('upstream_injection') = {10}; // the top wall
         """)
 
     if transfinite:
