@@ -110,6 +110,7 @@ from mirgecom.gas_model import (
     GasModel,
     make_fluid_state,
     make_operator_fluid_states,
+    make_operator_fluid_cvs,
     project_fluid_state
 )
 from mirgecom.multiphysics.thermally_coupled_fluid_wall import (
@@ -450,14 +451,16 @@ def update_coupled_boundaries(
             wall_grad_temperature)
 
 
-def limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd):
+def limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd,
+                      dissipation_rate=None):
 
     actx = cv.array_context
     nspecies = cv.nspecies
     dim = cv.dim
 
     temperature = gas_model.eos.temperature(
-        cv=cv, temperature_seed=temperature_seed)
+        cv=cv, temperature_seed=temperature_seed,
+        dissipation_rate=dissipation_rate)
     pressure = gas_model.eos.pressure(cv=cv, temperature=temperature)
 
     spec_lim = make_obj_array([
@@ -466,7 +469,6 @@ def limit_fluid_state(dcoll, cv, temperature_seed, gas_model, dd):
                                  mmin=0.0, mmax=1.0, modify_average=True)
         for i in range(nspecies)
     ])
-
 
     # limit the sum to 1.0
     # not applicable for the flamelet model
@@ -529,7 +531,8 @@ def _element_average_cv(dcoll, dd, cv, volumes=None):
                           momentum=momentum, species_mass=species_mass)
 
 
-def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
+def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd,
+                          dissipation_rate=None):
     r"""Element average positivity preserving limiter
 
     Follows loosely the implementation outline in Liu, et. al.
@@ -579,12 +582,14 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
                                 momentum=cv.momentum,
                                 species_mass=spec_mass_lim)
     temperature_updated = gas_model.eos.temperature(
-        cv=cv_updated, temperature_seed=temperature_seed)
+        cv=cv_updated, temperature_seed=temperature_seed,
+        dissipation_rate=dissipation_rate)
     pressure_updated = gas_model.eos.pressure(cv=cv_updated,
                                               temperature=temperature_updated)
 
     elem_avg_temp = gas_model.eos.temperature(
-        cv=elem_avg_cv, temperature_seed=temperature_updated)
+        cv=elem_avg_cv, temperature_seed=temperature_updated,
+        dissipation_rate=dissipation_rate)
     elem_avg_pres = gas_model.eos.pressure(
         cv=elem_avg_cv, temperature=elem_avg_temp)
 
@@ -622,7 +627,8 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
 
 
 def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
-                         viz_theta=False, limiter_smin=10):
+                         viz_theta=False, limiter_smin=10,
+                         dissipation_rate=None):
     r"""Entropy-based positivity preserving limiter
 
     Follows loosely the implementation outline in Lv, et. al.
@@ -1420,7 +1426,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     temp_sigma_inj = configurate("temp_sigma_inj", input_data, 5000)
     temp_wall = 300
     injection_wall_temp = configurate("injection_wall_temp", input_data, 300.)
-    upstream_injection_wall_temp = configurate("upstream_injection_wall_temp", input_data, 300.)
+    upstream_injection_wall_temp = configurate("upstream_injection_wall_temp",
+                                               input_data, 300.)
 
     # wall stuff
     wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
@@ -3602,9 +3609,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     bndry_mapping = {
         "isothermal_noslip": IsothermalWallBoundary(temp_wall),
-        # MJA this is really awkward and just a trick to get different temperature top and bottom walls
+        # MJA this is really awkward and just a trick to get different
+        # temperature top and bottom walls
         "isothermal_slip": IsothermalSlipWallBoundary(temp_wall),
-        "isothermal_slip_top": IsothermalSlipWallBoundary(upstream_injection_wall_temp),
+        "isothermal_slip_top":
+        IsothermalSlipWallBoundary(upstream_injection_wall_temp),
         "isothermal_slip_bottom": IsothermalSlipWallBoundary(injection_wall_temp),
         "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
         "adiabatic_slip": AdiabaticSlipBoundary(),
@@ -4099,15 +4108,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
     elif use_species_limiter == 2:
         logger.info("Positivity-preserving limiter enabled:")
 
-    def my_limiter_func(cv, temperature_seed, gas_model, dd):
+    def my_limiter_func(cv, temperature_seed, gas_model, dd,
+                        dissipation_rate=None):
         limiter_func = None
         if use_species_limiter == 1:
             limiter_func = limit_fluid_state(
-                dcoll, cv, temperature_seed, gas_model, dd)
+                dcoll, cv, temperature_seed, gas_model, dd,
+                dissipation_rate=dissipation_rate)
         elif use_species_limiter == 2:
             limiter_func = limit_fluid_state_lv(
                 dcoll, cv, temperature_seed, gas_model,
-                dd, limiter_smin=limiter_smin)
+                dd, limiter_smin=limiter_smin,
+                dissipation_rate=dissipation_rate)
         return limiter_func
 
     limiter_func = None
@@ -6772,6 +6784,24 @@ def main(actx_class, restart_filename=None, target_filename=None,
             #smoothness = actx.zeros_like(cv.mass) + 1.0
             cv = _drop_order_cv(cv, smoothness, drop_order_strength)
 
+        dissipation_rate = None
+        if using_flamelet:
+            # Like operator_states_quad, but with *CV only*
+            operator_cv_quad = make_operator_fluid_cvs(
+                dcoll, cv, gas_model, uncoupled_fluid_boundaries, quadrature_tag,
+                dd=dd_vol_fluid
+            )
+            # hard-coded to ONE fuel source atm (grad_z[0])
+            # grad_cv_operator updated to enable CV-only update
+            grad_fluid_cv = grad_cv_operator(dcoll, gas_model,
+                                             uncoupled_fluid_boundaries, cv,
+                                             quadrature_tag=quadrature_tag,
+                                             dd=dd_vol_fluid,
+                                             operator_cv_quad=operator_cv_quad)
+            grad_z = species_mass_fraction_gradient(cv, grad_fluid_cv)
+            dissipation_rate = kappa*actx.np.sqrt(np.dot(grad_z[0], grad_z[0]))
+            # print(f"{dissipation_rate=}")
+
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
                                        smoothness_mu=av_smu,
@@ -6779,7 +6809,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid)
+                                       limiter_dd=dd_vol_fluid,
+                                       dissipation_rate=dissipation_rate)
 
         cv = fluid_state.cv  # reset cv to the limited version
 
@@ -6819,6 +6850,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 dcoll, fluid_state, gas_model, updated_fluid_boundaries,
                 quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
 
+            # Re-compute grad_cv, this time with limited state
             grad_fluid_cv = grad_cv_operator(
                 dcoll, gas_model, updated_fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
@@ -6834,6 +6866,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         smoothness_beta = actx.np.zeros_like(cv.mass)
         smoothness_kappa = actx.np.zeros_like(cv.mass)
         smoothness_d = actx.np.zeros_like(cv.mass)
+
         if use_av == 1:
             smoothness_mu = compute_smoothness(
                 cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
