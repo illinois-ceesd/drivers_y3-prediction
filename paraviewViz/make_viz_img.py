@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import parsl
 from parsl.config import Config
 from parsl.providers import LSFProvider, SlurmProvider
@@ -9,13 +10,16 @@ from parsl.addresses import address_by_hostname
 from parsl.app.app import bash_app, python_app
 
 executor_name = "my_executor"
-host = address_by_hostname()
+import socket
+host = socket.gethostname()
 if 'lassen' in host.lower():
     executor = HighThroughputExecutor(
         label=executor_name,
         address=address_by_hostname(),
         worker_debug=True,
-        provider=LSFProvider(launcher=JsrunLauncher(overrides=''),
+        cores_per_worker=1,
+        max_workers_per_node=44,
+        provider=LSFProvider(launcher=JsrunLauncher(),
             walltime='01:00:00',
             nodes_per_block=1,
             init_blocks=1,
@@ -23,10 +27,8 @@ if 'lassen' in host.lower():
             bsub_redirection=True,
             queue='pdebug',
             worker_init=(
-                "module load spectrum-mpi\n"
-                "source emirge/miniforge3/bin/activate mirgeDriver.Y3prediction\n"
-                "export PYOPENCL_CTX=port:tesla\n"
-                "export XDG_CACHE_HOME=/tmp/$USER/xdg-scratch\n"),
+                "export pvpath=/usr/tce/packages/paraview/paraview-gapps/v5.11.0/bin"
+                        ),
             project='uiuc')
         )
 elif 'quartz' in host.lower():
@@ -39,12 +41,9 @@ elif 'quartz' in host.lower():
             init_blocks=1,
             max_blocks=1,
             scheduler_options='#SBATCH -q pdebug',
-            worker_init=(
-                "module load spectrum-mpi\n"
-                "source emirge/miniforge3/bin/activate mirgeDriver.Y3prediction\n"
-                "export XDG_CACHE_HOME=/tmp/$USER/xdg-scratch\n"),
-            )
-        )
+            worker_init=(),
+        ),
+    )
 else:
     #executor = ThreadPoolExecutor(label=executor_name, max_threads=5)
     from parsl.channels import LocalChannel
@@ -55,6 +54,9 @@ else:
         cores_per_worker=1,
         provider=LocalProvider(
             channel=LocalChannel(),
+            worker_init=(
+                "export pvpath=/Applications/ParaView-5.11.0.app/Contents/bin"
+                        ),
             init_blocks=1,
             max_blocks=1,
         ),
@@ -91,6 +93,8 @@ def build_paraview_execution_string(fluid_file, dump, path,
 
     pvpath = "/Applications/ParaView-5.11.0.app/Contents/bin"
     # can't have mpirun here, need to let the executor set whatever that should be
+    pvpath = os.environ.get('pvpath')
+    #print(f"{pvpath=}")
     cmd = f"{pvpath}/pvpython paraview-driver.py -f {fluid_file}"
     cmd += f" -p {path}"
     cmd += f" -d {dump}"
@@ -139,9 +143,9 @@ def main():
     for file in viz_files:
         viz_data = File(os.path.join(os.getcwd(), file),)
         # Split the filename by '-'
-        parts = file.split('-')
+        parts = os.path.basename(file).split('-')
         # Get the third part which contains the dump index
-        numbers_part = parts[3]
+        numbers_part = parts[2]
         # Remove the extension
         numbers_part = numbers_part.split('.')[0]
 
