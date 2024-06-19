@@ -1,0 +1,57 @@
+init_case: mixing_layer
+#
+# parameters to control the mesh
+#
+mesh_size: 0.002
+bl_ratio: 3
+interface_ratio: 1
+transfinite: False
+
+##############
+# parameters to control the initialization
+##############
+pres_bkrnd: 101325
+temp_bkrnd: 300
+
+##############
+# equation of state
+##############
+eos_type: 1
+nspecies: 9
+pyro_temp_iter: 5
+pyro_temp_tol: 1.e-4
+pyro_mech: "sandiego"
+transport: 0
+use_combustion: False
+#
+# boundary condition setup
+#
+use_outflow_boundary: "pressure_outflow"
+outflow_pressure: 101325
+use_inflow_boundary: "prescribed"
+use_flow_boundary: "none"
+use_wall_boundary: "adiabatic_slip"
+use_interface_boundary: "none"
+use_injection_boundary: "none"
+#
+nviz: 5
+viz_level: 2
+viz_interval_type: 0
+use_wall: False
+use_sponge: False
+use_injection: False
+nrestart: 10
+nhealth: 1
+nstatus: 1
+#constant_cfl: 1
+smooth_char_length: 5
+use_av: 0
+mu: 0.0004
+constant_cfl: 0
+current_dt: 1e-10
+t_final: 2e-9
+order:  1
+integrator: euler
+#integrator: compiled_lsrk54
+#health_pres_min: 2828
+#health_pres_max: 274259

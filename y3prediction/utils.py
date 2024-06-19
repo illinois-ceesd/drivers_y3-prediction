@@ -438,8 +438,7 @@ class InitSponge:
         zeros = actx.np.zeros_like(xpos)
         x0 = zeros + self._x0
 
-        if abs(self._direction) == 1:
-            coords = xpos
+        coords = xpos
         if abs(self._direction) == 2:
             coords = ypos
 

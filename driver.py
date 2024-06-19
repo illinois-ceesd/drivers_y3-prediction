@@ -28,6 +28,8 @@ if __name__ == "__main__":
                         help="enable lazy evaluation [OFF]")
     parser.add_argument("--disable-fallbacks", action="store_true", default=False,
                         help="prevent lazy compile from using slow fallbacks.")
+    parser.add_argument("--nolog", action="store_true", default=False,
+                        help="enable sql logging with logpyle [OFF]")
     parser.add_argument("--overintegration", action="store_true",
         help="use overintegration in the RHS computations")
     parser.add_argument("--numpy", action="store_true",
@@ -78,6 +80,7 @@ if __name__ == "__main__":
     main(actx_class, restart_filename=restart_filename,
          target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
+         disable_logpyle=args.nolog,
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
          disable_fallbacks=args.disable_fallbacks)

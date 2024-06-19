@@ -1076,6 +1076,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
 @mpi_entry_point
 def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
+         disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
          disable_fallbacks=False):
 
@@ -1111,16 +1112,17 @@ def main(actx_class, restart_filename=None, target_filename=None,
         casename = "mirgecom"
 
     # logging and profiling
-    logname = log_path + "/" + casename + ".sqlite"
+    logmgr = None
+    if not disable_logpyle:
+        logname = log_path + "/" + casename + ".sqlite"
+        if rank == 0:
+            log_dir = os.path.dirname(logname)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+        comm.Barrier()
 
-    if rank == 0:
-        log_dir = os.path.dirname(logname)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-    comm.Barrier()
-
-    logmgr = initialize_logmgr(True,
-        filename=logname, mode="wu", mpi_comm=comm)
+        logmgr = initialize_logmgr(True,
+            filename=logname, mode="wu", mpi_comm=comm)
 
     # set up driver parameters
     from mirgecom.simutil import configurate
@@ -1395,6 +1397,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
+    # mixing layer flow properties
+    vorticity_thickness = configurate("vorticity_thickness", input_data, 0.32e-3)
+
     # ACTII flow properties
     total_pres_inflow = configurate("total_pres_inflow", input_data, 2.745e5)
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
@@ -1620,6 +1625,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "mixing_layer":
+            print("\tInitializing flow to mixing_layer")
+            print(f"Vorticity thickness {vorticity_thickness}")
+            print(f"Ambient pressure {pres_bkrnd}")
+        elif init_case == "mixing_layer_hot":
+            print("\tInitializing flow to mixing_layer_hot")
+            print(f"Vorticity thickness {vorticity_thickness}")
+            print(f"Ambient pressure {pres_bkrnd}")
         elif init_case == "flame1d":
             print("\tInitializing flow to flame1d")
             print(f"Ambient pressure {pres_bkrnd}")
@@ -1649,6 +1662,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "\t shock1d"
                 "\t flame1d"
                 "\t wedge"
+                "\t mixing_layer"
+                "\t mixing_layer_hot"
                 "\t species_diffusion"
             )
         print("#### Simluation initialization data: ####")
@@ -1748,10 +1763,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             inv_flux_type = "Chandrashekar for single gas or passive species.\n"
         flux_msg = flux_msg + inv_flux_type
     else:
-        if inv_num_flux == "rusanov":
-            inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
-            flux_msg = flux_msg + "Rusanov\n"
-        elif inv_num_flux == "hll":
+        inviscid_numerical_flux_func = inviscid_facial_flux_rusanov
+        flux_msg = flux_msg + "Rusanov\n"
+
+        if inv_num_flux == "hll":
             inviscid_numerical_flux_func = inviscid_facial_flux_hll
             flux_msg = flux_msg + "HLL\n"
 
@@ -1778,14 +1793,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
     mw_ar = 39.948
     univ_gas_const = 8314.59
 
-    if gas_mat_prop == 0:
-        # working gas: O2/N2 #
-        #   O2 mass fraction 0.273
-        #   gamma = 1.4
-        #   cp = 37.135 J/mol-K,
-        #   rho= 1.977 kg/m^3 @298K
-        gamma = 1.4
-        mw = mw_o2*mf_o2 + mw_n2*(1.0 - mf_o2)
+    # working gas: O2/N2 #
+    #   O2 mass fraction 0.273
+    #   gamma = 1.4
+    #   cp = 37.135 J/mol-K,
+    #   rho= 1.977 kg/m^3 @298K
+    gamma = 1.4
+    mw = mw_o2*mf_o2 + mw_n2*(1.0 - mf_o2)
+
     if gas_mat_prop == 1:
         # working gas: Ar #
         #   O2 mass fraction 0.273
@@ -1810,11 +1825,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
     Pr = 0.75
 
     # viscosity @ 400C, Pa-s
-    if gas_mat_prop == 0:
-        # working gas: O2/N2 #
-        mu_o2 = 3.76e-5
-        mu_n2 = 3.19e-5
-        mu = mu_o2*mf_o2 + mu_n2*(1-mu_o2)  # 3.3456e-5
+    # working gas: O2/N2 #
+    mu_o2 = 3.76e-5
+    mu_n2 = 3.19e-5
+    mu = mu_o2*mf_o2 + mu_n2*(1-mu_o2)  # 3.3456e-5
+
     if gas_mat_prop == 1:
         # working gas: Ar #
         mu_ar = 4.22e-5
@@ -1935,14 +1950,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # set the species names
     if eos_type == 0:
-        if nspecies == 0:
-            species_names = ["inert"]
-        elif nspecies == 2:
+        species_names = ["inert"]
+        if nspecies == 2:
             species_names = ["air", "fuel"]
         elif nspecies == 3:
             species_names = ["air", "fuel", "inert"]
     else:
         species_names = pyro_mech.species_names
+
+    print(f"{species_names=}")
 
     # initialize eos and species mass fractions
     y = np.zeros(nspecies)
@@ -1952,15 +1968,22 @@ def main(actx_class, restart_filename=None, target_filename=None,
         y_fuel[1] = 1
     elif nspecies > 4:
         # find name species indicies
+        i_c2h4 = -1
+        i_h2 = -1
+        i_ox = -1
+        i_di = -1
         for i in range(nspecies):
-            if species_names[i] == "C2H4":
-                i_c2h4 = i
-            if species_names[i] == "H2":
-                i_h2 = i
-            if species_names[i] == "O2":
-                i_ox = i
-            if species_names[i] == "N2":
-                i_di = i
+            try:
+                if species_names[i] == "C2H4":
+                    i_c2h4 = i
+                if species_names[i] == "H2":
+                    i_h2 = i
+                if species_names[i] == "O2":
+                    i_ox = i
+                if species_names[i] == "N2":
+                    i_di = i
+            except IndexError:
+                continue
 
         # Set the species mass fractions to the free-stream flow
         y[i_ox] = mf_o2
@@ -2022,10 +2045,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             error_message = "Unknown transport_type {}".format(transport_type)
             raise RuntimeError(error_message)
 
-    if transport_type == 0:
-        physical_transport_model = SimpleTransport(
-            viscosity=mu, thermal_conductivity=kappa,
-            species_diffusivity=species_diffusivity)
+    physical_transport_model = SimpleTransport(
+        viscosity=mu, thermal_conductivity=kappa,
+        species_diffusivity=species_diffusivity)
+
     if transport_type == 1:
         physical_transport_model = PowerLawTransport(
             alpha=transport_alpha, beta=transport_beta,
@@ -2052,6 +2075,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # with transport and eos sorted out, build the gas model
     gas_model = GasModel(eos=eos, transport=transport_model)
+
+    # quiescent initialization
+    bulk_init = Uniform(
+        dim=dim,
+        velocity=np.zeros(shape=(dim,)),
+        pressure=pres_bkrnd,
+        temperature=temp_bkrnd
+    )
 
     # select the initialization case
     if init_case == "shock1d":
@@ -2192,7 +2223,71 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
-    if init_case == "flame1d":
+
+    if init_case == "mixing_layer":
+        temperature = 300.
+        pressure = 101325.
+
+        y_mix_air = np.zeros(nspecies, dtype=object)
+        y_mix_fuel = np.zeros(nspecies, dtype=object)
+
+        # fuel is H2:0.5 N2:0.5 mole fraction
+        y_mix_fuel[0] = 0.5*mw_h2/(0.5*mw_h2 + 0.5*mw_n2)
+        y_mix_fuel[8] = 0.5*mw_n2/(0.5*mw_h2 + 0.5*mw_n2)
+        # air is O2:0.21 N2:0.79 mole fraction
+        y_mix_air[2] = 0.21*mw_o2/(0.21*mw_o2 + 0.79*mw_n2)
+        y_mix_air[8] = 1 - y_mix_air[2]
+
+        from y3prediction.mixing_layer import MixingLayerCold
+        bulk_init = MixingLayerCold(
+            dim=dim, nspecies=nspecies,
+            mach_fuel=0.2, mach_air=0.3,
+            temp_fuel=300, temp_air=500,
+            y_fuel=y_mix_fuel, y_air=y_mix_air,
+            vorticity_thickness=vorticity_thickness,
+            pressure=pres_bkrnd
+        )
+    if init_case == "mixing_layer_hot":
+        if rank == 0:
+            print("Initializing hot mixing layer")
+
+        import h5py
+
+        def get_data_from_hdf5(group):
+            data_dict = {}
+            for key in group.keys():
+                if isinstance(group[key], h5py.Group):
+                    # If the key is a group, recursively explore it
+                    subgroup_data = get_data_from_hdf5(group[key])
+                    data_dict.update(subgroup_data)
+                elif isinstance(group[key], h5py.Dataset):
+                    # If it's a dataset, add it to the dictionary
+                    data_dict[key] = group[key][()]
+            return data_dict
+
+        # Usage example
+        inflow_fname = "r_mixing_layer_inflow.h5"
+        with h5py.File(inflow_fname, "r") as hf:
+            inflow_data = get_data_from_hdf5(hf)
+
+        inflow_data = None
+        if rank == 0:
+            inflow_fname = "r_mixing_layer_inflow.h5"
+            with h5py.File(inflow_fname, "r") as hf:
+                inflow_data = get_data_from_hdf5(hf)
+
+        inflow_data = comm.bcast(inflow_data, root=0)
+        #print(f"{inflow_data=}")
+
+        pressure = 101325.
+        from y3prediction.mixing_layer import MixingLayerHot
+        bulk_init = MixingLayerHot(
+            dim=dim, nspecies=nspecies,
+            inflow_profile=inflow_data,
+            pressure=pressure
+        )
+
+    elif init_case == "flame1d":
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -2859,9 +2954,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                   f"{vel_injection_upstream[1]}")
             print("#### Simluation initialization data: ####\n")
 
-        if actii_init_case == "cav8":
-            from y3prediction.actii_y3_cav8 import InitACTIIRamp
-        else:
+        from y3prediction.actii_y3_cav8 import InitACTIIRamp
+        if actii_init_case == "cav5":
             error_message = "Ramping init not fully implemented for cav5 config"
 
         bulk_init = InitACTIIRamp(
@@ -3325,6 +3419,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
 
                 return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "mixing_layer" or init_case == "mixing_layer_hot":
+            if rank == 0:
+                print("Generating mesh from scratch")
+
+            def get_mesh_data():
+                from y3prediction.mixing_layer import get_mesh
+                mesh, tag_to_elements = get_mesh(
+                    dim=dim, size=mesh_size, layer_ratio=bl_ratio,
+                    vorticity_thickness=vorticity_thickness,
+                    transfinite=transfinite,
+                    use_quads=use_tpe)()
+                volume_to_tags = {"fluid": ["fluid"]}
+                return mesh, tag_to_elements, volume_to_tags
+
         elif init_case == "wedge":
             if rank == 0:
                 print("Generating mesh from scratch")
@@ -3529,6 +3637,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     = bndry_mapping[bndry_type]
         return all_boundaries
 
+    dd_vol_wall = None
     if use_wall:
         dd_vol_wall = DOFDesc(VolumeDomainTag("wall"), DISCR_TAG_BASE)
         wall_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd_vol_wall)))
@@ -4006,6 +4115,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.info("Positivity-preserving limiter enabled:")
 
     def my_limiter_func(cv, temperature_seed, gas_model, dd):
+        limiter_func = None
         if use_species_limiter == 1:
             limiter_func = limit_fluid_state(
                 dcoll, cv, temperature_seed, gas_model, dd)
@@ -4065,12 +4175,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         from mirgecom.gas_model import ViscousFluidState
         return ViscousFluidState(cv, dv, tv)
 
-    def _create_wall_dependent_vars(wv):
-        return wall_model.dependent_vars(wv)
-
-    create_wall_dependent_vars_compiled = actx.compile(
-        _create_wall_dependent_vars)
-
     def get_temperature_update(cv, temperature):
         y = cv.species_mass_fractions
         e = gas_model.eos.internal_energy(cv)/cv.mass
@@ -4078,6 +4182,98 @@ def main(actx_class, restart_filename=None, target_filename=None,
             pyro_mech.get_temperature_update_energy(e, temperature, y))
 
     get_temperature_update_compiled = actx.compile(get_temperature_update)
+
+    #
+    # Setup the wall model
+    #
+    if use_wall:
+        def experimental_kappa(temperature):
+            return (
+                1.766e-10 * temperature**3
+                - 4.828e-7 * temperature**2
+                + 6.252e-4 * temperature
+                + 6.707e-3)
+
+        def puma_kappa(mass_loss_frac):
+            return (
+                0.0988 * mass_loss_frac**2
+                - 0.2751 * mass_loss_frac
+                + 0.201)
+
+        def puma_effective_surface_area(mass_loss_frac):
+            # Original fit function: -1.1012e5*x**2 - 0.0646e5*x + 1.1794e5
+            # Rescale by x==0 value and rearrange
+            return 1.1794e5 * (
+                1
+                - 0.0547736137 * mass_loss_frac
+                - 0.9336950992 * mass_loss_frac**2)
+
+        def _get_wall_kappa_fiber(mass, temperature):
+            mass_loss_frac = (
+                (wall_insert_rho - mass)/wall_insert_rho
+                * wall_insert_mask)
+            scaled_insert_kappa = (
+                experimental_kappa(temperature)
+                * puma_kappa(mass_loss_frac)
+                / puma_kappa(0))
+            return (
+                scaled_insert_kappa * wall_insert_mask
+                + wall_surround_kappa * wall_surround_mask)
+
+        def _get_wall_kappa_inert(mass, temperature):
+            return (
+                wall_insert_kappa * wall_insert_mask
+                + wall_surround_kappa * wall_surround_mask)
+
+        def _get_wall_effective_surface_area_fiber(mass):
+            mass_loss_frac = (
+                (wall_insert_rho - mass)/wall_insert_rho
+                * wall_insert_mask)
+            return (
+                puma_effective_surface_area(mass_loss_frac) * wall_insert_mask)
+
+        def _mass_loss_rate_fiber(mass, ox_mass, temperature, eff_surf_area):
+            actx = mass.array_context
+            alpha = (
+                (0.00143+0.01*actx.np.exp(-1450.0/temperature))
+                / (1.0+0.0002*actx.np.exp(13000.0/temperature)))
+            k = alpha*actx.np.sqrt(
+                (univ_gas_const*temperature)/(2.0*np.pi*mw_o2))
+            return (mw_co/mw_o2 + mw_o/mw_o2 - 1)*ox_mass*k*eff_surf_area
+
+        # inert
+        wall_model = WallModel(
+            heat_capacity=(
+                wall_insert_cp * wall_insert_mask
+                + wall_surround_cp * wall_surround_mask),
+            thermal_conductivity_func=_get_wall_kappa_inert)
+
+        # non-porous
+        if wall_material == 1:
+            wall_model = WallModel(
+                heat_capacity=(
+                    wall_insert_cp * wall_insert_mask
+                    + wall_surround_cp * wall_surround_mask),
+                thermal_conductivity_func=_get_wall_kappa_fiber,
+                effective_surface_area_func=_get_wall_effective_surface_area_fiber,
+                mass_loss_func=_mass_loss_rate_fiber,
+                oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
+        # porous
+        elif wall_material == 2:
+            wall_model = WallModel(
+                heat_capacity=(
+                    wall_insert_cp * wall_insert_mask
+                    + wall_surround_cp * wall_surround_mask),
+                thermal_conductivity_func=_get_wall_kappa_fiber,
+                effective_surface_area_func=_get_wall_effective_surface_area_fiber,
+                mass_loss_func=_mass_loss_rate_fiber,
+                oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
+
+        def _create_wall_dependent_vars(wv):
+            return wall_model.dependent_vars(wv)
+
+        create_wall_dependent_vars_compiled = actx.compile(
+            _create_wall_dependent_vars)
 
     if rank == 0:
         logger.info("Smoothness functions processing")
@@ -4578,6 +4774,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # Set up flow target state       #
     ##################################
 
+    if rank == 0:
+        logger.info("Initializing target state.")
+
     if target_filename:
         if rank == 0:
             logger.info("Reading target soln.")
@@ -4694,6 +4893,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if rank == 0:
         logger.info("More gradient processing")
 
+    target_boundaries = {}
+
     def grad_cv_operator_target(fluid_state, time):
         return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
                                 dd=dd_vol_fluid,
@@ -4722,7 +4923,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         target_bndry_mapping["prescribed"] = DummyBoundary()
         target_bndry_mapping["isentropic_pressure_ramp"] = DummyBoundary()
 
-        target_boundaries = {}
         target_boundaries = assign_fluid_boundaries(
             target_boundaries, target_bndry_mapping)
 
@@ -4753,92 +4953,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
             smoothness_kappa=target_av_skappa,
             smoothness_d=target_av_sd)
-
-    #
-    # Setup the wall model
-    #
-    if use_wall:
-        def experimental_kappa(temperature):
-            return (
-                1.766e-10 * temperature**3
-                - 4.828e-7 * temperature**2
-                + 6.252e-4 * temperature
-                + 6.707e-3)
-
-        def puma_kappa(mass_loss_frac):
-            return (
-                0.0988 * mass_loss_frac**2
-                - 0.2751 * mass_loss_frac
-                + 0.201)
-
-        def puma_effective_surface_area(mass_loss_frac):
-            # Original fit function: -1.1012e5*x**2 - 0.0646e5*x + 1.1794e5
-            # Rescale by x==0 value and rearrange
-            return 1.1794e5 * (
-                1
-                - 0.0547736137 * mass_loss_frac
-                - 0.9336950992 * mass_loss_frac**2)
-
-        def _get_wall_kappa_fiber(mass, temperature):
-            mass_loss_frac = (
-                (wall_insert_rho - mass)/wall_insert_rho
-                * wall_insert_mask)
-            scaled_insert_kappa = (
-                experimental_kappa(temperature)
-                * puma_kappa(mass_loss_frac)
-                / puma_kappa(0))
-            return (
-                scaled_insert_kappa * wall_insert_mask
-                + wall_surround_kappa * wall_surround_mask)
-
-        def _get_wall_kappa_inert(mass, temperature):
-            return (
-                wall_insert_kappa * wall_insert_mask
-                + wall_surround_kappa * wall_surround_mask)
-
-        def _get_wall_effective_surface_area_fiber(mass):
-            mass_loss_frac = (
-                (wall_insert_rho - mass)/wall_insert_rho
-                * wall_insert_mask)
-            return (
-                puma_effective_surface_area(mass_loss_frac) * wall_insert_mask)
-
-        def _mass_loss_rate_fiber(mass, ox_mass, temperature, eff_surf_area):
-            actx = mass.array_context
-            alpha = (
-                (0.00143+0.01*actx.np.exp(-1450.0/temperature))
-                / (1.0+0.0002*actx.np.exp(13000.0/temperature)))
-            k = alpha*actx.np.sqrt(
-                (univ_gas_const*temperature)/(2.0*np.pi*mw_o2))
-            return (mw_co/mw_o2 + mw_o/mw_o2 - 1)*ox_mass*k*eff_surf_area
-
-        # inert
-        if wall_material == 0:
-            wall_model = WallModel(
-                heat_capacity=(
-                    wall_insert_cp * wall_insert_mask
-                    + wall_surround_cp * wall_surround_mask),
-                thermal_conductivity_func=_get_wall_kappa_inert)
-        # non-porous
-        elif wall_material == 1:
-            wall_model = WallModel(
-                heat_capacity=(
-                    wall_insert_cp * wall_insert_mask
-                    + wall_surround_cp * wall_surround_mask),
-                thermal_conductivity_func=_get_wall_kappa_fiber,
-                effective_surface_area_func=_get_wall_effective_surface_area_fiber,
-                mass_loss_func=_mass_loss_rate_fiber,
-                oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
-        # porous
-        elif wall_material == 2:
-            wall_model = WallModel(
-                heat_capacity=(
-                    wall_insert_cp * wall_insert_mask
-                    + wall_surround_cp * wall_surround_mask),
-                thermal_conductivity_func=_get_wall_kappa_fiber,
-                effective_surface_area_func=_get_wall_effective_surface_area_fiber,
-                mass_loss_func=_mass_loss_rate_fiber,
-                oxygen_diffusivity=wall_insert_ox_diff * wall_insert_mask)
 
     ##################################
     # Set up the boundary conditions #
@@ -5041,8 +5155,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         bound_list = []
         for bound in list(uncoupled_fluid_boundaries.keys()):
             bound_list.append(bound.tag)
-        #print(f"{uncoupled_fluid_boundaries=}")
         print(f"{bound_list=}")
+
         check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
                           boundary_tags=bound_list,
                           incomplete_ok=False)
@@ -5222,6 +5336,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
+    elif init_case == "mixing_layer" or init_case == "mixing_layer_hot":
+
+        top_sponge_y0 = 0.006
+        top_sponge_thickness = 0.002
+        bottom_sponge_y0 = -0.006
+        bottom_sponge_thickness = 0.002
+        sponge_init_bottom = InitSponge(x0=bottom_sponge_y0,
+                                        thickness=bottom_sponge_thickness,
+                                        amplitude=sponge_amp,
+                                        direction=-2.0)
+        sponge_init_top = InitSponge(x0=top_sponge_y0,
+                                     thickness=top_sponge_thickness,
+                                     amplitude=sponge_amp,
+                                     direction=2.0)
+
+        def _sponge_sigma(sponge_field, x_vec):
+            sponge_field = sponge_init_bottom(sponge_field=sponge_field, x_vec=x_vec)
+            sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
+            return sponge_field
+
     elif init_case == "unstart" or init_case == "unstart_ramp":
 
         inlet_sponge_x0 = -0.315
@@ -5329,6 +5463,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.info("Viz & utilities processsing")
 
     # avoid making a second discretization if viz_order == order
+    wall_visualizer = None
     if viz_order == order:
         fluid_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_fluid)
         if use_wall:
@@ -5339,7 +5474,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_wall:
             wall_visualizer = make_visualizer(dcoll, volume_dd=dd_vol_wall,
                                               vis_order=viz_order)
-
     #    initname = initializer.__class__.__name__
     eosname = eos.__class__.__name__
     init_message = make_init_message(dim=dim, order=order, nelements=local_nelements,
@@ -5933,6 +6067,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if np.any(mask):
             guilty_node_x = nodes_x[mask]
             guilty_node_y = nodes_y[mask]
+            guilty_node_z = None
             if dim == 3:
                 guilty_node_z = nodes_z[mask]
             guilty_data = data[mask]
@@ -6265,7 +6400,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
             do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
 
+            dv = None
+            ts_field_fluid = None
+            ts_field_wall = None
+            cfl_fluid = 0.
+            cfl_wall = cfl_fluid
             if any([do_viz, do_restart, do_health, do_status]):
+                wv = None
                 if not force_eval:
                     fluid_state = force_evaluation(actx, fluid_state)
                     #state = force_evaluation(actx, state)
@@ -6281,15 +6422,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     t=t, dt=dt, cfl=current_cfl, t_final=t_final,
                     constant_cfl=constant_cfl, fluid_dd=dd_vol_fluid)
 
-                ts_field_wall = None
                 if use_wall:
                     ts_field_wall, cfl_wall, dt_wall = my_get_timestep_wall(
                         dcoll=dcoll, wv=wv, wall_kappa=wdv.thermal_conductivity,
                         wall_temperature=wdv.temperature, t=t, dt=dt,
                         cfl=current_cfl, t_final=t_final, constant_cfl=constant_cfl,
                         wall_dd=dd_vol_wall)
-                else:
-                    cfl_wall = cfl_fluid
 
             """
             # adjust time for constant cfl, use the smallest timescale
@@ -6487,6 +6625,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     off_axis_x = 1e-7
     fluid_nodes_are_off_axis = actx.np.greater(fluid_nodes[0], off_axis_x)
+    wall_nodes_are_off_axis = None
     if use_wall:
         wall_nodes_are_off_axis = actx.np.greater(wall_nodes[0], off_axis_x)
 
@@ -6689,6 +6828,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
                 time=t, quadrature_tag=quadrature_tag)
 
+        smoothness_mu = actx.np.zeros_like(cv.mass)
+        smoothness_beta = actx.np.zeros_like(cv.mass)
+        smoothness_kappa = actx.np.zeros_like(cv.mass)
+        smoothness_d = actx.np.zeros_like(cv.mass)
         if use_av == 1:
             smoothness_mu = compute_smoothness(
                 cv=cv, dv=fluid_state.dv, grad_cv=grad_fluid_cv)
