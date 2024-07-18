@@ -6226,47 +6226,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             + ((nu + d_alpha_max) / char_length_fluid))
         )
 
-    if use_wall:
-        def my_get_wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
-
-            return (
-                char_length_wall*char_length_wall
-                / (
-                    wall_time_scale
-                    * actx.np.maximum(
-                        wall_model.thermal_diffusivity(
-                            wv.mass, wall_temperature, wall_kappa),
-                        wall_model.oxygen_diffusivity)))
-
-        def _my_get_timestep_wall(
-                dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
-                constant_cfl=False, wall_dd=DD_VOLUME_ALL):
-
-            actx = wall_kappa.array_context
-            mydt = dt
-            if constant_cfl:
-                from grudge.op import nodal_min
-                ts_field = cfl*my_get_wall_timestep(
-                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
-                    wall_temperature=wall_temperature)
-                mydt = actx.to_numpy(
-                    nodal_min(
-                        dcoll, wall_dd, ts_field, initial=np.inf))[()]
-            else:
-                from grudge.op import nodal_max
-                ts_field = mydt/my_get_wall_timestep(
-                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
-                    wall_temperature=wall_temperature)
-                cfl = actx.to_numpy(
-                    nodal_max(
-                        dcoll, wall_dd, ts_field, initial=0.))[()]
-
-            return ts_field, cfl, mydt
-
-    #my_get_timestep = actx.compile(_my_get_timestep)
-    if use_wall:
-        my_get_timestep_wall = _my_get_timestep_wall
-
     def _my_get_timestep(
             dcoll, fluid_state, t, dt, cfl, t_final, constant_cfl=False,
             fluid_dd=DD_VOLUME_ALL):
@@ -6289,6 +6248,46 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     #my_get_timestep = actx.compile(_my_get_timestep)
     my_get_timestep = _my_get_timestep
+
+    if use_wall:
+        def wall_timestep(dcoll, wv, wall_kappa, wall_temperature):
+            return (
+                char_length_wall*char_length_wall
+                / (
+                    wall_time_scale
+                    * actx.np.maximum(
+                        wall_model.thermal_diffusivity(
+                            wv.mass, wall_temperature, wall_kappa),
+                        wall_model.oxygen_diffusivity)))
+
+        def _my_get_timestep_wall(
+                dcoll, wv, wall_kappa, wall_temperature, t, dt, cfl, t_final,
+                constant_cfl=False, wall_dd=DD_VOLUME_ALL):
+
+            actx = wall_kappa.array_context
+            mydt = dt
+            if constant_cfl:
+                from grudge.op import nodal_min
+                ts_field = cfl*wall_timestep(
+                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wall_temperature=wall_temperature)
+                mydt = actx.to_numpy(
+                    nodal_min(
+                        dcoll, wall_dd, ts_field, initial=np.inf))[()]
+            else:
+                from grudge.op import nodal_max
+                ts_field = mydt/wall_timestep(
+                    dcoll=dcoll, wv=wv, wall_kappa=wall_kappa,
+                    wall_temperature=wall_temperature)
+                cfl = actx.to_numpy(
+                    nodal_max(
+                        dcoll, wall_dd, ts_field, initial=0.))[()]
+
+            return ts_field, cfl, mydt
+
+    #my_get_timestep = actx.compile(_my_get_timestep)
+    if use_wall:
+        my_get_timestep_wall = _my_get_timestep_wall
 
     def _check_time(time, dt, interval, interval_type):
         toler = 1.e-6
@@ -6589,8 +6588,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             return op.project(dcoll, dd_trace_quad, dd_allfaces_quad, flux_int)
 
         def boundary_flux(bdtag, bdry):
+            if isinstance(bdtag, DOFDesc):
+                bdtag = bdtag.domain_tag
             dd_bdry_quad = dd_vol_quad.with_domain_tag(bdtag)
-            #normal_quad = actx.thaw(dcoll.normal(dd_bdry_quad))
             normal_quad = normal_vector(actx, dcoll, dd_bdry_quad)
             int_soln_quad = op.project(dcoll, dd_vol, dd_bdry_quad, field)
 
@@ -6607,9 +6607,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             return op.project(dcoll, dd_bdry_quad, dd_allfaces_quad, flux_bnd)
 
+        field_quad = op.project(dcoll, dd_vol, dd_vol_quad, field)
+
         return -1.0*op.inverse_mass(
-            dcoll, dd_vol,
-            op.weak_local_grad(dcoll, dd_vol, field)
+            dcoll, dd_vol_quad,
+            op.weak_local_grad(dcoll, dd_vol_quad, field_quad)
             -  # noqa: W504
             op.face_mass(
                 dcoll, dd_allfaces_quad,
@@ -6742,15 +6744,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
         #                                 dd_vol_wall, "symmetry")[0]
         #dqrdr = - (dkappadr*grad_t[0] + kappa*d2Tdr2)
 
-        source_mass = wv.mass*0.0
-
         source_rhoE_dom = - qr
         source_rhoE_sng = 0.0
         source_rhoE = actx.np.where(
             wall_nodes_are_off_axis, source_rhoE_dom/wall_nodes[0], source_rhoE_sng)
 
-        return WallVars(mass=source_mass, energy=source_rhoE,
-                        ox_mass=source_mass)
+        return source_rhoE
 
     def unfiltered_rhs(t, state):
 
@@ -6880,7 +6879,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if use_axisymmetric:
                 wall_energy_rhs = wall_energy_rhs + \
                     axisym_source_wall(dcoll, wv, wdv,
-                                       updated_fluid_boundaries,
+                                       updated_wall_boundaries,
                                        grad_wall_t)
 
         if use_combustion:
