@@ -525,7 +525,7 @@ def _element_average_cv(dcoll, dd, cv, volumes=None):
 
 
 def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
-    r"""Element average positivity preserving limiter
+    r"""lement average positivity preserving limiter
 
     Follows loosely the implementation outline in Liu, et. al.
     Limits the density and mass fractions based on global minima
@@ -629,8 +629,9 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     nspecies = cv.nspecies
     dim = cv.dim
     toler = 1.e-13
+    ones = actx.np.zeros_like(cv.mass)
     element_vols = abs(op.elementwise_integral(dcoll, dd,
-                                               actx.zeros_like(cv.mass) + 1.0))
+                                               actx.np.zeros_like(cv.mass) + 1.0))
 
     print_stuff = False
     index = 118
@@ -676,7 +677,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         actx.np.greater(cell_avgs, rho_lim), cell_avgs, rho_lim)
     #print(f"modified rho_avg {cell_avgs}")
 
-    theta_rho = actx.np.maximum(0.,
+    theta_rho = ones*actx.np.maximum(0.,
         actx.np.where(actx.np.less(mmin_i + toler, mmin),
                       (mmin-mmin_i)/(cell_avgs - mmin_i),
                       0.)
@@ -776,7 +777,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                               0.)
             )
 
-            theta_spec[i] = _theta
+            theta_spec[i] = _theta*ones
 
             #print(f"species {i}, {_theta=}")
 
@@ -975,7 +976,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     print(f"{theta_savg=}")
     """
 
-    theta_pressure = actx.np.maximum(0.,
+    theta_pressure = ones*actx.np.maximum(0.,
         actx.np.where(actx.np.less(theta_smin_i + toler, mmin),
                       (mmin-theta_smin_i)/(theta_savg - theta_smin_i),
                       0.)
@@ -5643,10 +5644,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         wv = wv + 0.*wall_rhs
 
-        av_smu = actx.zeros_like(cv.mass)
-        av_sbeta = actx.zeros_like(cv.mass)
-        av_skappa = actx.zeros_like(cv.mass)
-        av_sd = actx.zeros_like(cv.mass)
+        av_smu = actx.np.zeros_like(cv.mass)
+        av_sbeta = actx.np.zeros_like(cv.mass)
+        av_skappa = actx.np.zeros_like(cv.mass)
+        av_sd = actx.np.zeros_like(cv.mass)
 
         # now compute the smoothness part
         if use_av == 1:
@@ -5905,6 +5906,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if viz_level > 2:
 
             if use_species_limiter:
+                print(f"{theta_rho.shape=}")
                 viz_ext = [("theta_rho", theta_rho),
                            ("theta_Y", theta_Y),
                            ("theta_pressure", theta_pres)]
@@ -5967,6 +5969,19 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             viz_ext.extend(("grad_Y_"+species_names[i], grad_y[i])
                            for i in range(nspecies))
+            fluid_viz_fields.extend(viz_ext)
+
+            # write out the grid metrics
+            from grudge.geometry import inverse_metric_derivative_mat
+            metric = inverse_metric_derivative_mat(
+                actx, dcoll, dd_vol_fluid,
+                _use_geoderiv_connection=actx.supports_nonscalar_broadcasting)
+
+            viz_ext = [("metric_x", metric[0]),
+                       ("metric_y", metric[1])]
+            if dim == 3:
+                viz_ext.extend([("metric_z", metric[2])])
+
             fluid_viz_fields.extend(viz_ext)
 
             """
