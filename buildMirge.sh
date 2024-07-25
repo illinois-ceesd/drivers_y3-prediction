@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # default branch for building mirgecom for this driver
-#mirge_branch="production"
-mirge_branch="use-pilot-loopy"
+mirge_branch="production"
 # conda environment name
 conda_env="mirgeDriver.Y3prediction"
 

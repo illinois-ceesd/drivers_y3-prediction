@@ -629,7 +629,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     nspecies = cv.nspecies
     dim = cv.dim
     toler = 1.e-13
-    ones = actx.np.zeros_like(cv.mass)
+    ones = 1. + actx.np.zeros_like(cv.mass)
     element_vols = abs(op.elementwise_integral(dcoll, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
