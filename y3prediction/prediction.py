@@ -1482,6 +1482,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     outlet_sponge_x0 = configurate("outlet_sponge_x0", input_data, 0.89)
     outlet_sponge_thickness = configurate("outlet_sponge_thickness",
                                           input_data, 0.04)
+    top_sponge_x0 = configurate("top_sponge_x0", input_data, 0.1)
+    top_sponge_thickness = configurate("outlet_sponge_thickness",
+                                          input_data, 0.1)
     inj_sponge_x0 = configurate("inj_sponge_x0", input_data, 0.645)
     inj_sponge_thickness = configurate("inj_sponge_thickness", input_data, 0.005)
     upstream_inj_sponge_y0 = configurate("upstream_inj_sponge_y0",
@@ -5357,14 +5360,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             return sponge_field
 
     elif init_case == "unstart" or init_case == "unstart_ramp":
-
-        inlet_sponge_x0 = -0.315
-        inlet_sponge_thickness = 0.010
-        outlet_sponge_x0 = 0.666
-        outlet_sponge_thickness = 0.100
-        top_sponge_x0 = 0.1
-        top_sponge_thickness = 0.100
-
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
@@ -5376,7 +5371,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         sponge_init_top = InitSponge(x0=top_sponge_x0,
                                      thickness=top_sponge_thickness,
                                      amplitude=sponge_amp,
-                                     direction=1.0)
+                                     direction=1)
 
         def _sponge_sigma(sponge_field, x_vec):
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
