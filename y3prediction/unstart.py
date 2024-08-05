@@ -111,11 +111,9 @@ class InitUnstartRamp:
         mass = eos.get_density(self._pres_bulk, self._temp_bulk,
                                self._y_bulk) + zeros
         velocity = self._vel_bulk
+        mom = mass*velocity
         energy = mass*(eos.get_internal_energy(self._temp_bulk, self._y_bulk)
                       + 0.5*np.dot(velocity, velocity))
-
-        mom = mass*velocity
-        energy = (energy + np.dot(mom, mom)/(2.0*mass))
 
         return make_conserved(
             dim=self._dim,
