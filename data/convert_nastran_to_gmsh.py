@@ -267,50 +267,30 @@ def convert_mesh(input_mesh, output_mesh):
     # Example usage:
     nodes, elements, element_tags, physical_names, physical_dim = read_nastran_mesh(input_mesh)
 
-    """
-    # detect any backwards elements
-    for element in elements:
-        if len(element) == 8:  # Hex elements only
-            r = np.asarray(nodes[element[1]]) - np.asarray(nodes[element[0]])
-            r_hat = r/np.linalg.norm(r)
-            s = np.asarray(nodes[element[2]]) - np.asarray(nodes[element[1]])
-            s_hat = s/np.linalg.norm(s)
-            t = np.asarray(nodes[element[4]]) - np.asarray(nodes[element[0]])
-            t_hat = t/np.linalg.norm(t)
-            t_candidate = np.cross(r_hat, s_hat)
-            t_candidate_hat = t_candidate/np.linalg.norm(t_candidate)
-            #if (t_candidate_hat != t_hat).all:
-            #if not np.allclose(t_candidate_hat, t_hat):
-            if np.dot(t_hat, t_candidate_hat) < 0.:
-                print(f"{s_hat=}, {r_hat=}, {t_hat=}, {t_candidate_hat=}")
-
-    # sort the element verticies for processing by mirgecom/meshmode
-    sorted_elements = []
-    for element in elements:
-        if len(element) == 8:  # Hex elements only
-            sorted_element = sort_gmsh3(element, nodes)
-            sorted_element = sort_gmsh3(element, nodes)
-        else:
-            sorted_element = element
-        sorted_elements.append(sorted_element)
-
-    elements = sorted_elements
-    """
-
     # This is the mesh format meshmode expects
     mesh_format = "2.2 0 8"
 
     print("Nodes:")
+    first_node = 1e9
+    last_node = -1
     for node_id, coordinates in nodes.items():
-        print(f"Node {node_id}: {coordinates}")
+        first_node = min(first_node, node_id)
+        last_node = max(last_node, node_id)
+        #print(f"Node {node_id}: {coordinates}")
+    print(f"Wrote {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
 
     print("\nElements:")
+    first_element = 1e9
+    last_element = -1
     for element_id, element_nodes in elements.items():
-        print(f"Element Nodes for Element {element_id}: {element_nodes}")
+        first_element = min(first_element, element_id)
+        last_element = max(last_element, element_id)
+        #print(f"Element Nodes for Element {element_id}: {element_nodes}")
+    print(f"Wrote {len(elements)} elements, first element id {first_element}, last element id {last_element}")
 
-    print("\nElement Tags:")
-    for element_id, tags in element_tags.items():
-        print(f"Element Tags for Element {element_id}: {tags}")
+    #print("\nElement Tags:")
+    #for element_id, tags in element_tags.items():
+        #print(f"Element Tags for Element {element_id}: {tags}")
 
     print("\nPhysical Names:")
     for name_id, name in physical_names.items():
