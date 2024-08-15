@@ -111,11 +111,9 @@ class InitUnstartRamp:
         mass = eos.get_density(self._pres_bulk, self._temp_bulk,
                                self._y_bulk) + zeros
         velocity = self._vel_bulk
+        mom = mass*velocity
         energy = mass*(eos.get_internal_energy(self._temp_bulk, self._y_bulk)
                       + 0.5*np.dot(velocity, velocity))
-
-        mom = mass*velocity
-        energy = (energy + np.dot(mom, mom)/(2.0*mass))
 
         return make_conserved(
             dim=self._dim,
@@ -128,20 +126,32 @@ class InitUnstartRamp:
     def inlet_smoothing_func(self, x_vec, sigma):
         actx = x_vec[0].array_context
 
-        x0 = -0.013
-        x1 = 0.013
-        smth_bottom = smooth_step(actx, sigma*(x_vec[0] - x0))
-        smth_top = smooth_step(actx, -sigma*(x_vec[0] - x1))
-        return smth_bottom*smth_top
+        if self._dim == 2:
+            x0 = -0.013
+            x1 = 0.013
+            smth_bottom = smooth_step(actx, sigma*(x_vec[0] - x0))
+            smth_top = smooth_step(actx, -sigma*(x_vec[0] - x1))
+            return smth_bottom*smth_top
+        else:
+            r1 = 0.013
+            radius = actx.np.sqrt((x_vec[1])**2 + (x_vec[2])**2)
+            smth_radial = smooth_step(actx, -sigma*(radius - r1))
+            return smth_radial
 
     def outlet_smoothing_func(self, x_vec, sigma):
         actx = x_vec[0].array_context
 
-        x0 = -.2
-        x1 = .2
-        smth_bottom = smooth_step(actx, sigma*(x_vec[0] - x0))
-        smth_top = smooth_step(actx, -sigma*(x_vec[0] - x1))
-        return smth_bottom*smth_top
+        if self._dim == 2:
+            x0 = -.2
+            x1 = .2
+            smth_bottom = smooth_step(actx, sigma*(x_vec[0] - x0))
+            smth_top = smooth_step(actx, -sigma*(x_vec[0] - x1))
+            return smth_bottom*smth_top
+        else:
+            r1 = 0.2
+            radius = actx.np.sqrt((x_vec[1])**2 + (x_vec[2])**2)
+            smth_radial = smooth_step(actx, -sigma*(radius - r1))
+            return smth_radial
 
     def add_inlet(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
         """Create the solution state at locations *x_vec*.
@@ -172,10 +182,14 @@ class InitUnstartRamp:
             pres_inlet = self._pres_inlet
 
         # initial discontinuity location
-        y0 = -0.325
+        if self._dim == 2:
+            y0 = -0.325
+            dist = y0 - x_vec[1]
+        else:
+            x0 = -0.325
+            dist = x0 - x_vec[0]
 
         # now solve for T, P, velocity
-        dist = y0 - x_vec[1]
         xtanh = self._disc_sigma*dist
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
         pressure = pres_inlet + (pressure - pres_inlet)*weight
@@ -185,7 +199,6 @@ class InitUnstartRamp:
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
-
         sigma = self._temp_sigma
         if sigma > 0:
             wall_temperature = self._temp_wall
@@ -244,10 +257,14 @@ class InitUnstartRamp:
             pres_outlet = self._pres_outlet
 
         # initial discontinuity location
-        y0 = 0.825
+        if self._dim == 2:
+            y0 = 0.825
+            dist = x_vec[1] - y0
+        else:
+            x0 = 1.1
+            dist = x_vec[0] - x0
 
         # now solve for T, P, velocity
-        dist = x_vec[1] - y0
         xtanh = 50*dist
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
         pressure = pres_outlet + (pressure - pres_outlet)*weight

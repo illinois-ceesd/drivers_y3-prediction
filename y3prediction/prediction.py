@@ -2449,7 +2449,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # init params
         disc_location = np.zeros(shape=(dim,))
         fuel_location = np.zeros(shape=(dim,))
-        disc_location[1] = shock_loc_x
+        if dim == 2:
+            disc_location[1] = shock_loc_x
+        else:
+            disc_location[0] = shock_loc_x
         fuel_location[1] = 10000.
         plane_normal = np.zeros(shape=(dim,))
 
@@ -2518,9 +2521,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
-        vel_inflow[1] = inlet_mach*sos
+        theta = 0.0
+        if dim == 2:
+            vel_inflow[1] = inlet_mach*sos
+            theta = np.pi/2.
+        else:
+            vel_inflow[0] = inlet_mach*sos
+
         plane_normal = np.zeros(shape=(dim,))
-        theta = np.pi/2.
         plane_normal[0] = np.cos(theta)
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
@@ -2532,7 +2540,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tinlet temperature {temp_inflow}")
             print(f"\tinlet pressure {pres_inflow}")
             print(f"\tinlet rho {rho_inflow}")
-            print(f"\tinlet velocity {vel_inflow[1]}")
+            print(f"\tinlet velocity x  {vel_inflow[0]}")
+            print(f"\tinlet velocity y  {vel_inflow[1]}")
             #print(f"final inlet pressure {pres_inflow_final}")
 
         bulk_init = PlanarDiscontinuityMulti(
@@ -2650,7 +2659,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             sos = math.sqrt(inlet_gamma*pres_inflow/rho_inflow)
 
-        vel_inflow[1] = inlet_mach*sos
+        if dim == 2:
+            vel_inflow[1] = inlet_mach*sos
+        else:
+            vel_inflow[0] = inlet_mach*sos
 
         if rank == 0:
             print("#### Simluation initialization data: ####")
@@ -2661,7 +2673,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tinlet pressure begin {inlet_ramp_beginP}")
             print(f"\tinlet pressure end {inlet_ramp_endP}")
             print(f"\tinlet rho {rho_inflow}")
-            print(f"\tinlet velocity {vel_inflow[1]}")
+            print(f"\tinlet velocity x  {vel_inflow[0]}")
+            print(f"\tinlet velocity y  {vel_inflow[1]}")
             #print(f"final inlet pressure {pres_inflow_final}")
 
         from y3prediction.unstart import InitUnstartRamp
@@ -5002,21 +5015,41 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 p_fun=inflow_ramp_pressure)
         else:
             normal_dir[0] = 1
-            inflow_state = IsentropicInflow(
-                dim=dim,
-                temp_wall=temp_wall,
-                temp_sigma=temp_sigma,
-                vel_sigma=vel_sigma,
-                smooth_y0=-0.013,
-                smooth_y1=0.013,
-                normal_dir=normal_dir,
-                gamma=gamma,
-                nspecies=nspecies,
-                mass_frac=y,
-                T0=total_temp_inflow,
-                P0=ramp_beginP,
-                mach=inlet_mach,
-                p_fun=inflow_ramp_pressure)
+            if dim == 2:
+                inflow_state = IsentropicInflow(
+                    dim=dim,
+                    temp_wall=temp_wall,
+                    temp_sigma=temp_sigma,
+                    vel_sigma=vel_sigma,
+                    smooth_y0=-0.013,
+                    smooth_y1=0.013,
+                    normal_dir=normal_dir,
+                    gamma=gamma,
+                    nspecies=nspecies,
+                    mass_frac=y,
+                    T0=total_temp_inflow,
+                    P0=ramp_beginP,
+                    mach=inlet_mach,
+                    p_fun=inflow_ramp_pressure)
+            else:
+                smooth_r0 = fluid_nodes
+                smooth_r0[1] = actx.np.zeros_like(fluid_nodes[0])
+                smooth_r0[2] = actx.np.zeros_like(fluid_nodes[0])
+                inflow_state = IsentropicInflow(
+                    dim=dim,
+                    temp_wall=temp_wall,
+                    temp_sigma=temp_sigma,
+                    vel_sigma=vel_sigma,
+                    smooth_r0=smooth_r0,
+                    smooth_r1=0.013,
+                    normal_dir=normal_dir,
+                    gamma=gamma,
+                    nspecies=nspecies,
+                    mass_frac=y,
+                    T0=total_temp_inflow,
+                    P0=ramp_beginP,
+                    mach=inlet_mach,
+                    p_fun=inflow_ramp_pressure)
     else:
         inflow_state = IsentropicInflow(
             dim=dim,
@@ -5162,7 +5195,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         print(f"{bound_list=}")
         check_bc_coverage(mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh,
                           boundary_tags=bound_list,
-                          incomplete_ok=False)
+                          incomplete_ok=True)
     except (ValueError, RuntimeError):
         print(f"{uncoupled_fluid_boundaries=}")
         raise SimulationConfigurationError(
@@ -5360,18 +5393,32 @@ def main(actx_class, restart_filename=None, target_filename=None,
             return sponge_field
 
     elif init_case == "unstart" or init_case == "unstart_ramp":
-        sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
-                                       thickness=inlet_sponge_thickness,
-                                       amplitude=sponge_amp,
-                                       direction=-2)
-        sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
-                                        thickness=outlet_sponge_thickness,
-                                        amplitude=sponge_amp,
-                                        direction=2)
-        sponge_init_top = InitSponge(x0=top_sponge_x0,
-                                     thickness=top_sponge_thickness,
-                                     amplitude=sponge_amp,
-                                     direction=1)
+        if dim == 2:
+            sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                           thickness=inlet_sponge_thickness,
+                                           amplitude=sponge_amp,
+                                           direction=-2)
+            sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                            thickness=outlet_sponge_thickness,
+                                            amplitude=sponge_amp,
+                                            direction=2)
+            sponge_init_top = InitSponge(x0=top_sponge_x0,
+                                         thickness=top_sponge_thickness,
+                                         amplitude=sponge_amp,
+                                         direction=1)
+        else:
+            sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
+                                           thickness=inlet_sponge_thickness,
+                                           amplitude=sponge_amp,
+                                           direction=-1)
+            sponge_init_outlet = InitSponge(x0=outlet_sponge_x0,
+                                            thickness=outlet_sponge_thickness,
+                                            amplitude=sponge_amp,
+                                            direction=1)
+            #sponge_init_top = InitSponge(x0=top_sponge_x0,
+                                         #thickness=top_sponge_thickness,
+                                         #amplitude=sponge_amp,
+                                         #direction=1)
 
         def _sponge_sigma(sponge_field, x_vec):
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)

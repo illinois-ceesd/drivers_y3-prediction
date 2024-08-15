@@ -508,6 +508,7 @@ class IsentropicInflow:
         self._x0 = smooth_x0
         self._y0 = smooth_y0
         self._z0 = smooth_z0
+        self._r0 = smooth_r0
         self._x1 = smooth_x1
         self._y1 = smooth_y1
         self._z1 = smooth_z1
