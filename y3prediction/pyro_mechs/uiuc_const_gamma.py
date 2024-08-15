@@ -3,6 +3,7 @@
 """
 
 
+from warnings import warn
 import numpy as np
 
 
@@ -83,8 +84,22 @@ class Thermochemistry:
         self.species_names = ['C2H4', 'O2', 'CO2', 'CO', 'H2O', 'H2', 'N2']
         self.species_indices = {'C2H4': 0, 'O2': 1, 'CO2': 2, 'CO': 3, 'H2O': 4, 'H2': 5, 'N2': 6}
 
-        self.wts = np.array([28.054, 31.998, 44.009, 28.009999999999998, 18.015, 2.016, 28.014])
-        self.iwts = 1/self.wts
+        self.molecular_weights = np.array([28.054, 31.998, 44.009, 28.009999999999998, 18.015, 2.016, 28.014])
+        self.inv_molecular_weights = 1/self.molecular_weights
+
+    @property
+    def wts(self):
+        warn("Thermochemistry.wts is deprecated and will go away in 2024. "
+             "Use molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.molecular_weights
+
+    @property
+    def iwts(self):
+        warn("Thermochemistry.iwts is deprecated and will go away in 2024. "
+             "Use inv_molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.inv_molecular_weights
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
@@ -135,13 +150,13 @@ class Thermochemistry:
 
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
-            + self.iwts[0]*mass_fractions[0]
-            + self.iwts[1]*mass_fractions[1]
-            + self.iwts[2]*mass_fractions[2]
-            + self.iwts[3]*mass_fractions[3]
-            + self.iwts[4]*mass_fractions[4]
-            + self.iwts[5]*mass_fractions[5]
-            + self.iwts[6]*mass_fractions[6]
+            + self.inv_molecular_weights[0]*mass_fractions[0]
+            + self.inv_molecular_weights[1]*mass_fractions[1]
+            + self.inv_molecular_weights[2]*mass_fractions[2]
+            + self.inv_molecular_weights[3]*mass_fractions[3]
+            + self.inv_molecular_weights[4]*mass_fractions[4]
+            + self.inv_molecular_weights[5]*mass_fractions[5]
+            + self.inv_molecular_weights[6]*mass_fractions[6]
         )
 
     def get_density(self, p, temperature, mass_fractions):
@@ -156,39 +171,39 @@ class Thermochemistry:
 
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
-            + self.iwts[0]*mass_fractions[0]
-            + self.iwts[1]*mass_fractions[1]
-            + self.iwts[2]*mass_fractions[2]
-            + self.iwts[3]*mass_fractions[3]
-            + self.iwts[4]*mass_fractions[4]
-            + self.iwts[5]*mass_fractions[5]
-            + self.iwts[6]*mass_fractions[6]
+            + self.inv_molecular_weights[0]*mass_fractions[0]
+            + self.inv_molecular_weights[1]*mass_fractions[1]
+            + self.inv_molecular_weights[2]*mass_fractions[2]
+            + self.inv_molecular_weights[3]*mass_fractions[3]
+            + self.inv_molecular_weights[4]*mass_fractions[4]
+            + self.inv_molecular_weights[5]*mass_fractions[5]
+            + self.inv_molecular_weights[6]*mass_fractions[6]
         )
 
     def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_array([
-            self.iwts[0] * rho * mass_fractions[0],
-            self.iwts[1] * rho * mass_fractions[1],
-            self.iwts[2] * rho * mass_fractions[2],
-            self.iwts[3] * rho * mass_fractions[3],
-            self.iwts[4] * rho * mass_fractions[4],
-            self.iwts[5] * rho * mass_fractions[5],
-            self.iwts[6] * rho * mass_fractions[6],
+            self.inv_molecular_weights[0] * rho * mass_fractions[0],
+            self.inv_molecular_weights[1] * rho * mass_fractions[1],
+            self.inv_molecular_weights[2] * rho * mass_fractions[2],
+            self.inv_molecular_weights[3] * rho * mass_fractions[3],
+            self.inv_molecular_weights[4] * rho * mass_fractions[4],
+            self.inv_molecular_weights[5] * rho * mass_fractions[5],
+            self.inv_molecular_weights[6] * rho * mass_fractions[6],
         ])
 
     def get_mole_fractions(self, mix_mol_weight, mass_fractions):
         return self._pyro_make_array([
-            self.iwts[0] * mass_fractions[0] * mix_mol_weight,
-            self.iwts[1] * mass_fractions[1] * mix_mol_weight,
-            self.iwts[2] * mass_fractions[2] * mix_mol_weight,
-            self.iwts[3] * mass_fractions[3] * mix_mol_weight,
-            self.iwts[4] * mass_fractions[4] * mix_mol_weight,
-            self.iwts[5] * mass_fractions[5] * mix_mol_weight,
-            self.iwts[6] * mass_fractions[6] * mix_mol_weight,
+            self.inv_molecular_weights[0] * mass_fractions[0] * mix_mol_weight,
+            self.inv_molecular_weights[1] * mass_fractions[1] * mix_mol_weight,
+            self.inv_molecular_weights[2] * mass_fractions[2] * mix_mol_weight,
+            self.inv_molecular_weights[3] * mass_fractions[3] * mix_mol_weight,
+            self.inv_molecular_weights[4] * mass_fractions[4] * mix_mol_weight,
+            self.inv_molecular_weights[5] * mass_fractions[5] * mix_mol_weight,
+            self.inv_molecular_weights[6] * mass_fractions[6] * mix_mol_weight,
         ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
-        return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
+        return sum([mass_fractions[i] * spec_property[i] * self.inv_molecular_weights[i]
                     for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
@@ -336,31 +351,31 @@ class Thermochemistry:
             ])
         return self._pyro_make_array([
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[0], zeros),
-                  (mmw - mole_fracs[0] * self.wts[0])/(mmw * denom[0]),
+                  (mmw - mole_fracs[0] * self.molecular_weights[0])/(mmw * denom[0]),
                   bdiff_ij[0, 0]
               ),
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[1], zeros),
-                  (mmw - mole_fracs[1] * self.wts[1])/(mmw * denom[1]),
+                  (mmw - mole_fracs[1] * self.molecular_weights[1])/(mmw * denom[1]),
                   bdiff_ij[1, 1]
               ),
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[2], zeros),
-                  (mmw - mole_fracs[2] * self.wts[2])/(mmw * denom[2]),
+                  (mmw - mole_fracs[2] * self.molecular_weights[2])/(mmw * denom[2]),
                   bdiff_ij[2, 2]
               ),
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[3], zeros),
-                  (mmw - mole_fracs[3] * self.wts[3])/(mmw * denom[3]),
+                  (mmw - mole_fracs[3] * self.molecular_weights[3])/(mmw * denom[3]),
                   bdiff_ij[3, 3]
               ),
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[4], zeros),
-                  (mmw - mole_fracs[4] * self.wts[4])/(mmw * denom[4]),
+                  (mmw - mole_fracs[4] * self.molecular_weights[4])/(mmw * denom[4]),
                   bdiff_ij[4, 4]
               ),
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[5], zeros),
-                  (mmw - mole_fracs[5] * self.wts[5])/(mmw * denom[5]),
+                  (mmw - mole_fracs[5] * self.molecular_weights[5])/(mmw * denom[5]),
                   bdiff_ij[5, 5]
               ),
               temp_pres*self.usr_np.where(self.usr_np.greater(denom[6], zeros),
-                  (mmw - mole_fracs[6] * self.wts[6])/(mmw * denom[6]),
+                  (mmw - mole_fracs[6] * self.molecular_weights[6])/(mmw * denom[6]),
                   bdiff_ij[6, 6]
               ),
               ])
