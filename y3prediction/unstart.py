@@ -19,7 +19,7 @@ class InitUnstartRamp:
     .. automethod:: add_injection
     """
 
-    def __init__(self, *, dim=2, nspecies=0, disc_sigma,
+    def __init__(self, *, dim=2, nspecies=0, disc_sigma, disc_loc,
                  pressure_bulk, temperature_bulk, velocity_bulk,
                  mass_frac_bulk,
                  pressure_inlet, temperature_inlet, velocity_inlet,
@@ -44,6 +44,7 @@ class InitUnstartRamp:
         self._dim = dim
         self._nspecies = nspecies
         self._disc_sigma = disc_sigma
+        self._disc_loc = disc_loc
         self._temp_wall = temp_wall
         self._temp_sigma = temp_sigma
         self._vel_sigma = vel_sigma
@@ -135,7 +136,7 @@ class InitUnstartRamp:
         else:
             r1 = 0.013
             radius = actx.np.sqrt((x_vec[1])**2 + (x_vec[2])**2)
-            smth_radial = smooth_step(actx, -sigma*(radius - r1))
+            smth_radial = smooth_step(actx, sigma*actx.np.abs(radius - r1))
             return smth_radial
 
     def outlet_smoothing_func(self, x_vec, sigma):
@@ -150,7 +151,7 @@ class InitUnstartRamp:
         else:
             r1 = 0.2
             radius = actx.np.sqrt((x_vec[1])**2 + (x_vec[2])**2)
-            smth_radial = smooth_step(actx, -sigma*(radius - r1))
+            smth_radial = smooth_step(actx, sigma*actx.np.abs(radius - r1))
             return smth_radial
 
     def add_inlet(self, cv, pressure, temperature, x_vec, eos, *, time=0.0):
@@ -183,11 +184,9 @@ class InitUnstartRamp:
 
         # initial discontinuity location
         if self._dim == 2:
-            y0 = -0.325
-            dist = y0 - x_vec[1]
+            dist = self._disc_loc - x_vec[1]
         else:
-            x0 = -0.325
-            dist = x0 - x_vec[0]
+            dist = self._disc_loc - x_vec[0]
 
         # now solve for T, P, velocity
         xtanh = self._disc_sigma*dist

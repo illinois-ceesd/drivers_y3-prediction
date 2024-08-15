@@ -2683,6 +2683,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             dim=dim,
             nspecies=nspecies,
             disc_sigma=500.,
+            disc_loc=shock_loc_x,
             pressure_bulk=pres_bkrnd,
             temperature_bulk=temp_bkrnd,
             velocity_bulk=vel_outflow,
@@ -5032,15 +5033,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     mach=inlet_mach,
                     p_fun=inflow_ramp_pressure)
             else:
-                smooth_r0 = fluid_nodes
-                smooth_r0[1] = actx.np.zeros_like(fluid_nodes[0])
-                smooth_r0[2] = actx.np.zeros_like(fluid_nodes[0])
+                r0 = np.zeros(shape=(dim,))
                 inflow_state = IsentropicInflow(
                     dim=dim,
                     temp_wall=temp_wall,
                     temp_sigma=temp_sigma,
                     vel_sigma=vel_sigma,
-                    smooth_r0=smooth_r0,
+                    smooth_r0=r0,
                     smooth_r1=0.013,
                     normal_dir=normal_dir,
                     gamma=gamma,
@@ -5415,15 +5414,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                             thickness=outlet_sponge_thickness,
                                             amplitude=sponge_amp,
                                             direction=1)
-            #sponge_init_top = InitSponge(x0=top_sponge_x0,
-                                         #thickness=top_sponge_thickness,
-                                         #amplitude=sponge_amp,
-                                         #direction=1)
 
         def _sponge_sigma(sponge_field, x_vec):
             sponge_field = sponge_init_outlet(sponge_field=sponge_field, x_vec=x_vec)
             sponge_field = sponge_init_inlet(sponge_field=sponge_field, x_vec=x_vec)
-            sponge_field = sponge_init_top(sponge_field=sponge_field, x_vec=x_vec)
+            if dim == 2:
+                sponge_field = sponge_init_top(
+                    sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
     sponge_sigma = actx.np.zeros_like(restart_cv.mass)
@@ -5948,7 +5945,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if viz_level > 2:
 
             if use_species_limiter:
-                print(f"{theta_rho.shape=}")
                 viz_ext = [("theta_rho", theta_rho),
                            ("theta_Y", theta_Y),
                            ("theta_pressure", theta_pres)]
