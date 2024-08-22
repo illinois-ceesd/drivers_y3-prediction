@@ -1390,6 +1390,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     mach = configurate("mach", input_data, 2.0)
     shock_loc_x = configurate("shock_loc_x", input_data, 0.05)
     fuel_loc_x = configurate("fuel_loc_x", input_data, 0.07)
+    inlet_height = configurate("inlet_height", input_data, 0.013)
 
     # Shock 1D mesh properties
     mesh_size = configurate("mesh_size", input_data, 0.001)
@@ -2467,7 +2468,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         vel_outflow = np.zeros(shape=(dim,))
 
         throat_height = 6.3028e-3
-        inlet_height = 13.0e-3
         inlet_area_ratio = inlet_height/throat_height
         if use_axisymmetric:
             inlet_area_ratio *= inlet_area_ratio
@@ -2579,14 +2579,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
         vel_outflow = np.zeros(shape=(dim,))
 
         throat_height = 6.3028e-3
-        inlet_height = 13.0e-3
         inlet_area_ratio = inlet_height/throat_height
         if use_axisymmetric:
             inlet_area_ratio *= inlet_area_ratio
 
         inlet_mach = getMachFromAreaRatio(area_ratio=inlet_area_ratio,
                                           gamma=gamma,
-                                          mach_guess=0.01)
+                                          mach_guess=0.00001)
         temp_inflow = getIsentropicTemperature(mach=inlet_mach,
                                                T0=total_temp_inflow,
                                                gamma=gamma)
@@ -2684,6 +2683,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             nspecies=nspecies,
             disc_sigma=500.,
             disc_loc=shock_loc_x,
+            inlet_height=inlet_height,
             pressure_bulk=pres_bkrnd,
             temperature_bulk=temp_bkrnd,
             velocity_bulk=vel_outflow,
@@ -5034,6 +5034,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     p_fun=inflow_ramp_pressure)
             else:
                 r0 = np.zeros(shape=(dim,))
+                r0[0] = -0.3925
                 inflow_state = IsentropicInflow(
                     dim=dim,
                     temp_wall=temp_wall,
