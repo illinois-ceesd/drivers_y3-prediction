@@ -1221,6 +1221,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                         input_data, "actii_2d")
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, True)
+    part_tol = configurate("partition_tolerance", input_data, 0.01)
 
     # setting these to none in the input file toggles the check for that
     # boundary off provides support for legacy runs only where you could
@@ -3527,7 +3528,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             def my_partitioner(mesh, tag_to_elements, num_ranks):
                 from mirgecom.simutil import geometric_mesh_partitioner
                 return geometric_mesh_partitioner(
-                    mesh, num_ranks, auto_balance=True, debug=False)
+                    mesh, num_ranks, auto_balance=True, imbalance_tolerance=part_tol,
+                    debug=False)
 
             part_func = my_partitioner if use_1d_part else None
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
@@ -5034,6 +5036,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     p_fun=inflow_ramp_pressure)
             else:
                 r0 = np.zeros(shape=(dim,))
+                r0[0] = -0.329
                 inflow_state = IsentropicInflow(
                     dim=dim,
                     temp_wall=temp_wall,
