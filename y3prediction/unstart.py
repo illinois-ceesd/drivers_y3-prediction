@@ -20,6 +20,7 @@ class InitUnstartRamp:
     """
 
     def __init__(self, *, dim=2, nspecies=0, disc_sigma, disc_loc,
+                 inlet_height,
                  pressure_bulk, temperature_bulk, velocity_bulk,
                  mass_frac_bulk,
                  pressure_inlet, temperature_inlet, velocity_inlet,
@@ -45,6 +46,7 @@ class InitUnstartRamp:
         self._nspecies = nspecies
         self._disc_sigma = disc_sigma
         self._disc_loc = disc_loc
+        self._inlet_height = inlet_height
         self._temp_wall = temp_wall
         self._temp_sigma = temp_sigma
         self._vel_sigma = vel_sigma
@@ -128,13 +130,13 @@ class InitUnstartRamp:
         actx = x_vec[0].array_context
 
         if self._dim == 2:
-            x0 = -0.013
-            x1 = 0.013
+            x0 = -self._inlet_height
+            x1 = self._inlet_height
             smth_bottom = smooth_step(actx, sigma*(x_vec[0] - x0))
             smth_top = smooth_step(actx, -sigma*(x_vec[0] - x1))
             return smth_bottom*smth_top
         else:
-            r1 = 0.013
+            r1 = self._inlet_height
             radius = actx.np.sqrt((x_vec[1])**2 + (x_vec[2])**2)
             smth_radial = smooth_step(actx, sigma*actx.np.abs(radius - r1))
             return smth_radial
@@ -198,19 +200,33 @@ class InitUnstartRamp:
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
+        if self._dim == 2:
+            left_edge = actx.np.greater(x_vec[1], -10.)
+            right_edge = actx.np.less(x_vec[1], 0.)
+            inside_block = left_edge*right_edge
+        else:
+            left_edge = actx.np.greater(x_vec[0], -10.)
+            right_edge = actx.np.less(x_vec[0], 0.)
+            inside_block = left_edge*right_edge
+
         sigma = self._temp_sigma
         if sigma > 0:
             wall_temperature = self._temp_wall
             sfunc = self.inlet_smoothing_func(x_vec, sigma)
-            temperature = (wall_temperature +
+            smooth_temperature = (wall_temperature +
                 (temperature - wall_temperature)*sfunc)
+            temperature = actx.np.where(inside_block,
+                                        smooth_temperature, temperature)
 
         # modify the velocity in the near wall region to match the
         # noslip boundaries
         sigma = self._vel_sigma
         if sigma > 0:
             sfunc = self.inlet_smoothing_func(x_vec, sigma)
-            velocity = velocity*sfunc
+            smooth_velocity = velocity*sfunc
+            for i in range(self._dim):
+                velocity[i] = actx.np.where(inside_block,
+                                         smooth_velocity[i], velocity[i])
 
         mass = eos.get_density(pressure, temperature, species_mass_fractions=y)
         mom = mass*velocity
@@ -273,20 +289,33 @@ class InitUnstartRamp:
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
+        if self._dim == 2:
+            left_edge = actx.np.greater(x_vec[1], 0.5)
+            right_edge = actx.np.less(x_vec[1], 10)
+            inside_block = left_edge*right_edge
+        else:
+            left_edge = actx.np.greater(x_vec[0], 0.5)
+            right_edge = actx.np.less(x_vec[0], 10)
+            inside_block = left_edge*right_edge
 
         sigma = self._temp_sigma
         if sigma > 0:
             wall_temperature = self._temp_wall
             sfunc = self.outlet_smoothing_func(x_vec, sigma)
-            temperature = (wall_temperature +
+            smooth_temperature = (wall_temperature +
                 (temperature - wall_temperature)*sfunc)
+            temperature = actx.np.where(inside_block,
+                                        smooth_temperature, temperature)
 
         # modify the velocity in the near wall region to match the
         # noslip boundaries
         sigma = self._vel_sigma
         if sigma > 0:
             sfunc = self.outlet_smoothing_func(x_vec, sigma)
-            velocity = velocity*sfunc
+            smooth_velocity = velocity*sfunc
+            for i in range(self._dim):
+                velocity[i] = actx.np.where(inside_block,
+                                            smooth_velocity[i], velocity[i])
 
         mass = eos.get_density(pressure, temperature, species_mass_fractions=y)
         mom = mass*velocity
