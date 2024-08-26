@@ -13,6 +13,21 @@
 # MIRGE_PARALLEL_SPAWNER (important on Porter and Lassen)
 # XDG_CACHE_HOME
 
+
+# {{{ Log grouping for GitHub actions
+
+function startgroup {
+    # Start a foldable group of log lines
+    # Pass a single argument, quoted
+    echo "::group::$1"
+}
+
+function endgroup {
+    echo "::endgroup::"
+}
+
+# }}}
+
 printf "Testing resource file: ${1}\n"
 if [[ -z "${1}" ]]; then
     source ${1}
@@ -54,7 +69,9 @@ printf "Running serial tests ($serial_test_names)...\n"
 for test_name in $serial_test_names
 do
     test_path=${test_name}
-    printf "* Running test ${test_name} in ${test_path}\n"
+
+    startgroup "* Running test ${test_name} in ${test_path}"
+
     cd ${TOP_PATH}/${test_path}
 
     # Create 3d mesh if not already there
@@ -80,9 +97,11 @@ do
         succeeded_tests="$succeeded_tests ${test_name}"
     else
         ((numfail=numfail+1))
-        echo "** Example $example failed."
+        echo "** Example $test_name failed."
         failed_tests="$failed_tests ${test_name}"
     fi
+
+    endgroup
 
 done
 
@@ -96,12 +115,14 @@ for test_name in $parallel_test_names
 do
     test_path=${test_name}
     test_name="parallel_${test_name}"
-    printf "* Running test ${test_name} in ${test_name}."
+
+    startgroup "* Running test ${test_name} in ${test_name}."
+
     cd ${TOP_PATH}/${test_path}
-    
+
     # Create 3d mesh unless already there
     if [ "${test_name}" == "smoke_test_ks_3d" ]; then
-        cd data 
+        cd data
         rm -f actii.msh
         if [[ -f "actii_48485.msh" ]]; then
             ln -s actii_48485.msh actii.msh
@@ -126,6 +147,8 @@ do
         echo "** Test ${test_name} failed."
         failed_tests="$failed_tests ${test_name}"
     fi
+
+    endgroup
 done
 
 printf "Passing tests: ${succeeded_tests}\n"
