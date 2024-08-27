@@ -143,3 +143,11 @@ jobs:
             cd smoke_test_quads
             ./run_lazy.sh
 
+        - name: M2N smoke test
+          run: |
+            source emirge/config/activate_env.sh
+            cd smoke_test_m2n
+            ./run_nrank3.sh
+            ./convert_3to4_ranks.sh
+            ./run_restart_nrank4.sh
+
