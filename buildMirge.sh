@@ -4,7 +4,7 @@
 #mirge_branch="production"
 mirge_branch="limit-pocl"
 # conda environment name
-conda_env="mirgeDriver.Y3prediction.newinstall"
+conda_env="mirgeDriver.Y3prediction"
 
 usage()
 {
