@@ -434,8 +434,8 @@ def main(actx_class,
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
-    from pytato.array import enable_traceback_tag
-    enable_traceback_tag()
+    from pytato.array import set_traceback_tag_enabled
+    set_traceback_tag_enabled(True)
 
     if casename is None:
         casename = "mirgecom"
@@ -2164,7 +2164,7 @@ def main(actx_class,
                                 smoothness_d=smoothness_d,
                                 limiter_func=limiter_func,
                                 limiter_dd=dd_vol_fluid,
-                                outline=False)
+                                outline=True)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
@@ -2349,7 +2349,7 @@ def main(actx_class,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid,
-                                       outline=False)
+                                       outline=True)
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
@@ -2947,6 +2947,7 @@ def main(actx_class,
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
             target_fluid_state, gas_model, limiter_func=limiter_func,
+            # FIXME: Currently, freeze doesn't seem to process outlined functions
             make_fluid_state_func=partial(make_fluid_state, outline=False),
             entropy_stable=use_esdg)
 
@@ -3085,6 +3086,8 @@ def main(actx_class,
         av_sbeta=restart_av_sbeta,
         av_skappa=restart_av_skappa,
         av_sd=restart_av_sd)
+
+    restart_stepper_state = force_evaluation(actx, restart_stepper_state)
 
     # finish initializing the smoothness for non-restarts
     if not restart_filename:
