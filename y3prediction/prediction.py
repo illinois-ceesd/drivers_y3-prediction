@@ -4172,8 +4172,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                 smoothness_kappa=smoothness_kappa,
                                 smoothness_d=smoothness_d,
                                 limiter_func=limiter_func,
-                                limiter_dd=dd_vol_fluid,
-                                outline=True)
+                                limiter_dd=dd_vol_fluid)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
@@ -4437,8 +4436,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid,
-                                       outline=True)
+                                       limiter_dd=dd_vol_fluid)
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
@@ -5093,9 +5091,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
             target_fluid_state, gas_model, limiter_func=limiter_func,
-            # FIXME: Currently, freeze doesn't seem to process outlined functions
-            make_fluid_state_func=partial(make_fluid_state, outline=False),
-            entropy_stable=use_esdg)
+            entropy_stable=use_esdg
+        )
 
     # is there a way to generalize this?
     if bndry_config["inflow"] == "isentropic_pressure_ramp":
@@ -6846,8 +6843,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid,
-                                       outline=False)
+                                       limiter_dd=dd_vol_fluid)
 
         cv = fluid_state.cv  # reset cv to the limited version
 
