@@ -1321,6 +1321,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
     use_injection_source = configurate("use_injection_source", input_data, True)
+    use_injection_source_comb = configurate("use_injection_source_comb",
+                                            input_data, False)
     use_injection = configurate("use_injection", input_data, True)
     init_injection = configurate("init_injection", input_data, False)
     use_upstream_injection = configurate("use_upstream_injection", input_data, False)
@@ -1476,6 +1478,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
     injection_source_loc_y = configurate("injection_source_loc_y",
                                          input_data, -0.021)
     injection_source_loc_z = configurate("injection_source_loc_z",
+                                         input_data, 0.0)
+    injection_source_loc_x_comb = configurate("injection_source_loc_x_comb",
+                                              input_data, 0.677)
+    injection_source_loc_y_comb = configurate("injection_source_loc_y_comb",
+                                         input_data, -0.021)
+    injection_source_loc_z_comb = configurate("injection_source_loc_z_comb",
                                          input_data, 0.0)
 
     # initialization for the sponge
@@ -1706,11 +1714,28 @@ def main(actx_class, restart_filename=None, target_filename=None,
     injection_source_center[1] = injection_source_loc_y
     if dim == 3:
         injection_source_center[2] = injection_source_loc_z
+
+    # combustor injection mass source
+    injection_source_center_comb = np.zeros(shape=(dim,))
+    injection_source_center_comb[0] = injection_source_loc_x_comb
+    injection_source_center_comb[1] = injection_source_loc_y_comb
+    if dim == 3:
+        injection_source_center_comb[2] = injection_source_loc_z_comb
+
+    if rank == 0 and use_injection_source_comb is True:
+        print("\n#### Injection source control parameters ####")
+        if dim == 2:
+            print("combustor injection source center ("
+                  f"{injection_source_center_comb[0]},"
+                  f"{injection_source_center_comb[1]})")
+        else:
+            print("combustor injection source center ("
+                  f"{injection_source_center_comb[0]},"
+                  f"{injection_source_center_comb[1]},"
+                  f"{injection_source_center_comb[2]})")
+
     if rank == 0 and use_injection_source is True:
         print("\n#### Injection source control parameters ####")
-        print("injection source center ("
-              f"{injection_source_center[0]},"
-              f"{injection_source_center[1]})")
         if dim == 2:
             print("injection source center ("
                   f"{injection_source_center[0]},"
@@ -1720,6 +1745,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                   f"{injection_source_center[0]},"
                   f"{injection_source_center[1]},"
                   f"{injection_source_center[2]})")
+
+    if rank == 0 and use_injection_source is True:
         print(f"injection source FWHM {injection_source_diameter}")
         print(f"injection source mass {injection_source_mass}")
         print(f"injection source energy {injection_source_energy}")
@@ -5311,6 +5338,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                    amplitude_func=injection_source_time_func,
                                    #amplitude_func=None,
                                    width=injection_source_diameter)
+    injection_source_comb = StateSource(dim=dim, nspecies=nspecies,
+                                        center=injection_source_center_comb,
+                                        mass_amplitude=source_mass,
+                                        mom_amplitude=source_mom,
+                                        energy_amplitude=source_energy,
+                                        y_amplitude=source_y,
+                                        amplitude_func=injection_source_time_func,
+                                        #amplitude_func=None,
+                                        width=injection_source_diameter)
 
     if rank == 0:
         logger.info("Sponges processsing")
@@ -6946,6 +6982,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
             fluid_rhs = fluid_rhs + \
                 injection_source(x_vec=fluid_nodes, cv=cv,
                                  eos=gas_model.eos, time=t)
+
+        if use_injection_source_comb is True:
+            fluid_rhs = fluid_rhs + \
+                injection_source_comb(x_vec=fluid_nodes, cv=cv,
+                                      eos=gas_model.eos, time=t)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
