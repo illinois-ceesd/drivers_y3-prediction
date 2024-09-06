@@ -7133,8 +7133,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in reverse_ox_tpairs})
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
-                    dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    dcoll, actx.np.zeros_like(fluid_ox_mass), fluid_ox_boundaries,
+                    # FIXME: Figure out why this was OK before, but not now
+                    # dcoll, 0, fluid_ox_boundaries,
+                    fluid_ox_mass, quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
