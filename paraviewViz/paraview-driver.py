@@ -21,7 +21,10 @@ def main(user_input_file, viz_path, dump_index, fluid_viz_file, wall_viz_file):
     #print(sys.path)
 
     try:
-        import viz_config as input_data
+        #import viz_config as input_data
+        import importlib
+        fname = f"{user_input_file}"
+        input_data = importlib.import_module(fname)
         # these are really surface plots for 2D
         for plt in input_data.slice_data:
             print(plt)
