@@ -20,10 +20,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 import numpy as np
-from meshmode.array_context import (  # noqa
+from arraycontext import (  # noqa
     pytest_generate_tests_for_pyopencl_array_context
     as pytest_generate_tests)
-from meshmode.array_context import (  # noqa
+
+from arraycontext import (  # noqa
     PyOpenCLArrayContext,
     PytatoPyOpenCLArrayContext
 )
