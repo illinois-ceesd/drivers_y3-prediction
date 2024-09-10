@@ -1109,6 +1109,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
+    from pytato.array import set_traceback_tag_enabled
+    set_traceback_tag_enabled(True)
+
     if casename is None:
         casename = "mirgecom"
 
@@ -1220,7 +1223,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     mesh_partition_prefix = configurate("mesh_partition_prefix",
                                         input_data, "actii_2d")
     noslip = configurate("noslip", input_data, True)
-    use_1d_part = configurate("use_1d_part", input_data, True)
+    use_1d_part = configurate("use_1d_part", input_data, False)
     part_tol = configurate("partition_tolerance", input_data, 0.01)
 
     # setting these to none in the input file toggles the check for that
