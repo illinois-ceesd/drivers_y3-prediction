@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #flux: --nodes=4
-#flux: --time=60
+#flux: --time=120
 #flux: --output=scal32.txt
 
 source ../emirge/config/activate_env.sh

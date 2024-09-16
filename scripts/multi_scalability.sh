@@ -190,13 +190,14 @@ while [ $nrank -le $NUM_PROCS ]; do
     rm actii.msh
     ./mkmsh --size=${msize} --nelem=${nelem} --link
     cd ../
-    
+    rm -f run_params_np${nrank}.yaml
+    sed "s|mesh_filename: .*|mesh_filename: data/actii_np${nrank}.msh|" run_params.yaml > run_params_np${nrank}.yaml
     set -x
     runoptions="-n ${nrank}"
     if [[ ! -z ${NUM_NODES} ]];then
         runoptions="-N ${NUM_NODES} -n ${nrank}"
     fi
-    $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
+    $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log --lazy
     return_code=$?
     set +x
 
