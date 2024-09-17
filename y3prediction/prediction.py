@@ -4166,7 +4166,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                 smoothness_d=smoothness_d,
                                 limiter_func=limiter_func,
                                 limiter_dd=dd_vol_fluid,
-                                outline=True)
+                                outline=False)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
@@ -4431,7 +4431,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid,
-                                       outline=True)
+                                       outline=False)
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
