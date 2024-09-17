@@ -4537,7 +4537,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # this one gets used in init/viz
     #compute_smoothness_compiled = actx.compile(compute_smoothness_wrapper) # noqa
     compute_smoothness_compiled = actx.compile(compute_smoothness) # noqa
-    update_smoothness_compiled = actx.compile(update_smoothness) # noqa
+    # update_smoothness_compiled = actx.compile(update_smoothness) # noqa
 
     def get_production_rates(cv, temperature):
         return eos.get_production_rates(cv, temperature)
@@ -5228,11 +5228,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_skappa=restart_av_skappa,
         av_sd=restart_av_sd)
 
-    # finish initializing the smoothness for non-restarts
-    if not restart_filename:
-        if use_av > 0:
-            restart_stepper_state = update_smoothness_compiled(
-                state=restart_stepper_state, time=current_t)
+    # # finish initializing the smoothness for non-restarts
+    # if not restart_filename:
+    #     if use_av > 0:
+    #         restart_stepper_state = update_smoothness_compiled(
+    #             state=restart_stepper_state, time=current_t)
 
     restart_cv = force_evaluation(actx, restart_stepper_state.cv)
     temperature_seed = force_evaluation(actx, temperature_seed)
