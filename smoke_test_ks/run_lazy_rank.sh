@@ -31,4 +31,4 @@ XDG_CACHE_HOME=${XDG_CACHE_HOME:-"${XDG_CACHE_ROOT}/${RANK_ID}"}
 export POCL_CACHE_DIR
 export XDG_CACHE_HOME
 
-python -u -m mpi4py driver.py -i run_params.yaml --lazy --casename=prediction-lazy
+python -O -u -m mpi4py driver.py -i run_params_quads.yaml --lazy --casename=prediction-lazy
