@@ -20,10 +20,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 import numpy as np
-from meshmode.array_context import (  # noqa
-    pytest_generate_tests_for_pyopencl_array_context
-    as pytest_generate_tests)
-from meshmode.array_context import (  # noqa
+from meshmode.array_context import PytestPyOpenCLArrayContextFactory
+from arraycontext import pytest_generate_tests_for_array_contexts
+pytest_generate_tests = pytest_generate_tests_for_array_contexts(
+    [PytestPyOpenCLArrayContextFactory])
+
+from arraycontext import (  # noqa
     PyOpenCLArrayContext,
     PytatoPyOpenCLArrayContext
 )
@@ -250,7 +252,7 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
         gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
     limited_mass = limited_cv.mass
     print(f"{limited_mass=}")
-    assert np.min(actx.to_numpy(limited_mass)) >= 0.0
+    assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0
 
     temperature_limited = gas_model.eos.temperature(
          cv=limited_cv, temperature_seed=tseed)
@@ -260,7 +262,7 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     print(f"{entropy_limited=}")
     print(f"{pressure_limited=}")
     print(f"{temperature_limited=}")
-    assert np.min(actx.to_numpy(entropy_limited)) >= smin - 1.e-4
+    assert actx.to_numpy(actx.np.min(entropy_limited)) >= smin - 1.e-4
 
 
 #@pytest.mark.parametrize("order", [1, 4])
@@ -369,7 +371,7 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
         gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
     limited_mass = limited_cv.mass
     print(f"{limited_mass=}")
-    assert np.min(actx.to_numpy(limited_mass)) >= 0.0
+    assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0
 
     temperature_limited = gas_model.eos.temperature(
          cv=limited_cv, temperature_seed=tseed)
@@ -379,15 +381,15 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
     print(f"{entropy_limited=}")
     print(f"{pressure_limited=}")
     print(f"{temperature_limited=}")
-    assert np.min(actx.to_numpy(entropy_limited)) >= smin - 1.e-4
+    assert actx.to_numpy(actx.np.min(entropy_limited)) >= smin - 1.e-4
 
     limited_mass_frac = limited_cv.species_mass_fractions
 
     print(f"{limited_mass_frac=}")
     # check minimum and maximum
     for i in range(nspecies):
-        assert np.min(actx.to_numpy(limited_mass_frac[i])) > 0.0 - 1.e-11
-        assert np.max(actx.to_numpy(limited_mass_frac[i])) < 1.0 + 1.e-11
+        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) > 0.0 - 1.e-11
+        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) < 1.0 + 1.e-11
 
     # check y sums to 1
     y_sum = actx.np.zeros_like(limited_cv.mass)
@@ -395,4 +397,4 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
         y_sum = y_sum + limited_mass_frac[i]
 
     # check pressure positivity
-    assert np.min(actx.to_numpy(pressure_limited)) > 0.
+    assert actx.to_numpy(actx.np.min(pressure_limited)) > 0.

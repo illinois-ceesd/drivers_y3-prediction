@@ -3416,13 +3416,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
                         use_quads=use_tpe, use_gmsh=use_gmsh)()
-                    from meshmode.mesh.io import read_gmsh
                 else:
                     if rank == 0:
                         print("Reading mesh")
                     from meshmode.mesh.io import read_gmsh
+                    mesh_construction_kwargs = {
+                        "force_positive_orientation":  True,
+                        "skip_element_orientation_test":  True}
                     mesh, tag_to_elements = read_gmsh(
                         mesh_filename, force_ambient_dim=dim,
+                        mesh_construction_kwargs=mesh_construction_kwargs,
                         return_tag_to_elements_map=True)
 
                 volume_to_tags = {"fluid": ["fluid"]}
