@@ -497,7 +497,7 @@ def element_average(dcoll, dd, field, volumes=None):
     cell_avgs = op.elementwise_integral(dcoll, dd, field)
     if volumes is None:
         volumes = abs(op.elementwise_integral(
-            dcoll, dd, actx.zeros_like(field) + 1.0))
+            dcoll, dd, actx.np.zeros_like(field) + 1.0))
 
     return cell_avgs/volumes
 
@@ -552,7 +552,7 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
 
     # 2.0 limit the species mass fractions
     spec_mass_lim = cv.species_mass
-    theta_rhoY = actx.zeros_like(cv.species_mass)
+    theta_rhoY = actx.np.zeros_like(cv.species_mass)
     for i in range(0, nspecies):
         theta_rhoY[i] = actx.np.abs(
             (elem_avg_cv.species_mass) /
@@ -625,6 +625,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     based on average states.
     """
 
+    my_rank = dcoll.mpi_communicator.Get_rank()
     actx = cv.array_context
     nspecies = cv.nspecies
     dim = cv.dim
@@ -634,9 +635,15 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
     print_stuff = False
-    index = 118
+    index = 7060
+    rank = 2
+    if my_rank == rank and print_stuff:
+        print_stuff = True
+    else:
+        print_stuff = False
 
     if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        print(f"limiter {rank=}")
         np.set_printoptions(threshold=sys.maxsize, precision=16)
 
         print("Start of limiting")
@@ -1043,11 +1050,11 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
 
         #do_temperature_iter(cv_lim, temperature_seed)
         # initial state
-        print(f"{theta_rho=}")
+        #print(f"{theta_rho=}")
         #print(f"{theta_pressure=}")
         #print(f"{theta_spec=}")
         #print(f"{cv_lim.species_mass_fractions=}")
-        print(f"{temperature_final}")
+        #print(f"{temperature_final}")
         #print(f"{temp_resid=}")
         print("All done limiting")
         data = actx.to_numpy(temp_resid)
@@ -3912,7 +3919,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., -np.inf)
 
@@ -3964,7 +3971,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., np.inf)
 
@@ -4016,7 +4023,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., -np.inf)
 
@@ -4068,7 +4075,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., np.inf)
 
@@ -4587,7 +4594,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         try:
             restart_av_sd = restart_data["av_sd"]
         except (KeyError):
-            restart_av_sd = actx.zeros_like(restart_av_smu)
+            restart_av_sd = actx.np.zeros_like(restart_av_smu)
             if rank == 0:
                 print("no data for av_sd in restart file")
                 print("av_sd will be initialzed to 0 on the mesh")
@@ -4622,7 +4629,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             try:
                 restart_av_sd = fluid_connection(restart_data["av_sd"])
             except (KeyError):
-                restart_av_sd = actx.zeros_like(restart_av_smu)
+                restart_av_sd = actx.np.zeros_like(restart_av_smu)
                 if rank == 0:
                     print("no data for av_sd in restart file")
                     print("av_sd will be initialzed to 0 on the mesh")
@@ -4854,7 +4861,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             try:
                 target_av_sd = target_data["av_sd"]
             except (KeyError):
-                target_av_sd = actx.zeros_like(target_av_smu)
+                target_av_sd = actx.np.zeros_like(target_av_smu)
                 if rank == 0:
                     print("no data for av_sd in target file")
                     print("av_sd will be initialzed to 0 on the mesh")
@@ -5771,10 +5778,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             state=fluid_state, boundaries=uncoupled_fluid_boundaries,
             time=time, quadrature_tag=quadrature_tag)
 
-        av_smu = actx.zeros_like(cv.mass)
-        av_sbeta = actx.zeros_like(cv.mass)
-        av_skappa = actx.zeros_like(cv.mass)
-        av_sd = actx.zeros_like(cv.mass)
+        av_smu = actx.np.zeros_like(cv.mass)
+        av_sbeta = actx.np.zeros_like(cv.mass)
+        av_skappa = actx.np.zeros_like(cv.mass)
+        av_sd = actx.np.zeros_like(cv.mass)
 
         # now compute the smoothness part
         if use_av == 1:
@@ -5876,7 +5883,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if eos_type == 1:
 
                 species_entropy = np.zeros(nspecies, dtype=object)
-                entropy = actx.zeros_like(cv.mass)
+                entropy = actx.np.zeros_like(cv.mass)
                 for i in range(nspecies):
                     species_entropy[i] = \
                         pyro_mech.get_species_entropies_r(dv.temperature)
@@ -5974,20 +5981,42 @@ def main(actx_class, restart_filename=None, target_filename=None,
                        ("cfl_fluid_spec_diff", current_dt/cfl_fluid_spec_diff)]
             fluid_viz_fields.extend(viz_ext)
 
+            if use_species_limiter:
+                viz_ext = [("theta_rho", theta_rho),
+                           ("theta_pressure", theta_pres)]
+                fluid_viz_fields.extend(viz_ext)
+
+                fluid_viz_fields.extend(
+                    ("theta_Y_"+species_names[i], theta_Y[i])
+                    for i in range(nspecies))
+
             if use_wall:
                 cell_alpha = wall_model.thermal_diffusivity(
                     wv.mass, wall_temperature, wall_kappa)
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
 
+        # this gives us the DOFArray indices for each element. Useful for debugging
+        discr = dcoll.discr_from_dd(dd_vol_fluid)
+        nelem = discr.groups[0].nelements
+        ndof = discr.groups[0].nunit_dofs
+
+        el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+            np.indices((nelem,)), np.ones(ndof))),))
+        viz_ext = [("el_indices", el_indices)]
+        fluid_viz_fields.extend(viz_ext)
+
+        if use_wall:
+            discr = dcoll.discr_from_dd(dd_vol_wall)
+            nelem = discr.groups[0].nelements
+            ndof = discr.groups[0].nunit_dofs
+            el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+                np.indices((nelem,)), np.ones(ndof))),))
+            viz_ext = [("el_indices", el_indices)]
+            wall_viz_fields.extend(viz_ext)
+
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
-
-            if use_species_limiter:
-                viz_ext = [("theta_rho", theta_rho),
-                           ("theta_Y", theta_Y),
-                           ("theta_pressure", theta_pres)]
-                fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
                 viz_stuff = compute_viz_fields_coupled_compiled(
@@ -6445,7 +6474,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             smoothness = smoothness_indicator(dcoll, stepper_state.cv.mass,
                                               dd=dd_vol_fluid,
                                               kappa=kappa_sc, s0=s0_sc)
-            #smoothness = actx.zeros_like(stepper_state.cv.mass) + 1.0
+            #smoothness = actx.np.zeros_like(stepper_state.cv.mass) + 1.0
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
 
@@ -6454,7 +6483,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
         theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
         theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
-        if viz_level == 3 and use_species_limiter == 2:
+        if viz_level >= 2 and use_species_limiter == 2:
             cv_lim, theta_rho, theta_Y, theta_pres = \
                 limit_fluid_state_lv(
                     dcoll, cv=stepper_state.cv, gas_model=gas_model,
@@ -6857,7 +6886,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_drop_order:
             smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
                                               kappa=kappa_sc, s0=s0_sc)
-            #smoothness = actx.zeros_like(cv.mass) + 1.0
+            #smoothness = actx.np.zeros_like(cv.mass) + 1.0
             cv = _drop_order_cv(cv, smoothness, drop_order_strength)
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
