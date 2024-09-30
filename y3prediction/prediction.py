@@ -83,6 +83,7 @@ from mirgecom.steppers import advance_state
 from mirgecom.boundary import (
     PrescribedFluidBoundary,
     IsothermalWallBoundary,
+    IsothermalSlipWallBoundary,
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
     PressureOutflowBoundary,
@@ -1219,6 +1220,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     generate_mesh = configurate("generate_mesh", input_data, True)
     mesh_partition_prefix = configurate("mesh_partition_prefix",
                                         input_data, "actii_2d")
+    periodic_mesh = configurate("periodic_mesh", input_data, "False")
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, True)
     part_tol = configurate("partition_tolerance", input_data, 0.01)
@@ -3399,7 +3401,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if init_case == "shock1d" or init_case == "flame1d":
 
             def get_mesh_data():
-                print(f"{generate_mesh=}")
                 if generate_mesh is True:
                     if rank == 0:
                         print("Generating mesh from scratch")
@@ -3435,10 +3436,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 numpy.set_printoptions(threshold=sys.maxsize)
                 #print(f"{mesh=}")
 
-                """
                 # apply periodicity
-                if periodic:
-
+                if periodic_mesh:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
 
@@ -3447,8 +3446,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     offset = [0., 0.02]
                     bdry_pair_mappings_and_tols.append((
                         BoundaryPairMapping(
-                            "fluid_wall_bottom",
-                            "fluid_wall_top",
+                            "periodic_y_bottom",
+                            "periodic_y_top",
                             AffineMap(offset=offset)),
                         1e-12))
 
@@ -3461,7 +3460,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                             1e-12))
 
                     mesh = glue_mesh_boundaries(mesh, bdry_pair_mappings_and_tols)
-                    """
+
                 # print(f"{mesh=}")
                 from meshmode.mesh.processing import rotate_mesh_around_axis
                 if mesh_angle > 0:
@@ -3673,6 +3672,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "isothermal_noslip": IsothermalWallBoundary(temp_wall),
         "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
         "adiabatic_slip": AdiabaticSlipBoundary(),
+        "isothermal_slip": IsothermalSlipWallBoundary(),
         "pressure_outflow": PressureOutflowBoundary(outflow_pressure)
     }
 
@@ -5774,10 +5774,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             state=fluid_state, boundaries=uncoupled_fluid_boundaries,
             time=time, quadrature_tag=quadrature_tag)
 
-        av_smu = actx.zeros_like(cv.mass)
-        av_sbeta = actx.zeros_like(cv.mass)
-        av_skappa = actx.zeros_like(cv.mass)
-        av_sd = actx.zeros_like(cv.mass)
+        av_smu = actx.np.zeros_like(cv.mass)
+        av_sbeta = actx.np.zeros_like(cv.mass)
+        av_skappa = actx.np.zeros_like(cv.mass)
+        av_sd = actx.np.zeros_like(cv.mass)
 
         # now compute the smoothness part
         if use_av == 1:
@@ -5982,6 +5982,25 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     wv.mass, wall_temperature, wall_kappa)
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
+
+        # this gives us the DOFArray indices for each element. Useful for debugging
+        discr = dcoll.discr_from_dd(dd_vol_fluid)
+        nelem = discr.groups[0].nelements
+        ndof = discr.groups[0].nunit_dofs
+
+        el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+            np.indices((nelem,)), np.ones(ndof))),))
+        viz_ext = [("el_indices", el_indices)]
+        fluid_viz_fields.extend(viz_ext)
+
+        if use_wall:
+            discr = dcoll.discr_from_dd(dd_vol_wall)
+            nelem = discr.groups[0].nelements
+            ndof = discr.groups[0].nunit_dofs
+            el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+                np.indices((nelem,)), np.ones(ndof))),))
+            viz_ext = [("el_indices", el_indices)]
+            wall_viz_fields.extend(viz_ext)
 
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:

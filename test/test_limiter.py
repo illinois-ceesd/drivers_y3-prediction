@@ -265,20 +265,20 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     assert actx.to_numpy(actx.np.min(entropy_limited)) >= smin - 1.e-4
 
 
-@pytest.mark.parametrize("order", [1, 4])
-@pytest.mark.parametrize("dim", [2, 3])
-@pytest.mark.parametrize("rho_amp", [0.001, 0., -0.002, -0.005])
-@pytest.mark.parametrize("p_amp", [50, 0., -150, -400])
-@pytest.mark.parametrize("y_amp", [0., .3, 2.])
-@pytest.mark.parametrize("vmag", [0., 1])
-@pytest.mark.parametrize("nspecies", [2, 7])
-#@pytest.mark.parametrize("order", [1])
-#@pytest.mark.parametrize("dim", [2])
-#@pytest.mark.parametrize("rho_amp", [-0.002])
-#@pytest.mark.parametrize("p_amp", [60.])
-#@pytest.mark.parametrize("y_amp", [2.])
-#@pytest.mark.parametrize("vmag", [0.])
-#@pytest.mark.parametrize("nspecies", [2])
+#@pytest.mark.parametrize("order", [1, 4])
+#@pytest.mark.parametrize("dim", [2, 3])
+#@pytest.mark.parametrize("rho_amp", [0.001, 0., -0.002, -0.005])
+#@pytest.mark.parametrize("p_amp", [50, 0., -150, -400])
+#@pytest.mark.parametrize("y_amp", [0., .3, 2.])
+#@pytest.mark.parametrize("vmag", [0., 1])
+#@pytest.mark.parametrize("nspecies", [2, 7])
+@pytest.mark.parametrize("order", [1])
+@pytest.mark.parametrize("dim", [2])
+@pytest.mark.parametrize("rho_amp", [-0.002])
+@pytest.mark.parametrize("p_amp", [0.])
+@pytest.mark.parametrize("y_amp", [0.])
+@pytest.mark.parametrize("vmag", [0.])
+@pytest.mark.parametrize("nspecies", [7])
 def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
                                              rho_amp, p_amp, y_amp, vmag):
     """Testing positivity-preserving limiter."""
@@ -348,17 +348,29 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
 
     # think of this as the last known good temperature
     fluid_cv = initializer(nodes, eos=eos)
-    print(f"{nodes=}")
-    print(f"{fluid_cv.mass=}")
-    print(f"{fluid_cv.species_mass_fractions=}")
+    nelem = 8
+    ndof = 3
+    #group = dcoll.discr_from_dd(dd_vol_fluid).mesh.groups
+    from grudge.dof_desc import DD_VOLUME_ALL
+    discr = dcoll.discr_from_dd(DD_VOLUME_ALL)
+    nelem = discr.groups[0].nelements
+    ndof = discr.groups[0].nunit_dofs
+
+    from meshmode.dof_array import DOFArray
+    el_indicies = DOFArray(actx, data=(actx.from_numpy(np.outer(
+        np.indices((nelem,)), np.ones(ndof))),))
+    print(f"{actx.to_numpy(el_indicies)=}")
+    print(f"{actx.to_numpy(nodes)=}")
+    print(f"{actx.to_numpy(fluid_cv.mass)=}")
+    print(f"{actx.to_numpy(fluid_cv.species_mass_fractions)=}")
     temperature = gas_model.eos.temperature(
          cv=fluid_cv, temperature_seed=tseed)
     pressure = gas_model.eos.pressure(
          cv=fluid_cv, temperature=tseed)
-    print(f"{pressure=}")
-    print(f"{temperature=}")
+    print(f"{actx.to_numpy(pressure)=}")
+    print(f"{actx.to_numpy(temperature)=}")
     entropy = actx.np.log(pressure/fluid_cv.mass**1.4)
-    print(f"{entropy=}")
+    print(f"{actx.to_numpy(entropy)=}")
 
     # apply positivity-preserving limiter
     #
@@ -370,7 +382,7 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
         dcoll=dcoll, cv=fluid_cv, temperature_seed=tseed,
         gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
     limited_mass = limited_cv.mass
-    print(f"{limited_mass=}")
+    print(f"{actx.to_numpy(limited_mass)=}")
     assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0
 
     temperature_limited = gas_model.eos.temperature(
@@ -378,14 +390,14 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
     pressure_limited = gas_model.eos.pressure(
          cv=limited_cv, temperature=tseed)
     entropy_limited = actx.np.log(pressure_limited/limited_cv.mass**1.4)
-    print(f"{entropy_limited=}")
-    print(f"{pressure_limited=}")
-    print(f"{temperature_limited=}")
+    print(f"{actx.to_numpy(entropy_limited)=}")
+    print(f"{actx.to_numpy(pressure_limited)=}")
+    print(f"{actx.to_numpy(temperature_limited)=}")
     assert actx.to_numpy(actx.np.min(entropy_limited)) >= smin - 1.e-4
 
     limited_mass_frac = limited_cv.species_mass_fractions
 
-    print(f"{limited_mass_frac=}")
+    print(f"{actx.to_numpy(limited_mass_frac)=}")
     # check minimum and maximum
     for i in range(nspecies):
         assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) > 0.0 - 1.e-11

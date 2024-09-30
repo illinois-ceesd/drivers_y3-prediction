@@ -244,8 +244,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Line(7) = {{5, 6}};
             Line Loop(1) = {{-4, -3, -2, -1}};
             Line Loop(2) = {{2, 5, -7, -6}};
-            Plane Surface(1) = {{1}};
-            Plane Surface(2) = {{2}};
+            Plane Surface(1) = {{-1}};
+            Plane Surface(2) = {{-2}};
             """)
         if dim == 2:
             my_string += ("""
