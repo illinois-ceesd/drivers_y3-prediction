@@ -145,6 +145,11 @@ class PlanarDiscontinuityMulti:
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
         y = self._yl + (self._yr - self._yl)*weight
 
+        print(f"{self._pl=}")
+        print(f"{self._pr=}")
+        print(f"{self._sigma=}")
+        print(f"{x0=}")
+
         # now solve for T, P, velocity
         dist = np.dot(x0 - x_vec, self._normal)
         xtanh = 1.0/self._sigma*dist

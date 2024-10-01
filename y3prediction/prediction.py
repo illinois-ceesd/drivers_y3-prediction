@@ -626,7 +626,6 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     based on average states.
     """
 
-    my_rank = dcoll.mpi_communicator.Get_rank()
     actx = cv.array_context
     nspecies = cv.nspecies
     dim = cv.dim
@@ -638,10 +637,12 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     print_stuff = False
     index = 7060
     rank = 2
-    if my_rank == rank and print_stuff:
-        print_stuff = True
-    else:
-        print_stuff = False
+    if print_stuff:
+        my_rank = dcoll.mpi_communicator.Get_rank()
+        if my_rank == rank:
+            print_stuff = True
+        else:
+            print_stuff = False
 
     if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
         print(f"limiter {rank=}")
@@ -1411,6 +1412,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
     transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
+    # Discontinuity flow properties
+    pres_left = configurate("pres_left", input_data, 100.)
+    pres_right = configurate("pres_right", input_data, 10.)
+    temp_left = configurate("temp_left", input_data, 400.)
+    temp_right = configurate("temp_right", input_data, 300.)
+    sigma_disc = configurate("sigma_disc", input_data, 10.)
+
     # mixing layer flow properties
     vorticity_thickness = configurate("vorticity_thickness", input_data, 0.32e-3)
 
@@ -1675,6 +1683,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tInflow stagnation temperature {total_temp_inflow}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "discontinuity":
+            print("\tInitializing flow to discontinuity")
+            print(f"Pressure left {pres_left}")
+            print(f"Pressure right {pres_right}")
+            print(f"Temperature left {temp_left}")
+            print(f"Temperature right {temp_right}")
+            print(f"Sigma {sigma_disc}")
         else:
             raise SimulationConfigurationError(
                 "Invalid initialization configuration specified"
@@ -1683,6 +1698,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "\t unstart"
                 "\t unstart_ramp"
                 "\t shock1d"
+                "\t discontinuity"
                 "\t flame1d"
                 "\t wedge"
                 "\t mixing_layer"
@@ -2127,7 +2143,59 @@ def main(actx_class, restart_filename=None, target_filename=None,
     )
 
     # select the initialization case
-    if init_case == "shock1d":
+    if init_case == "discontinuity":
+
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        fuel_location = np.zeros(shape=(dim,))
+
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = fuel_loc_x
+
+        # parameters to adjust the shape of the initialization
+        temp_wall = 300
+
+        # normal shock properties for a calorically perfect gas
+        # state 1: pre-shock
+        # state 2: post-shock
+        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
+        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
+        velocity1 = -mach*c_bkrnd
+
+        gamma1 = gamma
+        gamma2 = gamma
+
+        vel_left = np.zeros(shape=(dim,))
+        vel_right = np.zeros(shape=(dim,))
+        vel_cross = np.zeros(shape=(dim,))
+
+        plane_normal = np.zeros(shape=(dim,))
+        theta = mesh_angle/180.*np.pi
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        bulk_init = PlanarDiscontinuityMulti(
+            dim=dim,
+            nspecies=nspecies,
+            disc_location=disc_location,
+            disc_location_species=fuel_location,
+            normal_dir=plane_normal,
+            sigma=sigma_disc,
+            pressure_left=pres_left,
+            pressure_right=pres_right,
+            temperature_left=temp_left,
+            temperature_right=temp_right,
+            velocity_left=vel_left,
+            velocity_right=vel_right,
+            velocity_cross=vel_cross,
+            species_mass_left=y,
+            species_mass_right=y_fuel,
+            temp_wall=temp_bkrnd,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+
+    elif init_case == "shock1d":
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -3444,7 +3512,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 #print(f"{mesh=}")
 
                 # apply periodicity
-                if periodic_mesh:
+                if periodic_mesh is True:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
 
