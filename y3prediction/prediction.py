@@ -83,6 +83,7 @@ from mirgecom.steppers import advance_state
 from mirgecom.boundary import (
     PrescribedFluidBoundary,
     IsothermalWallBoundary,
+    IsothermalSlipWallBoundary,
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
     PressureOutflowBoundary,
@@ -497,7 +498,7 @@ def element_average(dcoll, dd, field, volumes=None):
     cell_avgs = op.elementwise_integral(dcoll, dd, field)
     if volumes is None:
         volumes = abs(op.elementwise_integral(
-            dcoll, dd, actx.zeros_like(field) + 1.0))
+            dcoll, dd, actx.np.zeros_like(field) + 1.0))
 
     return cell_avgs/volumes
 
@@ -552,7 +553,7 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
 
     # 2.0 limit the species mass fractions
     spec_mass_lim = cv.species_mass
-    theta_rhoY = actx.zeros_like(cv.species_mass)
+    theta_rhoY = actx.np.zeros_like(cv.species_mass)
     for i in range(0, nspecies):
         theta_rhoY[i] = actx.np.abs(
             (elem_avg_cv.species_mass) /
@@ -634,9 +635,17 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
     print_stuff = False
-    index = 118
+    index = 7060
+    rank = 2
+    if print_stuff:
+        my_rank = dcoll.mpi_communicator.Get_rank()
+        if my_rank == rank:
+            print_stuff = True
+        else:
+            print_stuff = False
 
     if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        print(f"limiter {rank=}")
         np.set_printoptions(threshold=sys.maxsize, precision=16)
 
         print("Start of limiting")
@@ -1043,11 +1052,11 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
 
         #do_temperature_iter(cv_lim, temperature_seed)
         # initial state
-        print(f"{theta_rho=}")
+        #print(f"{theta_rho=}")
         #print(f"{theta_pressure=}")
         #print(f"{theta_spec=}")
         #print(f"{cv_lim.species_mass_fractions=}")
-        print(f"{temperature_final}")
+        #print(f"{temperature_final}")
         #print(f"{temp_resid=}")
         print("All done limiting")
         data = actx.to_numpy(temp_resid)
@@ -1219,6 +1228,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     generate_mesh = configurate("generate_mesh", input_data, True)
     mesh_partition_prefix = configurate("mesh_partition_prefix",
                                         input_data, "actii_2d")
+    periodic_mesh = configurate("periodic_mesh", input_data, "False")
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, True)
     part_tol = configurate("partition_tolerance", input_data, 0.01)
@@ -1402,6 +1412,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
     transfinite = configurate("transfinite", input_data, False)
     mesh_angle = configurate("mesh_angle", input_data, 0.)
 
+    # Discontinuity flow properties
+    pres_left = configurate("pres_left", input_data, 100.)
+    pres_right = configurate("pres_right", input_data, 10.)
+    temp_left = configurate("temp_left", input_data, 400.)
+    temp_right = configurate("temp_right", input_data, 300.)
+    sigma_disc = configurate("sigma_disc", input_data, 10.)
+
     # mixing layer flow properties
     vorticity_thickness = configurate("vorticity_thickness", input_data, 0.32e-3)
 
@@ -1425,7 +1442,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # adjusted to match the mass flow rate
     vel_sigma_inj = configurate("vel_sigma_inj", input_data, 5000)
     temp_sigma_inj = configurate("temp_sigma_inj", input_data, 5000)
-    temp_wall = 300
+    temp_wall = configurate("wall_temperature", input_data, 300)
 
     # wall stuff
     wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
@@ -1666,6 +1683,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tInflow stagnation temperature {total_temp_inflow}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "discontinuity":
+            print("\tInitializing flow to discontinuity")
+            print(f"Pressure left {pres_left}")
+            print(f"Pressure right {pres_right}")
+            print(f"Temperature left {temp_left}")
+            print(f"Temperature right {temp_right}")
+            print(f"Sigma {sigma_disc}")
         else:
             raise SimulationConfigurationError(
                 "Invalid initialization configuration specified"
@@ -1674,6 +1698,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "\t unstart"
                 "\t unstart_ramp"
                 "\t shock1d"
+                "\t discontinuity"
                 "\t flame1d"
                 "\t wedge"
                 "\t mixing_layer"
@@ -2118,7 +2143,59 @@ def main(actx_class, restart_filename=None, target_filename=None,
     )
 
     # select the initialization case
-    if init_case == "shock1d":
+    if init_case == "discontinuity":
+
+        # init params
+        disc_location = np.zeros(shape=(dim,))
+        fuel_location = np.zeros(shape=(dim,))
+
+        disc_location[0] = shock_loc_x
+        fuel_location[0] = fuel_loc_x
+
+        # parameters to adjust the shape of the initialization
+        temp_wall = 300
+
+        # normal shock properties for a calorically perfect gas
+        # state 1: pre-shock
+        # state 2: post-shock
+        rho_bkrnd = pres_bkrnd/r/temp_bkrnd
+        c_bkrnd = math.sqrt(gamma*pres_bkrnd/rho_bkrnd)
+        velocity1 = -mach*c_bkrnd
+
+        gamma1 = gamma
+        gamma2 = gamma
+
+        vel_left = np.zeros(shape=(dim,))
+        vel_right = np.zeros(shape=(dim,))
+        vel_cross = np.zeros(shape=(dim,))
+
+        plane_normal = np.zeros(shape=(dim,))
+        theta = mesh_angle/180.*np.pi
+        plane_normal[0] = np.cos(theta)
+        plane_normal[1] = np.sin(theta)
+        plane_normal = plane_normal/np.linalg.norm(plane_normal)
+
+        bulk_init = PlanarDiscontinuityMulti(
+            dim=dim,
+            nspecies=nspecies,
+            disc_location=disc_location,
+            disc_location_species=fuel_location,
+            normal_dir=plane_normal,
+            sigma=sigma_disc,
+            pressure_left=pres_left,
+            pressure_right=pres_right,
+            temperature_left=temp_left,
+            temperature_right=temp_right,
+            velocity_left=vel_left,
+            velocity_right=vel_right,
+            velocity_cross=vel_cross,
+            species_mass_left=y,
+            species_mass_right=y_fuel,
+            temp_wall=temp_bkrnd,
+            vel_sigma=vel_sigma,
+            temp_sigma=temp_sigma)
+
+    elif init_case == "shock1d":
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -3399,7 +3476,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if init_case == "shock1d" or init_case == "flame1d":
 
             def get_mesh_data():
-                print(f"{generate_mesh=}")
                 if generate_mesh is True:
                     if rank == 0:
                         print("Generating mesh from scratch")
@@ -3435,10 +3511,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 numpy.set_printoptions(threshold=sys.maxsize)
                 #print(f"{mesh=}")
 
-                """
                 # apply periodicity
-                if periodic:
-
+                if periodic_mesh is True:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
 
@@ -3447,8 +3521,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     offset = [0., 0.02]
                     bdry_pair_mappings_and_tols.append((
                         BoundaryPairMapping(
-                            "fluid_wall_bottom",
-                            "fluid_wall_top",
+                            "periodic_y_bottom",
+                            "periodic_y_top",
                             AffineMap(offset=offset)),
                         1e-12))
 
@@ -3461,7 +3535,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                             1e-12))
 
                     mesh = glue_mesh_boundaries(mesh, bdry_pair_mappings_and_tols)
-                    """
+
                 # print(f"{mesh=}")
                 from meshmode.mesh.processing import rotate_mesh_around_axis
                 if mesh_angle > 0:
@@ -3673,6 +3747,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "isothermal_noslip": IsothermalWallBoundary(temp_wall),
         "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
         "adiabatic_slip": AdiabaticSlipBoundary(),
+        "isothermal_slip": IsothermalSlipWallBoundary(),
         "pressure_outflow": PressureOutflowBoundary(outflow_pressure)
     }
 
@@ -3915,7 +3990,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., -np.inf)
 
@@ -3967,7 +4042,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., np.inf)
 
@@ -4019,7 +4094,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., -np.inf)
 
@@ -4071,7 +4146,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         for tpair in itp:
             is_int_face = is_int_face + op.project(
-                dcoll, tpair.dd, dd_allfaces, actx.zeros_like(tpair.ext) + 1)
+                dcoll, tpair.dd, dd_allfaces, actx.np.zeros_like(tpair.ext) + 1)
 
         face_data = actx.np.where(is_int_face, 0., np.inf)
 
@@ -4590,7 +4665,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         try:
             restart_av_sd = restart_data["av_sd"]
         except (KeyError):
-            restart_av_sd = actx.zeros_like(restart_av_smu)
+            restart_av_sd = actx.np.zeros_like(restart_av_smu)
             if rank == 0:
                 print("no data for av_sd in restart file")
                 print("av_sd will be initialzed to 0 on the mesh")
@@ -4625,7 +4700,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             try:
                 restart_av_sd = fluid_connection(restart_data["av_sd"])
             except (KeyError):
-                restart_av_sd = actx.zeros_like(restart_av_smu)
+                restart_av_sd = actx.np.zeros_like(restart_av_smu)
                 if rank == 0:
                     print("no data for av_sd in restart file")
                     print("av_sd will be initialzed to 0 on the mesh")
@@ -4857,7 +4932,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             try:
                 target_av_sd = target_data["av_sd"]
             except (KeyError):
-                target_av_sd = actx.zeros_like(target_av_smu)
+                target_av_sd = actx.np.zeros_like(target_av_smu)
                 if rank == 0:
                     print("no data for av_sd in target file")
                     print("av_sd will be initialzed to 0 on the mesh")
@@ -5774,10 +5849,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             state=fluid_state, boundaries=uncoupled_fluid_boundaries,
             time=time, quadrature_tag=quadrature_tag)
 
-        av_smu = actx.zeros_like(cv.mass)
-        av_sbeta = actx.zeros_like(cv.mass)
-        av_skappa = actx.zeros_like(cv.mass)
-        av_sd = actx.zeros_like(cv.mass)
+        av_smu = actx.np.zeros_like(cv.mass)
+        av_sbeta = actx.np.zeros_like(cv.mass)
+        av_skappa = actx.np.zeros_like(cv.mass)
+        av_sd = actx.np.zeros_like(cv.mass)
 
         # now compute the smoothness part
         if use_av == 1:
@@ -5879,7 +5954,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if eos_type == 1:
 
                 species_entropy = np.zeros(nspecies, dtype=object)
-                entropy = actx.zeros_like(cv.mass)
+                entropy = actx.np.zeros_like(cv.mass)
                 for i in range(nspecies):
                     species_entropy[i] = \
                         pyro_mech.get_species_entropies_r(dv.temperature)
@@ -5977,20 +6052,42 @@ def main(actx_class, restart_filename=None, target_filename=None,
                        ("cfl_fluid_spec_diff", current_dt/cfl_fluid_spec_diff)]
             fluid_viz_fields.extend(viz_ext)
 
+            if use_species_limiter == 2:
+                viz_ext = [("theta_rho", theta_rho),
+                           ("theta_pressure", theta_pres)]
+                fluid_viz_fields.extend(viz_ext)
+
+                fluid_viz_fields.extend(
+                    ("theta_Y_"+species_names[i], theta_Y[i])
+                    for i in range(nspecies))
+
             if use_wall:
                 cell_alpha = wall_model.thermal_diffusivity(
                     wv.mass, wall_temperature, wall_kappa)
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
 
+        # this gives us the DOFArray indices for each element. Useful for debugging
+        discr = dcoll.discr_from_dd(dd_vol_fluid)
+        nelem = discr.groups[0].nelements
+        ndof = discr.groups[0].nunit_dofs
+
+        el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+            np.indices((nelem,)), np.ones(ndof))),))
+        viz_ext = [("el_indices", el_indices)]
+        fluid_viz_fields.extend(viz_ext)
+
+        if use_wall:
+            discr = dcoll.discr_from_dd(dd_vol_wall)
+            nelem = discr.groups[0].nelements
+            ndof = discr.groups[0].nunit_dofs
+            el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+                np.indices((nelem,)), np.ones(ndof))),))
+            viz_ext = [("el_indices", el_indices)]
+            wall_viz_fields.extend(viz_ext)
+
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
-
-            if use_species_limiter:
-                viz_ext = [("theta_rho", theta_rho),
-                           ("theta_Y", theta_Y),
-                           ("theta_pressure", theta_pres)]
-                fluid_viz_fields.extend(viz_ext)
 
             if use_wall:
                 viz_stuff = compute_viz_fields_coupled_compiled(
@@ -6448,7 +6545,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             smoothness = smoothness_indicator(dcoll, stepper_state.cv.mass,
                                               dd=dd_vol_fluid,
                                               kappa=kappa_sc, s0=s0_sc)
-            #smoothness = actx.zeros_like(stepper_state.cv.mass) + 1.0
+            #smoothness = actx.np.zeros_like(stepper_state.cv.mass) + 1.0
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
 
@@ -6457,7 +6554,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
         theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
         theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
-        if viz_level == 3 and use_species_limiter == 2:
+        if viz_level >= 2 and use_species_limiter == 2:
             cv_lim, theta_rho, theta_Y, theta_pres = \
                 limit_fluid_state_lv(
                     dcoll, cv=stepper_state.cv, gas_model=gas_model,
@@ -6860,7 +6957,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_drop_order:
             smoothness = smoothness_indicator(dcoll, cv.mass, dd=dd_vol_fluid,
                                               kappa=kappa_sc, s0=s0_sc)
-            #smoothness = actx.zeros_like(cv.mass) + 1.0
+            #smoothness = actx.np.zeros_like(cv.mass) + 1.0
             cv = _drop_order_cv(cv, smoothness, drop_order_strength)
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
