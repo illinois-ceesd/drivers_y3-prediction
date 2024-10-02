@@ -1442,7 +1442,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # adjusted to match the mass flow rate
     vel_sigma_inj = configurate("vel_sigma_inj", input_data, 5000)
     temp_sigma_inj = configurate("temp_sigma_inj", input_data, 5000)
-    temp_wall = 300
+    temp_wall = configurate("wall_temperature", input_data, 300)
 
     # wall stuff
     wall_penalty_amount = configurate("wall_penalty_amount", input_data, 0)
