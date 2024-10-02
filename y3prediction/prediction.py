@@ -6052,7 +6052,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                        ("cfl_fluid_spec_diff", current_dt/cfl_fluid_spec_diff)]
             fluid_viz_fields.extend(viz_ext)
 
-            if use_species_limiter:
+            if use_species_limiter == 2:
                 viz_ext = [("theta_rho", theta_rho),
                            ("theta_pressure", theta_pres)]
                 fluid_viz_fields.extend(viz_ext)
