@@ -1931,6 +1931,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print("\tO2/N2 mix material properties.")
             else:
                 print("\tAr material properties.")
+            print(f"\tspecific gas constant = {r}")
+            print(f"\tcp = {cp}")
         elif nspecies <= 3:
             print("\tpassive scalars to track air/fuel/inert mixture, ideal gas eos")
         elif nspecies == 5:
@@ -2152,9 +2154,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         disc_location[0] = shock_loc_x
         fuel_location[0] = fuel_loc_x
 
-        # parameters to adjust the shape of the initialization
-        temp_wall = 300
-
         # normal shock properties for a calorically perfect gas
         # state 1: pre-shock
         # state 2: post-shock
@@ -2203,9 +2202,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         disc_location[0] = shock_loc_x
         fuel_location[0] = fuel_loc_x
-
-        # parameters to adjust the shape of the initialization
-        temp_wall = 300
 
         # normal shock properties for a calorically perfect gas
         # state 1: pre-shock
@@ -2408,9 +2404,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         disc_location[0] = shock_loc_x
         fuel_location[0] = shock_loc_x
 
-        # parameters to adjust the shape of the initialization
-        temp_wall = 300
-
         #mech_data = get_mechanism_input("uiuc_updated")
         mech_file = (f"{pyro_mech_name}.yaml")
 
@@ -2562,9 +2555,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         fuel_location[1] = 10000.
         plane_normal = np.zeros(shape=(dim,))
 
-        # parameters to adjust the shape of the initialization
-        temp_wall = 300
-
         #
         # isentropic expansion based on the area ratios between the
         # inlet (r=54e-3m) and the throat (r=3.167e-3)
@@ -2672,9 +2662,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_sigma=temp_sigma)
 
     elif init_case == "unstart_ramp":
-
-        # parameters to adjust the shape of the initialization
-        temp_wall = 300
 
         #
         # isentropic expansion based on the area ratios between the
@@ -2807,9 +2794,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_sigma=temp_sigma)
 
     elif init_case == "y3prediction_ramp":
-
-        # parameters to adjust the shape of the initialization
-        temp_wall = 300
 
         #
         # isentropic expansion based on the area ratios between the

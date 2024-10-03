@@ -145,11 +145,6 @@ class PlanarDiscontinuityMulti:
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
         y = self._yl + (self._yr - self._yl)*weight
 
-        print(f"{self._pl=}")
-        print(f"{self._pr=}")
-        print(f"{self._sigma=}")
-        print(f"{x0=}")
-
         # now solve for T, P, velocity
         dist = np.dot(x0 - x_vec, self._normal)
         xtanh = 1.0/self._sigma*dist
@@ -249,9 +244,12 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Line(7) = {{5, 6}};
             Line Loop(1) = {{-4, -3, -2, -1}};
             Line Loop(2) = {{2, 5, -7, -6}};
-            Plane Surface(1) = {{-1}};
-            Plane Surface(2) = {{-2}};
             """)
+        my_string += ("""
+            Plane Surface(1) = {-1};
+            Plane Surface(2) = {-2};
+            """)
+
         if dim == 2:
             my_string += ("""
                 Physical Surface('fluid') = {1};
@@ -451,8 +449,12 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             """)
 
         print(my_string)
+        mesh_construction_kwargs = {
+            "force_positive_orientation":  True,
+            "skip_element_orientation_test":  True}
         return partial(generate_gmsh, ScriptSource(my_string, "geo"),
                        force_ambient_dim=dim, dimensions=dim, target_unit="M",
+                       mesh_construction_kwargs=mesh_construction_kwargs,
                        return_tag_to_elements_map=True)
 
     else:
