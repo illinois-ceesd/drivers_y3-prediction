@@ -496,7 +496,7 @@ def element_average(dcoll, dd, field, volumes=None):
     actx = field.array_context
     cell_avgs = op.elementwise_integral(dcoll, dd, field)
     if volumes is None:
-        volumes = abs(op.elementwise_integral(
+        volumes = actx.np.abs(op.elementwise_integral(
             dcoll, dd, actx.zeros_like(field) + 1.0))
 
     return cell_avgs/volumes
