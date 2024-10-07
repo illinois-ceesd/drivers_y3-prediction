@@ -637,27 +637,27 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     element_vols = abs(op.elementwise_integral(dcoll, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
-    # print_stuff = False
-    # index = 118
+    print_stuff = False
+    index = 118
 
-    # if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
-    #     np.set_printoptions(threshold=sys.maxsize, precision=16)
+    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
 
-    #     print("Start of limiting")
-    #     temperature_initial = gas_model.eos.temperature(
-    #         cv=cv, temperature_seed=temperature_seed)
-    #     pressure_initial = gas_model.eos.pressure(
-    #         cv=cv, temperature=temperature_initial)
-    #     # initial state
-    #     data = actx.to_numpy(cv.mass)
-    #     print(f"cv.mass \n {data[0][index]}")
-    #     data = actx.to_numpy(temperature_initial)
-    #     print(f"temperature_initial \n {data[0][index]}")
-    #     data = actx.to_numpy(pressure_initial)
-    #     print(f"pressure_initial \n {data[0][index]}")
-    #     for i in range(0, nspecies):
-    #         data = actx.to_numpy(cv.species_mass_fractions)
-    #         print(f"Y_initial[{i}] \n {data[i][0][index]}")
+        print("Start of limiting")
+        temperature_initial = gas_model.eos.temperature(
+            cv=cv, temperature_seed=temperature_seed)
+        pressure_initial = gas_model.eos.pressure(
+            cv=cv, temperature=temperature_initial)
+        # initial state
+        data = actx.to_numpy(cv.mass)
+        print(f"cv.mass \n {data[0][index]}")
+        data = actx.to_numpy(temperature_initial)
+        print(f"temperature_initial \n {data[0][index]}")
+        data = actx.to_numpy(pressure_initial)
+        print(f"pressure_initial \n {data[0][index]}")
+        for i in range(0, nspecies):
+            data = actx.to_numpy(cv.species_mass_fractions)
+            print(f"Y_initial[{i}] \n {data[i][0][index]}")
 
     #print(f"inside limiter")
 
@@ -693,23 +693,22 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     # tseed is the best guess at a reasonable temperature after the limiting
     # assume that whatever pressure and temperature that was computed was bogus
     #if temperature_seed is not None:
-    # if 0:
-    #     # preserve internal energy, velocity, and mass fractions,
-    #     # keeps pressure/temperature constant
-    #     mom_lim = mass_lim*cv.velocity
-    #     kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
-    #     int_energy = cv.energy - cv.mass*kin_energy
-    #     energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
-    #     spec_lim = cv.species_mass_fractions
+    if 0:
+        # preserve internal energy, velocity, and mass fractions,
+        # keeps pressure/temperature constant
+        mom_lim = mass_lim*cv.velocity
+        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+        int_energy = cv.energy - cv.mass*kin_energy
+        energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
+        spec_lim = cv.species_mass_fractions
 
-    #     temperature_guess = gas_model.eos.temperature(
-    #         cv=cv, temperature_seed=temperature_seed)
-    #     safe_temperature = actx.np.where(actx.np.greater(theta_rho, toler),
-    #                                      temperature_seed, temperature_guess)
-    #     energy_lim = mass_lim*(gas_model.eos.get_internal_energy(safe_temperature,
-    #                            species_mass_fractions=spec_lim) + kin_energy)
-    # else:
-    if True:
+        temperature_guess = gas_model.eos.temperature(
+            cv=cv, temperature_seed=temperature_seed)
+        safe_temperature = actx.np.where(actx.np.greater(theta_rho, toler),
+                                         temperature_seed, temperature_guess)
+        energy_lim = mass_lim*(gas_model.eos.get_internal_energy(safe_temperature,
+                               species_mass_fractions=spec_lim) + kin_energy)
+    else:
         # if tseed is not available, don't mess with the temperature
         #mom_lim = cv.momentum/cv.mass*mass_lim
         #energy_lim = cv.energy/cv.mass*mass_lim
@@ -724,29 +723,29 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                                    momentum=mom_lim,
                                    species_mass=mass_lim*spec_lim)
 
-    # if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
-    #     np.set_printoptions(threshold=sys.maxsize, precision=16)
-    #     # initial state
-    #     #print(f"{theta_rho=}")
-    #     #print(f"{theta_pressure=}")
-    #     print("After rho limit")
-    #     data = actx.to_numpy(theta_rho)
-    #     print(f"theta_rho \n {data[0][index]}")
-    #     data = actx.to_numpy(cell_avgs)
-    #     print(f"cell_avgs \n {data[0][index]}")
-    #     temperature_rho = gas_model.eos.temperature(
-    #         cv=cv_update_rho, temperature_seed=temperature_seed)
-    #     pressure_rho = gas_model.eos.pressure(
-    #         cv=cv_update_rho, temperature=temperature_rho)
-    #     # initial state
-    #     data = actx.to_numpy(cv_update_rho.mass)
-    #     print(f"cv.mass \n {data[0][index]}")
-    #     data = actx.to_numpy(temperature_rho)
-    #     print(f"temperature_rho \n {data[0][index]}")
-    #     data = actx.to_numpy(pressure_rho)
-    #     print(f"pressure_rho \n {data[0][index]}")
-    #     data = actx.to_numpy(temperature_seed)
-    #     print(f"temperature_seed \n {data[0][index]}")
+    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
+        # initial state
+        #print(f"{theta_rho=}")
+        #print(f"{theta_pressure=}")
+        print("After rho limit")
+        data = actx.to_numpy(theta_rho)
+        print(f"theta_rho \n {data[0][index]}")
+        data = actx.to_numpy(cell_avgs)
+        print(f"cell_avgs \n {data[0][index]}")
+        temperature_rho = gas_model.eos.temperature(
+            cv=cv_update_rho, temperature_seed=temperature_seed)
+        pressure_rho = gas_model.eos.pressure(
+            cv=cv_update_rho, temperature=temperature_rho)
+        # initial state
+        data = actx.to_numpy(cv_update_rho.mass)
+        print(f"cv.mass \n {data[0][index]}")
+        data = actx.to_numpy(temperature_rho)
+        print(f"temperature_rho \n {data[0][index]}")
+        data = actx.to_numpy(pressure_rho)
+        print(f"pressure_rho \n {data[0][index]}")
+        data = actx.to_numpy(temperature_seed)
+        print(f"temperature_seed \n {data[0][index]}")
 
     ##################
     # 2.0 limit the species mass fractions
@@ -802,24 +801,23 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         # tseed is the best guess at a reasonable temperature after the limiting
         # assume that whatever pressure and temperature that was computed was bogus
         #if temperature_seed is not None:
-        # if 0:
-        #     # preserve internal energy, velocity, and mass fractions,
-        #     # keeps pressure/temperature constant
-        #     mass_lim = cv_update_rho.mass
-        #     mom_lim = mass_lim*cv_update_rho.velocity
-        #     kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-        #     int_energy = cv_update_rho.energy - mass_lim*kin_energy
-        #     energy_lim = (int_energy/mass_lim + kin_energy)*mass_lim
+        if 0:
+            # preserve internal energy, velocity, and mass fractions,
+            # keeps pressure/temperature constant
+            mass_lim = cv_update_rho.mass
+            mom_lim = mass_lim*cv_update_rho.velocity
+            kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
+            int_energy = cv_update_rho.energy - mass_lim*kin_energy
+            energy_lim = (int_energy/mass_lim + kin_energy)*mass_lim
 
-        #     temperature_guess = gas_model.eos.temperature(
-        #         cv=cv_update_rho, temperature_seed=temperature_seed)
-        #     safe_temperature = actx.np.where(actx.np.greater(sum_theta_y, toler),
-        #                                      temperature_seed, temperature_guess)
-        #     energy_lim = mass_lim*(
-        #         gas_model.eos.get_internal_energy(
-        #             safe_temperature, species_mass_fractions=spec_lim) + kin_energy)
-        # else:
-        if True:
+            temperature_guess = gas_model.eos.temperature(
+                cv=cv_update_rho, temperature_seed=temperature_seed)
+            safe_temperature = actx.np.where(actx.np.greater(sum_theta_y, toler),
+                                             temperature_seed, temperature_guess)
+            energy_lim = mass_lim*(
+                gas_model.eos.get_internal_energy(
+                    safe_temperature, species_mass_fractions=spec_lim) + kin_energy)
+        else:
             mass_lim = cv_update_rho.mass
             mom_lim = mass_lim*cv_update_rho.velocity
             kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
@@ -890,21 +888,21 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     else:
         cv_update_y = cv_update_rho
 
-    # if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
-    #     np.set_printoptions(threshold=sys.maxsize, precision=16)
+    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
 
-    #     print("After mass fraction limiting")
-    #     temperature_update_y = gas_model.eos.temperature(
-    #         cv=cv_update_y, temperature_seed=temperature_seed)
-    #     pressure_update_y = gas_model.eos.pressure(
-    #         cv=cv_update_y, temperature=temperature_update_y)
-    #     data = actx.to_numpy(temperature_update_y)
-    #     print(f"temperature_update_y \n {data[0][index]}")
-    #     data = actx.to_numpy(pressure_update_y)
-    #     print(f"pressure_update_y \n {data[0][index]}")
-    #     for i in range(0, nspecies):
-    #         data = actx.to_numpy(cv_update_y.species_mass_fractions)
-    #         print(f"Y_update_y[{i}] \n {data[i][0][index]}")
+        print("After mass fraction limiting")
+        temperature_update_y = gas_model.eos.temperature(
+            cv=cv_update_y, temperature_seed=temperature_seed)
+        pressure_update_y = gas_model.eos.pressure(
+            cv=cv_update_y, temperature=temperature_update_y)
+        data = actx.to_numpy(temperature_update_y)
+        print(f"temperature_update_y \n {data[0][index]}")
+        data = actx.to_numpy(pressure_update_y)
+        print(f"pressure_update_y \n {data[0][index]}")
+        for i in range(0, nspecies):
+            data = actx.to_numpy(cv_update_y.species_mass_fractions)
+            print(f"Y_update_y[{i}] \n {data[i][0][index]}")
 
     ##################
     # 3.0 find the average element cv and pressure
@@ -1012,71 +1010,70 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                             momentum=mom_lim,
                             species_mass=spec_lim)
 
-    # if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
-    #     np.set_printoptions(threshold=sys.maxsize, precision=16)
+    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
 
-    #     temperature_final = gas_model.eos.temperature(
-    #         cv=cv_lim, temperature_seed=temperature_seed)
-    #     pressure_final = gas_model.eos.pressure(
-    #         cv=cv_lim, temperature=temperature_final)
+        temperature_final = gas_model.eos.temperature(
+            cv=cv_lim, temperature_seed=temperature_seed)
+        pressure_final = gas_model.eos.pressure(
+            cv=cv_lim, temperature=temperature_final)
 
-    #     def get_temperature_update_limit(cv, temperature):
-    #         y = cv.species_mass_fractions
-    #         e = gas_model.eos.internal_energy(cv)/cv.mass
-    #         return actx.np.abs(
-    #             gas_model.eos._pyrometheus_mech.get_temperature_update_energy(
-    #                 e, temperature, y))
+        def get_temperature_update_limit(cv, temperature):
+            y = cv.species_mass_fractions
+            e = gas_model.eos.internal_energy(cv)/cv.mass
+            return actx.np.abs(
+                gas_model.eos._pyrometheus_mech.get_temperature_update_energy(
+                    e, temperature, y))
 
-    #     temp_resid = get_temperature_update_limit(
-    #         cv_lim, temperature_final)/temperature_final
+        temp_resid = get_temperature_update_limit(
+            cv_lim, temperature_final)/temperature_final
 
-    #     # run through a temperature solve manually, print out the updates
+        # run through a temperature solve manually, print out the updates
 
-    #     num_iter = 20
+        num_iter = 20
 
-    #     def do_temperature_iter(cv, tseed):
-    #         y = cv.species_mass_fractions
-    #         t_i = temperature_seed
-    #         print(f" First: {actx.to_numpy(t_i)[0][index]=}")
-    #         e = gas_model.eos.internal_energy(cv)/cv.mass
-    #         for _ in range(num_iter):
-    #             t_resid = (gas_model.eos._pyrometheus_mech.
-    #                 get_temperature_update_energy(e, t_i, y))
-    #             t_i = t_i + t_resid
-    #             data_t_i = actx.to_numpy(t_i)[0][index]
-    #             data_t_resid = actx.to_numpy(t_resid)[0][index]
-    #             print(f"iter {_=}: {data_t_i=}, {data_t_resid=}")
+        def do_temperature_iter(cv, tseed):
+            y = cv.species_mass_fractions
+            t_i = temperature_seed
+            print(f" First: {actx.to_numpy(t_i)[0][index]=}")
+            e = gas_model.eos.internal_energy(cv)/cv.mass
+            for _ in range(num_iter):
+                t_resid = (gas_model.eos._pyrometheus_mech.
+                    get_temperature_update_energy(e, t_i, y))
+                t_i = t_i + t_resid
+                data_t_i = actx.to_numpy(t_i)[0][index]
+                data_t_resid = actx.to_numpy(t_resid)[0][index]
+                print(f"iter {_=}: {data_t_i=}, {data_t_resid=}")
 
-    #     #do_temperature_iter(cv_lim, temperature_seed)
-    #     # initial state
-    #     print(f"{theta_rho=}")
-    #     #print(f"{theta_pressure=}")
-    #     #print(f"{theta_spec=}")
-    #     #print(f"{cv_lim.species_mass_fractions=}")
-    #     print(f"{temperature_final}")
-    #     #print(f"{temp_resid=}")
-    #     print("All done limiting")
-    #     data = actx.to_numpy(temp_resid)
-    #     print(f"temp_resid \n {data[0][index]}")
-    #     data = actx.to_numpy(theta_rho)
-    #     print(f"theta_rho \n {data[0][index]}")
-    #     data = actx.to_numpy(theta_pressure)
-    #     print(f"theta_pressure \n {data[0][index]}")
-    #     for i in range(0, nspecies):
-    #         data = actx.to_numpy(theta_spec)
-    #         print(f"theta_Y[{i}] \n {data[i][0][index]}")
-    #     data = actx.to_numpy(cv_lim.mass)
-    #     print(f"cv_lim.mass \n {data[0][index]}")
-    #     data = actx.to_numpy(temperature_final)
-    #     print(f"temperature_final \n {data[0][index]}")
-    #     data = actx.to_numpy(pressure_final)
-    #     print(f"pressure_final \n {data[0][index]}")
+        #do_temperature_iter(cv_lim, temperature_seed)
+        # initial state
+        print(f"{theta_rho=}")
+        #print(f"{theta_pressure=}")
+        #print(f"{theta_spec=}")
+        #print(f"{cv_lim.species_mass_fractions=}")
+        print(f"{temperature_final}")
+        #print(f"{temp_resid=}")
+        print("All done limiting")
+        data = actx.to_numpy(temp_resid)
+        print(f"temp_resid \n {data[0][index]}")
+        data = actx.to_numpy(theta_rho)
+        print(f"theta_rho \n {data[0][index]}")
+        data = actx.to_numpy(theta_pressure)
+        print(f"theta_pressure \n {data[0][index]}")
+        for i in range(0, nspecies):
+            data = actx.to_numpy(theta_spec)
+            print(f"theta_Y[{i}] \n {data[i][0][index]}")
+        data = actx.to_numpy(cv_lim.mass)
+        print(f"cv_lim.mass \n {data[0][index]}")
+        data = actx.to_numpy(temperature_final)
+        print(f"temperature_final \n {data[0][index]}")
+        data = actx.to_numpy(pressure_final)
+        print(f"pressure_final \n {data[0][index]}")
 
-    # if viz_theta:
-    #     return make_obj_array([cv_lim, theta_rho,
-    #                            theta_spec, theta_pressure])
-    # else:
-    if True:
+    if viz_theta:
+        return make_obj_array([cv_lim, theta_rho,
+                               theta_spec, theta_pressure])
+    else:
         return cv_lim
         #return cv_update_rho
 
@@ -4158,23 +4155,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
     limiter_func = None
     if use_species_limiter > 0:
         limiter_func = my_limiter_func
-
-    # def add_zero_times_integral_mass(cv, temperature_seed, gas_model, dd):
-    #     return cv + 0*op.elementwise_integral(dcoll, dd, cv.mass)
-
-    # def add_zero_times_area_elements(cv, temperature_seed, gas_model, dd):
-    #     from grudge.geometry import area_element
-    #     area_elements = area_element(actx, dcoll, dd=dd,
-    #             _use_geoderiv_connection=actx.supports_nonscalar_broadcasting)
-    #     return cv + 0*area_elements
-
-    # def add_zero_times_elementwise_sum(cv, temperature_seed, gas_model, dd):
-    #     return cv + 0*op.elementwise_sum(dcoll, dd, cv.mass)
-
-
-    # limiter_func = add_zero_times_integral_mass
-    # limiter_func = add_zero_times_area_elements
-    # limiter_func = add_zero_times_elementwise_sum
 
     ########################################
     # Helper functions for building states #
