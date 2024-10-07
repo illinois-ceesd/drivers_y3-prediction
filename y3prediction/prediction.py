@@ -245,6 +245,10 @@ class _InitCommTag:
     pass
 
 
+class _UpdateSmoothnessCommTag:
+    pass
+
+
 class _SmoothnessCVGradCommTag:
     pass
 
@@ -399,7 +403,7 @@ def update_coupled_boundaries(
     fluid_operator_states_quad = make_operator_fluid_states(
         dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
         quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
-        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+        comm_tag=(comm_tag, _FluidOpStatesCommTag, 1))
 
     # Compute the temperature gradient for both subdomains
     fluid_grad_temperature = fluid_grad_t_operator(
@@ -433,7 +437,7 @@ def update_coupled_boundaries(
     fluid_operator_states_quad = make_operator_fluid_states(
         dcoll, fluid_state, gas_model, fluid_all_boundaries,
         quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
-        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+        comm_tag=(comm_tag, _FluidOpStatesCommTag, 2))
 
     fluid_grad_cv = grad_cv_operator(
         dcoll, gas_model, fluid_all_boundaries, fluid_state,
@@ -4462,7 +4466,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
-                comm_tag=_InitCommTag)
+                comm_tag=_UpdateSmoothnessCommTag)
 
             # try making sure the stuff that comes back is used
             # even if it's a zero contribution
@@ -4479,7 +4483,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 state=fluid_state,
                 time=time,
                 quadrature_tag=quadrature_tag,
-                comm_tag=(_InitCommTag, _FluidOperatorCommTag))
+                comm_tag=(_UpdateSmoothnessCommTag, _FluidOperatorCommTag))
 
             wall_energy_rhs = diffusion_operator(
                 dcoll=dcoll,
@@ -4489,7 +4493,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 quadrature_tag=quadrature_tag,
                 dd=dd_vol_wall,
                 grad_u=grad_wall_t,
-                comm_tag=(_InitCommTag, _WallOperatorCommTag))
+                comm_tag=(_UpdateSmoothnessCommTag, _WallOperatorCommTag))
 
             cv = cv + 0.*fluid_rhs
 
