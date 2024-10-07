@@ -171,98 +171,6 @@ def write_gmsh_mesh(file_path, nodes, elements, mesh_format,
             file.write(f"{elem_id} {element_type} {num_tags} {' '.join(map(str, tags))} {' '.join(map(str, element_nodes))}\n")
         file.write("$EndElements\n")
 
-def sort_lexicographic(element_nodes, nodes):
-    # Sort hexahedral element nodes based on their coordinates
-    # This maintains the original gmsh order, but puts the first node
-    # at the minimum x, y, z coordinate
-    sorted_nodes = sorted(element_nodes,
-                          key=lambda node_id: (nodes[node_id][2]))
-
-    # sort the min and max z seperately for y
-    sorted_nodes[:4] = sorted(sorted_nodes[:4],
-                          key=lambda node_id: float(nodes[node_id][1]))
-    sorted_nodes[4:] = sorted(sorted_nodes[4:],
-                          key=lambda node_id: float(nodes[node_id][1]))
-
-    # sort by x depending on which y extrema the nodes live on
-    sorted_nodes[:2] = sorted(sorted_nodes[:2],
-                          key=lambda node_id: float(nodes[node_id][0]))
-    sorted_nodes[2:4] = sorted(sorted_nodes[2:4],
-                          key=lambda node_id: float(nodes[node_id][0]))
-    sorted_nodes[4:6] = sorted(sorted_nodes[4:6],
-                          key=lambda node_id: float(nodes[node_id][0]))
-    sorted_nodes[6:] = sorted(sorted_nodes[6:],
-                          key=lambda node_id: float(nodes[node_id][0]))
-
-    return sorted_nodes
-
-def sort_gmsh(element_nodes, nodes):
-    # Sort hexahedral element nodes based on their coordinates
-    # This maintains the original gmsh order, but puts the first node
-    # at the minimum x, y, z coordinate
-    sorted_nodes = sorted(element_nodes,
-                          key=lambda node_id: (nodes[node_id][2]))
-
-    # sort the min and max z seperately for y
-    sorted_nodes[:4] = sorted(sorted_nodes[:4],
-                          key=lambda node_id: float(nodes[node_id][1]))
-    sorted_nodes[4:] = sorted(sorted_nodes[4:],
-                          key=lambda node_id: float(nodes[node_id][1]))
-
-    # sort by x depending on which y extrema the nodes live on
-    sorted_nodes[:2] = sorted(sorted_nodes[:2],
-                          key=lambda node_id: float(nodes[node_id][0]))
-    sorted_nodes[2:4] = sorted(sorted_nodes[2:4],
-                          key=lambda node_id: float(nodes[node_id][0]), reverse=True)
-    sorted_nodes[4:6] = sorted(sorted_nodes[4:6],
-                          key=lambda node_id: float(nodes[node_id][0]))
-    sorted_nodes[6:] = sorted(sorted_nodes[6:],
-                          key=lambda node_id: float(nodes[node_id][0]), reverse=True)
-
-    return sorted_nodes
-
-def sort_gmsh2(element_nodes, nodes):
-    # Sort hexahedral element nodes based on their coordinates
-    # This maintains the original gmsh order, but puts the first node
-    # at the minimum x, y, z coordinate
-    # first sort based on x
-    sorted_nodes = sorted(element_nodes,
-                          key=lambda node_id: (nodes[node_id][0]))
-
-    # sort the min and max x nodes seperately for y
-    sorted_nodes[:4] = sorted(sorted_nodes[:4],
-                          key=lambda node_id: float(nodes[node_id][1]))
-    sorted_nodes[4:] = sorted(sorted_nodes[4:],
-                          key=lambda node_id: float(nodes[node_id][1]))
-
-    # sort by z depending on which (x,y) extrema the nodes live on
-    sorted_nodes[:2] = sorted(sorted_nodes[:2],
-                          key=lambda node_id: float(nodes[node_id][2]))
-    sorted_nodes[2:4] = sorted(sorted_nodes[2:4],
-                          key=lambda node_id: float(nodes[node_id][2]), reverse=True)
-    sorted_nodes[4:6] = sorted(sorted_nodes[4:6],
-                          key=lambda node_id: float(nodes[node_id][2]))
-    sorted_nodes[6:] = sorted(sorted_nodes[6:],
-                          key=lambda node_id: float(nodes[node_id][2]), reverse=True)
-
-    return sorted_nodes
-
-def sort_gmsh3(element_nodes, nodes):
-    # Sort hexahedral element nodes based on their coordinates
-    # This maintains the original gmsh order, but puts the first node
-    # at the minimum x, y, z coordinate
-    # first sort based on x
-    #print(f"{element_nodes=}")
-    sorted_nodes = element_nodes.copy()
-    sorted_nodes[1] = element_nodes[4]
-    sorted_nodes[4] = element_nodes[1]
-    sorted_nodes[7] = element_nodes[2]
-    sorted_nodes[2] = element_nodes[7]
-    #print(f"{element_nodes=}")
-    #print(f"{sorted_nodes=}")
-
-    return sorted_nodes
-
 def convert_mesh(input_mesh, output_mesh):
     # Example usage:
     nodes, elements, element_tags, physical_names, physical_dim = read_nastran_mesh(input_mesh)
@@ -277,7 +185,7 @@ def convert_mesh(input_mesh, output_mesh):
         first_node = min(first_node, node_id)
         last_node = max(last_node, node_id)
         #print(f"Node {node_id}: {coordinates}")
-    print(f"Wrote {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
+    print(f"Read {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
 
     print("\nElements:")
     first_element = 1e9
@@ -286,7 +194,39 @@ def convert_mesh(input_mesh, output_mesh):
         first_element = min(first_element, element_id)
         last_element = max(last_element, element_id)
         #print(f"Element Nodes for Element {element_id}: {element_nodes}")
-    print(f"Wrote {len(elements)} elements, first element id {first_element}, last element id {last_element}")
+    print(f"Read {len(elements)} elements, first element id {first_element}, last element id {last_element}")
+
+    # renumber to start at 1
+    renumber_nodes = {}
+    for new_id, old_id in enumerate(nodes.keys(), start=1):
+        renumber_nodes[new_id] = nodes[old_id]
+
+    renumber_elements = {}
+    element_mapping = {}
+    for new_id, (element_id, node_ids) in enumerate(elements.items(), start=1):
+        renumber_elements[new_id] = [list(nodes.keys()).index(node_id) + 1 for node_id in node_ids]
+        element_mapping[element_id] = new_id
+
+    renumber_element_tags = {new_id: element_tags[element_id] for element_id, new_id in element_mapping.items()}
+
+    print("Renumber Nodes:")
+    first_node = 1e9
+    last_node = -1
+    for node_id, coordinates in renumber_nodes.items():
+        first_node = min(first_node, node_id)
+        last_node = max(last_node, node_id)
+        #print(f"Node {node_id}: {coordinates}")
+    print(f"Writing {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
+
+    print("\nRenumber Elements:")
+    first_element = 1e9
+    last_element = -1
+    for element_id, element_nodes in renumber_elements.items():
+        first_element = min(first_element, element_id)
+        last_element = max(last_element, element_id)
+        #print(f"Element Nodes for Element {element_id}: {element_nodes}")
+    print(f"Writing {len(elements)} elements, first element id {first_element}, last element id {last_element}")
+
 
     #print("\nElement Tags:")
     #for element_id, tags in element_tags.items():
@@ -296,7 +236,7 @@ def convert_mesh(input_mesh, output_mesh):
     for name_id, name in physical_names.items():
         print(f"Physical name {name_id}: {name}")
 
-    write_gmsh_mesh(output_mesh, nodes, elements, mesh_format, physical_names, element_tags, physical_dim)
+    write_gmsh_mesh(output_mesh, renumber_nodes, renumber_elements, mesh_format, physical_names, renumber_element_tags, physical_dim)
 
 import sys
 def main():

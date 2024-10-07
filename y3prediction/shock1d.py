@@ -448,7 +448,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Recombine Surface {1, 2};
             """)
 
-        print(my_string)
+        #print(my_string)
         mesh_construction_kwargs = {
             "force_positive_orientation":  True,
             "skip_element_orientation_test":  True}
