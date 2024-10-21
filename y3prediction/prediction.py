@@ -1391,6 +1391,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # Shock 1D flow properties
     pres_bkrnd = configurate("pres_bkrnd", input_data, 100.)
     temp_bkrnd = configurate("temp_bkrnd", input_data, 300.)
+    vel_bkrnd = configurate("vel_bkrnd", input_data, 0.)
     mach = configurate("mach", input_data, 2.0)
     shock_loc_x = configurate("shock_loc_x", input_data, 0.05)
     fuel_loc_x = configurate("fuel_loc_x", input_data, 0.07)
@@ -1647,6 +1648,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "backward_step":
+            print("\tInitializing flow to backward_step")
+            print(f"Shock Mach number {mach}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "forward_step":
+            print("\tInitializing flow to forward_step")
+            print(f"Shock Mach number {mach}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
         elif init_case == "mixing_layer":
             print("\tInitializing flow to mixing_layer")
             print(f"Vorticity thickness {vorticity_thickness}")
@@ -1689,6 +1700,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "\t unstart"
                 "\t unstart_ramp"
                 "\t shock1d"
+                "\t backward_step"
+                "\t forward_step"
                 "\t discontinuity"
                 "\t flame1d"
                 "\t wedge"
@@ -2128,9 +2141,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
     gas_model = GasModel(eos=eos, transport=transport_model)
 
     # quiescent initialization
+    velocity_bkrnd = np.zeros(shape=(dim,))
+    velocity_bkrnd[0] = vel_bkrnd
     bulk_init = Uniform(
         dim=dim,
-        velocity=np.zeros(shape=(dim,)),
+        velocity=velocity_bkrnd,
         pressure=pres_bkrnd,
         temperature=temp_bkrnd
     )
@@ -2185,7 +2200,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
 
-    elif init_case == "shock1d":
+    elif (init_case == "shock1d" or
+          #init_case == "forward_step" or
+          init_case == "backward_step"):
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -3515,6 +3532,73 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 from meshmode.mesh.processing import rotate_mesh_around_axis
                 if mesh_angle > 0:
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
+
+                return mesh, tag_to_elements, volume_to_tags
+        # eventually encapsulate these inside a class for the respective inits
+        elif init_case == "backward_step":
+            def get_mesh_data():
+                if generate_mesh is True:
+                    if rank == 0:
+                        print("Generating mesh from scratch")
+                    from y3prediction.backward_step import get_mesh
+                    mesh, tag_to_elements = get_mesh(
+                        dim=dim, size=mesh_size,
+                        bl_ratio=bl_ratio, interface_ratio=interface_ratio,
+                        transfinite=transfinite, use_wall=use_wall,
+                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                else:
+                    if rank == 0:
+                        print("Reading mesh")
+                    from meshmode.mesh.io import read_gmsh
+                    mesh_construction_kwargs = {
+                        "force_positive_orientation":  True,
+                        "skip_element_orientation_test":  True}
+                    mesh, tag_to_elements = read_gmsh(
+                        mesh_filename, force_ambient_dim=dim,
+                        mesh_construction_kwargs=mesh_construction_kwargs,
+                        return_tag_to_elements_map=True)
+
+                volume_to_tags = {"fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
+
+                return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "forward_step":
+            def get_mesh_data():
+                if generate_mesh is True:
+                    if rank == 0:
+                        print("Generating mesh from scratch")
+                    from y3prediction.forward_step import get_mesh
+                    mesh, tag_to_elements = get_mesh(
+                        dim=dim, size=mesh_size,
+                        bl_ratio=bl_ratio, interface_ratio=interface_ratio,
+                        transfinite=transfinite, use_wall=use_wall,
+                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                else:
+                    if rank == 0:
+                        print("Reading mesh")
+                    from meshmode.mesh.io import read_gmsh
+                    mesh_construction_kwargs = {
+                        "force_positive_orientation":  True,
+                        "skip_element_orientation_test":  True}
+                    mesh, tag_to_elements = read_gmsh(
+                        mesh_filename, force_ambient_dim=dim,
+                        mesh_construction_kwargs=mesh_construction_kwargs,
+                        return_tag_to_elements_map=True)
+
+                volume_to_tags = {"fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
 
                 return mesh, tag_to_elements, volume_to_tags
         elif init_case == "mixing_layer" or init_case == "mixing_layer_hot":
@@ -5478,7 +5562,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
-    elif init_case == "shock1d" or init_case == "flame1d":
+    elif (init_case == "shock1d" or
+          init_case == "flame1d" or
+          init_case == "forward_step" or
+          init_case == backward_step):
 
         inlet_sponge_x0 = 0.015
         inlet_sponge_thickness = 0.015

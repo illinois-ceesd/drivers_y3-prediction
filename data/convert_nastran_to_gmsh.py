@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 def read_nastran_mesh(file_path):
     nodes = {}
@@ -172,13 +173,16 @@ def write_gmsh_mesh(file_path, nodes, elements, mesh_format,
         file.write("$EndElements\n")
 
 def convert_mesh(input_mesh, output_mesh):
-    # Example usage:
+    # Read the nastran file
+    begin_read_time = time.perf_counter()
     nodes, elements, element_tags, physical_names, physical_dim = read_nastran_mesh(input_mesh)
+    end_read_time = time.perf_counter()
+    print(f"Read mesh in {(end_read_time - begin_read_time):.1f} seconds.")
 
     # This is the mesh format meshmode expects
     mesh_format = "2.2 0 8"
 
-    print("Nodes:")
+    begin_minmax_time = time.perf_counter()
     first_node = 1e9
     last_node = -1
     for node_id, coordinates in nodes.items():
@@ -187,7 +191,6 @@ def convert_mesh(input_mesh, output_mesh):
         #print(f"Node {node_id}: {coordinates}")
     print(f"Read {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
 
-    print("\nElements:")
     first_element = 1e9
     last_element = -1
     for element_id, element_nodes in elements.items():
@@ -195,19 +198,39 @@ def convert_mesh(input_mesh, output_mesh):
         last_element = max(last_element, element_id)
         #print(f"Element Nodes for Element {element_id}: {element_nodes}")
     print(f"Read {len(elements)} elements, first element id {first_element}, last element id {last_element}")
+    end_minmax_time = time.perf_counter()
+    print(f"Spent {(end_read_time - begin_read_time):.1f} seconds finding min/max node and element numbers.")
 
-    # renumber to start at 1
+    # renumber nodes to start at 1
+    begin_renumber_nodes_time = time.perf_counter()
     renumber_nodes = {}
     for new_id, old_id in enumerate(nodes.keys(), start=1):
         renumber_nodes[new_id] = nodes[old_id]
 
+    # update the element node numbers
     renumber_elements = {}
+    #renumber_elements = elements
     element_mapping = {}
-    for new_id, (element_id, node_ids) in enumerate(elements.items(), start=1):
-        renumber_elements[new_id] = [list(nodes.keys()).index(node_id) + 1 for node_id in node_ids]
-        element_mapping[element_id] = new_id
+
+    # Create a mapping for old node IDs to new IDs
+    old_to_new_node_mapping = {old_id: new_id for new_id, old_id in enumerate(nodes.keys(), start=1)}
+
+    # Renumbering nodes
+    for new_id, (old_id, coords) in enumerate(nodes.items(), start=1):
+        renumber_nodes[new_id] = coords  # Copy coordinates directly
+
+    # Renumbering elements
+    for new_id, (element_id, node_ids) in enumerate(list(elements.items()), start=1):
+        renumbered_node_ids = [old_to_new_node_mapping[node_id] for node_id in node_ids if node_id in old_to_new_node_mapping]
+        renumber_elements[new_id] = renumbered_node_ids  # Store the new node IDs
+        element_mapping[element_id] = new_id  # Map old element ID to new ID
 
     renumber_element_tags = {new_id: element_tags[element_id] for element_id, new_id in element_mapping.items()}
+
+    #renumber_element_tags = element_tags
+    end_renumber_nodes_time = time.perf_counter()
+
+    print(f"Spent {(end_renumber_nodes_time - begin_renumber_nodes_time):.1f} seconds renumbering nodes.")
 
     print("Renumber Nodes:")
     first_node = 1e9
@@ -216,27 +239,24 @@ def convert_mesh(input_mesh, output_mesh):
         first_node = min(first_node, node_id)
         last_node = max(last_node, node_id)
         #print(f"Node {node_id}: {coordinates}")
-    print(f"Writing {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
+    print(f"Renumbered {len(nodes)} nodes, first node id {first_node}, last node id {last_node}")
 
-    print("\nRenumber Elements:")
     first_element = 1e9
     last_element = -1
     for element_id, element_nodes in renumber_elements.items():
         first_element = min(first_element, element_id)
         last_element = max(last_element, element_id)
         #print(f"Element Nodes for Element {element_id}: {element_nodes}")
-    print(f"Writing {len(elements)} elements, first element id {first_element}, last element id {last_element}")
-
-
-    #print("\nElement Tags:")
-    #for element_id, tags in element_tags.items():
-        #print(f"Element Tags for Element {element_id}: {tags}")
+    print(f"Renumbered {len(renumber_elements)} elements, first element id {first_element}, last element id {last_element}")
 
     print("\nPhysical Names:")
     for name_id, name in physical_names.items():
         print(f"Physical name {name_id}: {name}")
 
+    begin_write_time = time.perf_counter()
     write_gmsh_mesh(output_mesh, renumber_nodes, renumber_elements, mesh_format, physical_names, renumber_element_tags, physical_dim)
+    end_write_time = time.perf_counter()
+    print(f"Wrote new mesh in {(end_write_time - begin_write_time):.1f} seconds.")
 
 import sys
 def main():
@@ -247,7 +267,11 @@ def main():
     input_file = sys.argv[1]
     output_file = sys.argv[2]
 
+    total_time_begin = time.perf_counter()
     convert_mesh(input_mesh=input_file, output_mesh=output_file)
+    total_time_end = time.perf_counter()
+
+    print(f"Done converting mesh in {(total_time_end - total_time_begin):.1f} seconds.")
 
 if __name__ == "__main__":
     main()
