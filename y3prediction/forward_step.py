@@ -87,7 +87,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
             Physical Curve('inflow') = {4, 11, 16};
             Physical Curve('outflow') = {20, 22};
             Physical Curve('flow') = {4, 11, 16, 20, 22};
-            Physical Curve('isothermal_wall') = {1, 6, 7, 19, 15, 18, 23};
+            Physical Curve('slip_wall') = {1, 6, 15, 18, 23};
+            Physical Curve('noslip_wall') = {7, 19};
         """)
 
         if transfinite:
@@ -107,7 +108,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
             my_string += (f"""
                 // Create distance field from curves, excludes cavity
                 Field[1] = Distance;
-                Field[1].CurvesList = {{1,3}};
+                Field[1].CurvesList = {{7, 19}};
                 Field[1].NumPointsPerCurve = 100000;
 
                 //Create threshold field that varies element size near boundaries
@@ -122,7 +123,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
                 //  background mesh size
                 Field[3] = Box;
                 Field[3].XMin = 0.;
-                Field[3].XMax = 1.0;
+                Field[3].XMax = 3.0;
                 Field[3].YMin = -1.0;
                 Field[3].YMax = 1.0;
                 Field[3].VIn = {size};
@@ -131,15 +132,6 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
                 Field[4] = Distance;
                 Field[4].CurvesList = {{2}};
                 Field[4].NumPointsPerCurve = 100000;
-
-                //Create threshold field that varies element size near boundaries
-                Field[5] = Threshold;
-                Field[5].InField = 4;
-                Field[5].SizeMin = {size} / {interface_ratio};
-                Field[5].SizeMax = {size};
-                Field[5].DistMin = 0.0002;
-                Field[5].DistMax = 0.005;
-                Field[5].StopAtDistMax = 1;
 
                 // take the minimum of all defined meshing fields
                 Field[100] = Min;
@@ -167,7 +159,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
             Recombine Surface {1, 2, 3};
             """)
 
-        #print(my_string)
+        print(my_string)
         mesh_construction_kwargs = {
             "force_positive_orientation":  True,
             "skip_element_orientation_test":  True}

@@ -5565,12 +5565,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     elif (init_case == "shock1d" or
           init_case == "flame1d" or
           init_case == "forward_step" or
-          init_case == backward_step):
+          init_case == "backward_step"):
 
-        inlet_sponge_x0 = 0.015
-        inlet_sponge_thickness = 0.015
-        outlet_sponge_x0 = 0.085
-        outlet_sponge_thickness = 0.015
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
@@ -6163,24 +6159,24 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
 
-        # this gives us the DOFArray indices for each element. Useful for debugging
-        discr = dcoll.discr_from_dd(dd_vol_fluid)
-        nelem = discr.groups[0].nelements
-        ndof = discr.groups[0].nunit_dofs
-
-        el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
-            np.indices((nelem,)), np.ones(ndof))),))
-        viz_ext = [("el_indices", el_indices)]
-        fluid_viz_fields.extend(viz_ext)
-
-        if use_wall:
-            discr = dcoll.discr_from_dd(dd_vol_wall)
+            # this gives us the DOFArray indices for each element. Useful for debugging
+            discr = dcoll.discr_from_dd(dd_vol_fluid)
             nelem = discr.groups[0].nelements
             ndof = discr.groups[0].nunit_dofs
+
             el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
                 np.indices((nelem,)), np.ones(ndof))),))
             viz_ext = [("el_indices", el_indices)]
-            wall_viz_fields.extend(viz_ext)
+            fluid_viz_fields.extend(viz_ext)
+
+            if use_wall:
+                discr = dcoll.discr_from_dd(dd_vol_wall)
+                nelem = discr.groups[0].nelements
+                ndof = discr.groups[0].nunit_dofs
+                el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+                    np.indices((nelem,)), np.ones(ndof))),))
+                viz_ext = [("el_indices", el_indices)]
+                wall_viz_fields.extend(viz_ext)
 
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
