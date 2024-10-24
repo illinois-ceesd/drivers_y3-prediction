@@ -639,7 +639,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
     print_stuff = False
-    index = 16323
+    index = 20984
     rank = 0
     if print_stuff:
         my_rank = dcoll.mpi_communicator.Get_rank()
@@ -964,7 +964,8 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     elem_avg_cv_safe = elem_avg_cv.replace(energy=safe_energy)
 
     theta_pressure = ones*actx.np.maximum(0.,
-        actx.np.where(actx.np.greater(actx.np.abs(theta_smin_i - theta_savg), toler),
+        actx.np.where(actx.np.greater(actx.np.abs(theta_smin_i - theta_savg),
+                                      1.e-6*theta_savg),
                       (mmin-theta_smin_i)/(theta_savg - theta_smin_i),
                       0.))
 
@@ -2025,7 +2026,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     print(f"{species_names=}")
 
     # initialize eos and species mass fractions
-    y = np.zeros(nspecies)
+    y = np.zeros(nspecies, dtype=object)
     y_fuel = np.zeros(nspecies)
     if nspecies == 2:
         y[0] = 1
@@ -2147,7 +2148,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         dim=dim,
         velocity=velocity_bkrnd,
         pressure=pres_bkrnd,
-        temperature=temp_bkrnd
+        temperature=temp_bkrnd,
+        species_mass_fractions=y
     )
 
     # select the initialization case
@@ -2200,9 +2202,33 @@ def main(actx_class, restart_filename=None, target_filename=None,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
 
-    elif (init_case == "shock1d" or
-          #init_case == "forward_step" or
+    elif (init_case == "forward_step" or
           init_case == "backward_step"):
+
+        # initialization to uniform M=mach flow
+        velocity_bkrnd = np.zeros(dim, dtype=object)
+
+        mass_bkrnd = eos.get_density(pressure=pres_bkrnd, temperature=temp_bkrnd,
+                                     species_mass_fractions=y)
+        energy_bkrnd = mass_bkrnd*eos.get_internal_energy(temperature=temp_bkrnd,
+                                                          species_mass_fractions=y)
+        cv_bkrnd = make_conserved(dim=dim, mass=mass_bkrnd,
+                                  momentum=mass_bkrnd*velocity_bkrnd,
+                                  energy=energy_bkrnd, species_mass=mass_bkrnd*y)
+        gamma = eos.gamma(cv_bkrnd, temp_bkrnd)
+
+        c_bkrnd = np.sqrt(gamma*pres_bkrnd/mass_bkrnd)
+
+        velocity_bkrnd[0] = velocity_bkrnd[0] + c_bkrnd*mach
+        bulk_init = Uniform(
+            dim=dim,
+            velocity=velocity_bkrnd,
+            pressure=pres_bkrnd,
+            temperature=temp_bkrnd,
+            species_mass_fractions=y
+        )
+
+    elif (init_case == "shock1d"):
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -6159,7 +6185,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
 
-            # this gives us the DOFArray indices for each element. Useful for debugging
+            # this gives us the DOFArray indices for each element.
             discr = dcoll.discr_from_dd(dd_vol_fluid)
             nelem = discr.groups[0].nelements
             ndof = discr.groups[0].nunit_dofs

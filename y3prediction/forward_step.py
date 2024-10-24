@@ -1,6 +1,6 @@
 """mirgecom driver initializer for 1d shock."""
-import numpy as np
 from functools import partial
+
 
 def get_mesh(dim, size, bl_ratio, interface_ratio,
              transfinite=False, use_wall=True, use_quads=False,
@@ -167,63 +167,3 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
                        force_ambient_dim=dim, dimensions=dim, target_unit="M",
                        mesh_construction_kwargs=mesh_construction_kwargs,
                        return_tag_to_elements_map=True)
-
-    else:
-        from meshmode.mesh.generation import generate_regular_rect_mesh
-
-        # this only works for non-slanty meshes
-        def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face):
-
-            if use_quads:
-                from meshmode.mesh import TensorProductElementGroup
-                group_cls = TensorProductElementGroup
-            else:
-                group_cls = None
-
-            mesh = generate_regular_rect_mesh(
-                a=a, b=b, nelements_per_axis=nelements_per_axis,
-                group_cls=group_cls,
-                boundary_tag_to_face=boundary_tag_to_face
-                )
-
-            mgrp = mesh.groups[0]
-            x = mgrp.nodes[0, :, :]
-            x_avg = np.sum(x, axis=1)/x.shape[1]
-            tag_to_elements = {
-                "fluid": np.where(x_avg < fluid_length)[0],
-                "wall": np.where(x_avg > fluid_length)[0]}
-
-            return mesh, tag_to_elements
-
-        if dim == 2:
-            a = (bottom_inflow[0], bottom_inflow[1])
-            b = (top_wall[0], top_wall[1])
-            boundary_tag_to_face = {
-                "inflow": ["-x"],
-                "outflow": ["+x"],
-                "flow": ["-x", "+x"],
-                "isothermal_wall": ["-y", "+y"],
-                "periodic_y_top": ["+y"],
-                "periodic_y_bottom": ["-y"],
-                "wall_farfield": ["+x"],
-            }
-            nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
-                                  int(height/size))
-        else:
-            a = (bottom_inflow[0], bottom_inflow[1], 0.)
-            b = (top_wall[0], top_wall[1], 0.02)
-            boundary_tag_to_face = {
-                "inflow": ["-x"],
-                "outflow": ["+x"],
-                "flow": ["-x", "+x"],
-                "isothermal_wall": ["-y", "+y", "-z", "+z"],
-                "wall_farfield": ["+x", "-y", "+y", "-z", "+z"]}
-            nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
-                                  int(height/size),
-                                  int(height/size))
-            #nelements_per_axis = (3, 2, 2)
-            #print(f"{nelements_per_axis=}")
-
-        return partial(get_meshmode_mesh,
-                       a=a, b=b, boundary_tag_to_face=boundary_tag_to_face,
-                       nelements_per_axis=nelements_per_axis)
