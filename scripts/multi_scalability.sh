@@ -10,6 +10,7 @@
 # -n => number of ranks to end with (default=16)
 
 NONOPT_ARGS=()
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         -e|--env)
@@ -24,6 +25,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--nproc)
             NUM_PROCS="$2"
+            shift 
+            shift
+            ;;
+        -N|--nnodes)
+            NUM_NODES="$2"
             shift 
             shift
             ;;
@@ -69,6 +75,7 @@ LOG_PATH=${LOG_PATH:-"log_data"}
 DRIVER_PATH=${DRIVER_PATH:-"."}
 NUM_PROCS=${NUM_PROCS:-"4"}
 NUM_PROCS_1=${NUM_PROCS_1:-"1"}
+NUM_NODES=${NUM_NODES:-""}
 INSTALL=${INSTALL:-"NO"}
 TEST_PATH=${TEST_PATH:-"scalability_test"}
 
@@ -183,9 +190,14 @@ while [ $nrank -le $NUM_PROCS ]; do
     rm actii.msh
     ./mkmsh --size=${msize} --nelem=${nelem} --link
     cd ../
-    
+    rm -f run_params_np${nrank}.yaml
+    sed "s|mesh_filename: .*|mesh_filename: data/actii_np${nrank}.msh|" run_params.yaml > run_params_np${nrank}.yaml
     set -x
-    $MPI_EXEC -n ${nrank} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params.yaml --log --lazy
+    runoptions="-n ${nrank}"
+    if [[ ! -z ${NUM_NODES} ]];then
+        runoptions="-N ${NUM_NODES} -n ${nrank}"
+    fi
+    $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log --lazy
     return_code=$?
     set +x
 
