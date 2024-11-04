@@ -6185,8 +6185,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     wall_viz_ext = [("rank", rank)]
                     wall_viz_fields.extend(wall_viz_ext)
 
-
-
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
             cell_Re = (cv.mass*cv.speed*char_length_fluid /
@@ -6278,13 +6276,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             norm_grad_rho_max = vol_max(dd_vol_fluid, norm_grad_rho)
             norm_grad_rho_min = vol_min(dd_vol_fluid, norm_grad_rho)
             schlieren_beta = 10.
-            #schlieren = 1. - actx.np.exp(
-                #-schlieren_beta*(norm_grad_rho - norm_grad_rho_min)/
-                               #(norm_grad_rho_max - norm_grad_rho_min))
             ratio = actx.np.where(actx.np.greater(norm_grad_rho_max - 1.e-10,
                                                   norm_grad_rho_min),
-                                  (norm_grad_rho - norm_grad_rho_min - 1.e-10)/
-                                  (norm_grad_rho_max - norm_grad_rho_min), 0.)
+                                  ((norm_grad_rho - norm_grad_rho_min - 1.e-10) /
+                                  (norm_grad_rho_max - norm_grad_rho_min)), 0.)
             schlieren = 1. - actx.np.exp(-schlieren_beta*ratio)
             viz_ext = [("schlieren", schlieren)]
             fluid_viz_fields.extend(viz_ext)
