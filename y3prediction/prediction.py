@@ -2255,6 +2255,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # initialization to uniform M=mach flow
         velocity_bkrnd = np.zeros(dim, dtype=object)
+        velocity_bkrnd[0] = vel_bkrnd
 
         mass_bkrnd = eos.get_density(pressure=pres_bkrnd, temperature=temp_bkrnd,
                                      species_mass_fractions=y)
@@ -6052,6 +6053,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     compute_viz_fields_compiled = actx.compile(compute_viz_fields)
 
+    def grad_cv(fluid_state, time):
+        return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
+                                dd=dd_vol_fluid,
+                                boundaries=uncoupled_fluid_boundaries,
+                                state=fluid_state,
+                                time=time,
+                                quadrature_tag=quadrature_tag)
+
+    grad_cv_compiled = actx.compile(grad_cv) # noqa
+
     def my_write_viz(step, t, t_wall, viz_state, viz_dv,
                      theta_rho, theta_Y, theta_pres,
                      ts_field_fluid, ts_field_wall, dump_number):
@@ -6174,6 +6185,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     wall_viz_ext = [("rank", rank)]
                     wall_viz_fields.extend(wall_viz_ext)
 
+
+
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
             cell_Re = (cv.mass*cv.speed*char_length_fluid /
@@ -6255,6 +6268,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     np.indices((nelem,)), np.ones(ndof))),))
                 viz_ext = [("el_indices", el_indices)]
                 wall_viz_fields.extend(viz_ext)
+
+            # get grad_cv to compute a numerical schlieren
+            grad_fluid_cv = grad_cv_compiled(
+                fluid_state=fluid_state, time=t)
+            grad_rho = grad_fluid_cv.mass
+
+            norm_grad_rho = actx.np.sqrt(np.dot(grad_rho, grad_rho))
+            norm_grad_rho_max = vol_max(dd_vol_fluid, norm_grad_rho)
+            norm_grad_rho_min = vol_min(dd_vol_fluid, norm_grad_rho)
+            schlieren_beta = 10.
+            #schlieren = 1. - actx.np.exp(
+                #-schlieren_beta*(norm_grad_rho - norm_grad_rho_min)/
+                               #(norm_grad_rho_max - norm_grad_rho_min))
+            ratio = actx.np.where(actx.np.greater(norm_grad_rho_max - 1.e-10,
+                                                  norm_grad_rho_min),
+                                  (norm_grad_rho - norm_grad_rho_min - 1.e-10)/
+                                  (norm_grad_rho_max - norm_grad_rho_min), 0.)
+            schlieren = 1. - actx.np.exp(-schlieren_beta*ratio)
+            viz_ext = [("schlieren", schlieren)]
+            fluid_viz_fields.extend(viz_ext)
 
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
