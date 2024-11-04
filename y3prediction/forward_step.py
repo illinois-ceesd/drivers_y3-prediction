@@ -98,7 +98,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio,
                 Transfinite Curve {{11, 9, 12, 20}} = {0.15} / {size} + 1;
                 Transfinite Curve {{2, 4, 7}} = {0.2} / {size} + 1;
                 Transfinite Curve {{6, 8, 13, 18}} = {0.15} / {size} + 1;
-                Transfinite Curve {{19, 21, 23}} = {2} / {size} + 1;
+                Transfinite Curve {{19, 21, 23}} = {2.4} / {size} + 1;
             """)
             my_string += (
                 "Transfinite Surface {1:8} Right;"
