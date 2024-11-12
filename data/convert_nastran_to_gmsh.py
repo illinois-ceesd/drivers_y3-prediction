@@ -81,7 +81,8 @@ def read_nastran_mesh(file_path):
             elif reading_elements:
                 if line.startswith("CQUAD") or\
                    line.startswith("CHEX") or\
-                   line.startswith("CROD"):
+                   line.startswith("CROD") or\
+                   line.startswith("CTRIA3"):
                     parts = read_line(line)
                     element_id = int(parts[1])
                     element_nodes = [int(parts[i]) for i in range(3, len(parts))]
@@ -159,6 +160,8 @@ def write_gmsh_mesh(file_path, nodes, elements, mesh_format,
         #for i, (element_nodes, element_tag) in enumerate(zip(elements, element_tags)):
             if len(element_nodes) == 2:
                    element_type = 1
+            elif len(element_nodes) == 3:
+                   element_type = 2
             elif len(element_nodes) == 4:
                    element_type = 3
             elif len(element_nodes) == 8:

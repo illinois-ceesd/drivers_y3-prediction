@@ -2255,7 +2255,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # initialization to uniform M=mach flow
         velocity_bkrnd = np.zeros(dim, dtype=object)
-        velocity_bkrnd[0] = vel_bkrnd
+        if use_axisymmetric:
+            velocity_bkrnd[1] = vel_bkrnd
+        else:
+            velocity_bkrnd[0] = vel_bkrnd
 
         mass_bkrnd = eos.get_density(pressure=pres_bkrnd, temperature=temp_bkrnd,
                                      species_mass_fractions=y)
@@ -2268,7 +2271,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         c_bkrnd = np.sqrt(gamma*pres_bkrnd/mass_bkrnd)
 
-        velocity_bkrnd[0] = velocity_bkrnd[0] + c_bkrnd*mach
+        if use_axisymmetric:
+            velocity_bkrnd[1] = velocity_bkrnd[1] + c_bkrnd*mach
+        else:
+            velocity_bkrnd[0] = velocity_bkrnd[0] + c_bkrnd*mach
         ysp = y
         if nspecies == 2:
             ysp[0] = 0.25
