@@ -1,6 +1,7 @@
 ##############
 # run control
 ##############
+advance_time: True
 nviz: 5
 nrestart: 10
 nhealth: 1
@@ -23,37 +24,43 @@ dimen: 3
 ##############
 # wall model
 ##############
+use_wall: 1
 wall_time_scale: 100
 wall_penalty_amount: 0
 wall_material: 2
 use_wall_mass: True
-use_wall_ox: True
+use_wall_ox: False
 
 ##############
 # model control
 ##############
 nlimit: 1
-use_species_limiter: 1
+use_species_limiter: 2
 #smooth_char_length_alpha: 1.e-12
 smooth_char_length_alpha: 0.025
 smooth_char_length: 5
 #smooth_char_length: 0
-#smoothness_alpha: 1.e-12
-#smoothness_tau: 1.e-12
-smoothness_alpha: 0.010
-smoothness_tau: 0.05
-
-use_av: 2
-#use_av: 0
+smoothness_alpha: 1.e-12
+smoothness_tau: 1.e-12
+use_av: 3
+# use_av: 0
 alpha_sc: 0.01
 s0_sc: -5.0
 kappa_sc: 0.5
+av2_mu0: 0.1
+av2_beta0: 6.0
+av2_kappa0: 1.0
+av2_prandtl0: 0.9
+# order:  3
 order:  1
+# use_rhs_filter: True
+# rhs_filter_cutoff: 2
 
 ##############
 # equation of state
 ##############
 nspecies:  7
+# nspecies:  2
 pyro_temp_iter: 1
 pyro_temp_tol: 1.
 transport: 1
