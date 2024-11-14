@@ -1,0 +1,131 @@
+#
+# parameters to control the mesh
+#
+dimen: 3
+generate_mesh: True
+mesh_filename: mesh_trans_3d_unstart.msh
+mesh_size: 0.001
+use_gmsh: True
+bl_ratio: 1
+interface_ratio: 1
+transfinite: True
+use_tensor_product_elements: True
+mesh_angle: 0.
+#
+# parameters to control the initialization
+#
+init_case: unstart_ramp
+shock_loc_x: 0.05
+vel_sigma: 750
+temp_sigma: 750
+use_sponge: True
+use_time_dependent_sponge: True
+sponge_sigma: 25
+inlet_sponge_x0: 0.025
+inlet_sponge_thickness: 0.025
+outlet_sponge_x0: 0.075
+outlet_sponge_thickness: 0.025
+top_sponge_x0: 0.15
+top_sponge_thickness: 0.05
+
+#total_pres_inflow: 2.35e5
+total_pres_inflow: 2.35e3
+total_temp_inflow: 2010
+pres_bkrnd: 100
+temp_bkrnd: 300
+#
+# boundary condition setup
+#
+use_outflow_boundary: "none"
+outflow_pressure: 100
+
+use_inflow_boundary: "isentropic_pressure_ramp"
+inlet_mach: 0.1375771
+total_temp_inflow: 2010
+ramp_beginP: 2.35e3
+ramp_endP: 2.35e5
+ramp_time_start: 1.e-3
+ramp_time_interval: 1.e-3
+
+
+use_flow_boundary: "none"
+use_wall_boundary: "isothermal_noslip"
+#use_wall_boundary: "adiabatic_slip"
+#use_interface_boundary: "none"
+#use_interface_boundary: "pressure_outflow"
+use_interface_boundary: "isothermal_noslip"
+#use_injection_boundary: "none"
+#
+#nviz: 1
+nviz: 5
+#nviz: 10
+#nviz: 25
+#nviz: 100
+viz_level: 2
+#viz_order: 16
+#viz_order: 3
+#viz_order: 1
+viz_interval_type: 0
+use_wall: False
+use_injection: False
+nrestart: 500
+nhealth: 1
+nstatus: 1
+#constant_cfl: 1
+drop_order_strength: 0.00
+nlimit: 1
+use_species_limiter: 2
+smooth_char_length: 0
+#use_av: 0
+#use_av: 2
+use_av: 3
+av2_mu0: .1
+av2_beta0: 1.0
+av2_kappa0: .1
+av2_d0: 2.5
+av2_kappa_s0: 0.0
+smoothness_alpha: 0.001
+smoothness_tau: 0.01
+#smoothness_alpha: 0.0000001
+
+#physical transport properties
+use_lewis_transport: False
+spec_diff: 5.e-6
+species_diffusivity:
+    C2H4: 1.e-5
+    O2: 2.e-5
+    N2: 2.e-5
+    H2: 2.e-5
+    CO2: 2.e-5
+    H2O: 2.e-5
+    CO: 2.e-5
+constant_cfl: 0
+current_dt: 1.e-8
+#t_final: 5.e-5
+#t_final: 1.e-6
+#t_final: 5.e-6
+t_final: 2.e-7
+#t_final: 1.e-8
+#vel_sigma: -1
+#temp_sigma: -1
+#pyro_mech: uiuc_const_gamma
+pyro_mech: uiuc_updated
+pyro_temp_iter: 5
+pyro_temp_tol: 1.e-4
+#eos: 0
+eos: 1
+use_combustion: True
+#nspecies:  0
+#nspecies:  2
+nspecies:  7
+transport: 0
+#transport: 1
+order:  1
+inv_num_flux: rusanov
+#inv_num_flux: hll
+integrator: euler
+#integrator: compiled_lsrk54
+health_temp_min: -1
+health_pres_min: -1
+health_temp_max: 100000
+#health_pres_max: 274259
