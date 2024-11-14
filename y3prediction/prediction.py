@@ -1362,6 +1362,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     fluid_mw = configurate("fluid_mw", input_data, -1.)
     fluid_kappa = configurate("fluid_kappa", input_data, -1.)
     fluid_mu = configurate("mu", input_data, -1.)
+    fluid_beta = configurate("beta", input_data, -1.)
 
     # rhs control
     use_axisymmetric = configurate("use_axisymmetric", input_data, False)
@@ -4587,6 +4588,17 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         from mirgecom.fluid import velocity_gradient
         vel_grad = velocity_gradient(cv, grad_cv)
+
+        """
+        # find the average gradient in each cell
+        element_vols = abs(op.elementwise_integral(
+            dcoll, dd_vol_fluid, actx.np.zeros_like(cv.mass) + 1.0))
+        vel_grad_avg = element_average(dcoll, dd_vol_fluid, vel_grad,
+                                   volumes=element_vols)
+        ones = 1. + actx.np.zeros_like(cv.mass)
+        vel_grad = ones*vel_grad_avg
+        """
+
         div_v = np.trace(vel_grad)
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
@@ -6197,7 +6209,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 fluid_state.viscosity)
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
             alpha_heat = fluid_state.thermal_conductivity/cp/cv.mass
-            nu = fluid_state.viscosity/fluid_state.mass_density
+            nu = (4./3.*fluid_state.viscosity + fluid_state.bulk_viscosity) / \
+                  fluid_state.mass_density
 
             cell_Pe_momentum = char_length_fluid*fluid_state.wavespeed/nu
 
@@ -6282,10 +6295,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
             norm_grad_rho_max = vol_max(dd_vol_fluid, norm_grad_rho)
             norm_grad_rho_min = vol_min(dd_vol_fluid, norm_grad_rho)
             schlieren_beta = 10.
+
+            zero = actx.np.zeros_like(cv.mass)
             ratio = actx.np.where(actx.np.greater(norm_grad_rho_max - 1.e-10,
                                                   norm_grad_rho_min),
                                   ((norm_grad_rho - norm_grad_rho_min - 1.e-10) /
-                                  (norm_grad_rho_max - norm_grad_rho_min)), 0.)
+                                  (norm_grad_rho_max - norm_grad_rho_min)), zero)
             schlieren = 1. - actx.np.exp(-schlieren_beta*ratio)
             viz_ext = [("schlieren", schlieren)]
             fluid_viz_fields.extend(viz_ext)
@@ -6352,6 +6367,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                            for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
+            """
             # write out the grid metrics
             from grudge.geometry import inverse_metric_derivative_mat
             metric = inverse_metric_derivative_mat(
@@ -6364,6 +6380,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 viz_ext.extend([("metric_z", metric[2])])
 
             fluid_viz_fields.extend(viz_ext)
+            """
 
             """
             if use_wall:
@@ -6610,7 +6627,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if fluid_state.is_viscous:
             from mirgecom.viscous import get_local_max_species_diffusivity
-            nu = fluid_state.viscosity/fluid_state.mass_density
+            #nu = fluid_state.viscosity/fluid_state.mass_density
+            nu = ((4./3.*fluid_state.viscosity + fluid_state.bulk_viscosity) /
+                  fluid_state.mass_density)
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
