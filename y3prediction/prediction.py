@@ -644,7 +644,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     element_vols = abs(op.elementwise_integral(dcoll, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
-    rank = 0
+    rank = 1
     print_stuff = False
 
     if print_stuff:
@@ -655,14 +655,14 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         else:
             print_stuff = False
 
-    index = 6000
+    index = 1161
     if print_stuff is True and isinstance(dd.domain_tag, VolumeDomainTag):
         print(f"volume limiter {rank=}")
-        index = 6000
+        index = 1161
     elif (isinstance(dd.domain_tag, BoundaryDomainTag) and
           dd.domain_tag.tag == "noslip_wall"):
         print(f"noslip_wall limiter {rank=}")
-        index = 259
+        index = 0
     else:
         print_stuff = False
 
@@ -671,9 +671,9 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         np.set_printoptions(threshold=sys.maxsize, precision=16)
         print(f"{dd.domain_tag=}")
         print(f"{dd.domain_tag.tag=}")
-        print(f"{cv.mass=}")
-        data = actx.to_numpy(cv.mass)
-        print(f"cv.mass \n {data[0]}")
+        #print(f"{cv.mass=}")
+        #data = actx.to_numpy(cv.mass)
+        #print(f"cv.mass \n {data[0]}")
         print("eeee")
 
     if print_stuff is True:
@@ -1004,7 +1004,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
 
     theta_pressure = ones*actx.np.maximum(0.,
         actx.np.where(actx.np.greater(actx.np.abs(theta_smin_i - theta_savg),
-                                      1.e-6*theta_savg),
+                                      actx.np.abs(1.e-6*theta_savg)),
                       (mmin-theta_smin_i)/(theta_savg - theta_smin_i),
                       0.))
 
@@ -1085,6 +1085,9 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
 
         data = actx.to_numpy(entropy_min)
         print(f"entropy_min \n {data[0][index]}")
+        entropy_initial = actx.np.log(pressure_initial/cv.mass**1.4)
+        data = actx.to_numpy(entropy_initial)
+        print(f"entropy_initial \n {data[0][index]}")
         entropy_final = actx.np.log(pressure_final/cv_lim.mass**1.4)
         data = actx.to_numpy(entropy_final)
         print(f"entropy_final \n {data[0][index]}")
@@ -1362,6 +1365,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     fluid_mw = configurate("fluid_mw", input_data, -1.)
     fluid_kappa = configurate("fluid_kappa", input_data, -1.)
     fluid_mu = configurate("mu", input_data, -1.)
+    fluid_beta = configurate("beta", input_data, -1.)
 
     # rhs control
     use_axisymmetric = configurate("use_axisymmetric", input_data, False)
@@ -1940,6 +1944,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     mu_o2 = 3.76e-5
     mu_n2 = 3.19e-5
     mu = mu_o2*mf_o2 + mu_n2*(1-mu_o2)  # 3.3456e-5
+    beta = 0.
 
     if gas_mat_prop == 1:
         # working gas: Ar #
@@ -1947,6 +1952,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         mu = mu_ar
     if not fluid_mu < 0:
         mu = fluid_mu
+    if not fluid_beta < 0:
+        beta = fluid_beta
 
     kappa = cp*mu/Pr
     if fluid_kappa > 0:
@@ -2159,7 +2166,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             raise RuntimeError(error_message)
 
     physical_transport_model = SimpleTransport(
-        viscosity=mu, thermal_conductivity=kappa,
+        viscosity=mu, bulk_viscosity=beta,
+        thermal_conductivity=kappa,
         species_diffusivity=species_diffusivity)
 
     if transport_type == 1:
@@ -2255,7 +2263,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # initialization to uniform M=mach flow
         velocity_bkrnd = np.zeros(dim, dtype=object)
-        velocity_bkrnd[0] = vel_bkrnd
+        if use_axisymmetric or dim == 3:
+            velocity_bkrnd[1] = vel_bkrnd
+        else:
+            velocity_bkrnd[0] = vel_bkrnd
 
         mass_bkrnd = eos.get_density(pressure=pres_bkrnd, temperature=temp_bkrnd,
                                      species_mass_fractions=y)
@@ -3619,7 +3630,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 if generate_mesh is True:
                     if rank == 0:
                         print("Generating mesh from scratch")
-                    from y3prediction.backward_step import get_mesh
+                    #from y3prediction.backward_step import get_mesh
+                    from y3prediction.forward_step import get_mesh
                     mesh, tag_to_elements = get_mesh(
                         dim=dim, size=mesh_size,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
