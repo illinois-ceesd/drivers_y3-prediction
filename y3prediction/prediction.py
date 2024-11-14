@@ -2495,7 +2495,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -2518,7 +2518,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -2632,7 +2632,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -2655,7 +2655,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -2768,7 +2768,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -2791,7 +2791,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -2859,7 +2859,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             rho_injection = pres_injection/temp_injection/r
             sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
         else:
-            rho_injection = pyro_mech.get_density(p=pres_injection,
+            rho_injection = pyro_mech.get_density(pressure=pres_injection,
                                                   temperature=temp_injection,
                                                   mass_fractions=y_fuel)
             gamma_guess = \
@@ -2879,7 +2879,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 temp_injection = getIsentropicTemperature(mach=mach_inj,
                                                           T0=total_temp_inj,
                                                           gamma=gamma_guess)
-                rho_injection = pyro_mech.get_density(p=pres_injection,
+                rho_injection = pyro_mech.get_density(pressure=pres_injection,
                                                       temperature=temp_injection,
                                                       mass_fractions=y_fuel)
                 gamma_injection = \
@@ -3049,7 +3049,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -3072,7 +3072,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -3110,7 +3110,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_outflow/rho_outflow)
             outlet_gamma = gamma
         else:
-            rho_outflow = pyro_mech.get_density(p=pres_outflow,
+            rho_outflow = pyro_mech.get_density(pressure=pres_outflow,
                                                 temperature=temp_outflow,
                                                 mass_fractions=y)
             outlet_gamma = \
@@ -3132,7 +3132,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 temp_outflow = getIsentropicTemperature(mach=outlet_mach,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
-                rho_outflow = pyro_mech.get_density(p=pres_outflow,
+                rho_outflow = pyro_mech.get_density(pressure=pres_outflow,
                                                     temperature=temp_outflow,
                                                     mass_fractions=y)
                 outlet_gamma = \
@@ -3174,7 +3174,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 rho_injection = pres_injection/temp_injection/r
                 sos = math.sqrt(gamma_injection*pres_injection/rho_injection)
             else:
-                rho_injection = pyro_mech.get_density(p=pres_injection,
+                rho_injection = pyro_mech.get_density(pressure=pres_injection,
                                                       temperature=temp_injection,
                                                       mass_fractions=y_fuel)
                 gamma_guess = \
@@ -3194,7 +3194,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     temp_injection = getIsentropicTemperature(mach=mach_inj,
                                                               T0=total_temp_inj,
                                                               gamma=gamma_guess)
-                    rho_injection = pyro_mech.get_density(p=pres_injection,
+                    rho_injection = pyro_mech.get_density(pressure=pres_injection,
                                                           temperature=temp_injection,
                                                           mass_fractions=y_fuel)
                     gamma_injection = \
