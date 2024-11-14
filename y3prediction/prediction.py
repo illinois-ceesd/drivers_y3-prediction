@@ -2279,7 +2279,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         c_bkrnd = np.sqrt(gamma*pres_bkrnd/mass_bkrnd)
 
-        velocity_bkrnd[0] = velocity_bkrnd[0] + c_bkrnd*mach
+        if use_axisymmetric:
+            velocity_bkrnd[1] = velocity_bkrnd[1] + c_bkrnd*mach
+        else:
+            velocity_bkrnd[0] = velocity_bkrnd[0] + c_bkrnd*mach
         ysp = y
         if nspecies == 2:
             ysp[0] = 0.25
