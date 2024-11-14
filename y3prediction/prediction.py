@@ -3376,7 +3376,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     else:  # generate the grid from scratch
 
         # eventually encapsulate these inside a class for the respective inits
-        if init_case == "shock1d" or init_case == "flame1d":
+        if init_case == "shock1d" or init_case == "flame1d" or init_case == "unstart_ramp":
 
             def get_mesh_data():
                 print(f"{generate_mesh=}")
