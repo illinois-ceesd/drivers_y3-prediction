@@ -11,6 +11,10 @@ interface_ratio: 1
 transfinite: True
 use_tensor_product_elements: True
 mesh_angle: 0.
+
+use_1d_part: True
+
+
 #
 # parameters to control the initialization
 #
@@ -57,7 +61,7 @@ use_interface_boundary: "isothermal_noslip"
 #use_injection_boundary: "none"
 #
 #nviz: 1
-nviz: 5
+nviz: 100
 #nviz: 10
 #nviz: 25
 #nviz: 100
@@ -74,11 +78,11 @@ nstatus: 1
 #constant_cfl: 1
 drop_order_strength: 0.00
 nlimit: 1
-use_species_limiter: 2
+use_species_limiter: 0
 smooth_char_length: 0
 #use_av: 0
 #use_av: 2
-use_av: 3
+use_av: 0
 av2_mu0: .1
 av2_beta0: 1.0
 av2_kappa0: .1

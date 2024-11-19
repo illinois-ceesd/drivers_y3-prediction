@@ -3,9 +3,9 @@
 #BSUB -G uiuc
 #BSUB -W 60
 #BSUB -J pred_smoke
-#BSUB -q pdebug
-#BSUB -o runOutput_4.txt
-#BSUB -e runOutput_4.txt
+#BSUB -q pbatch
+#BSUB -o runOutput_2.txt
+#BSUB -e runOutput_2.txt
 
 module load gcc/8.3.1
 module load spectrum-mpi
@@ -29,8 +29,8 @@ conda deactivate
 
 nnodes=$(echo $LSB_MCPU_HOSTS | wc -w)
 nnodes=$((nnodes/2-1))
-nproc=$((4*nnodes)) # 4 ranks per node, 1 per GPU
-# nproc=4
+# nproc=$((4*nnodes)) # 4 ranks per node, 1 per GPU
+nproc=2
 
 echo nnodes=$nnodes nproc=$nproc
 
@@ -45,6 +45,8 @@ rm -rf $POCL_CACHE_ROOT
 
 $jsrun_cmd js_task_info
 
-#$jsrun_cmd bash -c 'POCL_CACHE_DIR=$POCL_CACHE_ROOT/$OMPI_COMM_WORLD_RANK XDG_CACHE_HOME=$XDG_CACHE_ROOT/$OMPI_COMM_WORLD_RANK python -O -u -m mpi4py ./driver.py -i run_params.yaml --lazy'
-$jsrun_cmd bash -c 'POCL_CACHE_DIR=$POCL_CACHE_ROOT/$OMPI_COMM_WORLD_RANK XDG_CACHE_HOME=$XDG_CACHE_ROOT/$OMPI_COMM_WORLD_RANK python -u -m mpi4py ./driver.py -i run_params.yaml --lazy'
+export casename="prediction-$nproc"
+
+$jsrun_cmd bash -c 'POCL_CACHE_DIR=$POCL_CACHE_ROOT/$OMPI_COMM_WORLD_RANK XDG_CACHE_HOME=$XDG_CACHE_ROOT/$OMPI_COMM_WORLD_RANK python -O -u -m mpi4py ./driver.py -i run_params.yaml --casename=$casename --lazy'
+#$jsrun_cmd bash -c 'POCL_CACHE_DIR=$POCL_CACHE_ROOT/$OMPI_COMM_WORLD_RANK XDG_CACHE_HOME=$XDG_CACHE_ROOT/$OMPI_COMM_WORLD_RANK python -u -m mpi4py ./driver.py -i run_params.yaml --casename=$casename --lazy'
 
