@@ -121,7 +121,7 @@ if [[ ! -f ${OUTPUT}_${NELEM}.msh ]]; then
     date
 
     if [ -f "tmp.msh" ]; then
-        NCELLS=$(grep -E '^[0-9]+\s+4\s' tmp.msh | grep -v '\"' | wc -l)
+        NCELLS=$(grep -E '^[0-9]+\s+4\s' tmp.msh | grep -v '\"' | wc -l | xargs)
         if [[ "${NCELLS}" == "0" ]]; then
             printf "Mesh creation failed.\n"
             exit 1
