@@ -380,6 +380,7 @@ def update_coupled_boundaries(
         wall_penalty_amount=None,
         quadrature_tag=DISCR_TAG_BASE,
         limiter_func=None,
+        entropy_min=None,
         comm_tag=None):
     r"""
     Update the fluid and wall subdomain boundaries.
@@ -410,12 +411,14 @@ def update_coupled_boundaries(
     fluid_operator_states_quad = make_operator_fluid_states(
         dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
         quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+        entropy_min=entropy_min,
         comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
     # Compute the temperature gradient for both subdomains
     fluid_grad_temperature = fluid_grad_t_operator(
         dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
         time=time, quadrature_tag=quadrature_tag,
+        limiter_func=limiter_func, entropy_min=entropy_min,
         dd=fluid_dd, operator_states_quad=fluid_operator_states_quad)
     wall_grad_temperature = wall_grad_t_operator(
         dcoll, wall_kappa, wall_all_boundaries_no_grad, wall_temperature,
@@ -444,12 +447,14 @@ def update_coupled_boundaries(
     fluid_operator_states_quad = make_operator_fluid_states(
         dcoll, fluid_state, gas_model, fluid_all_boundaries,
         quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+        entropy_min=entropy_min,
         comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
     fluid_grad_cv = grad_cv_operator(
         dcoll, gas_model, fluid_all_boundaries, fluid_state,
         dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
         operator_states_quad=fluid_operator_states_quad,
+        limiter_func=limiter_func, entropy_min=entropy_min,
         comm_tag=comm_tag)
 
     return (fluid_all_boundaries, wall_all_boundaries,
@@ -659,7 +664,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     if print_stuff is True and isinstance(dd.domain_tag, VolumeDomainTag):
         print(f"volume limiter {rank=}")
         index = 1161
-    elif (isinstance(dd.domain_tag, BoundaryDomainTag) and
+    elif print_stuff is True and (isinstance(dd.domain_tag, BoundaryDomainTag) and
           dd.domain_tag.tag == "noslip_wall"):
         print(f"noslip_wall limiter {rank=}")
         index = 0
@@ -4435,7 +4440,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     create_fluid_state = actx.compile(_create_fluid_state)
 
     def update_dv(cv, temperature, smoothness_mu, smoothness_beta,
-                  smoothness_kappa, smoothness_d, entropy_min):
+                  smoothness_kappa, smoothness_d):
         if eos_type == 0:
             return GasDependentVars(
                 temperature=temperature,
@@ -4444,8 +4449,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 smoothness_mu=smoothness_mu,
                 smoothness_beta=smoothness_beta,
                 smoothness_kappa=smoothness_kappa,
-                smoothness_d=smoothness_d,
-                entropy_min=entropy_min)
+                smoothness_d=smoothness_d)
         else:
             return MixtureDependentVars(
                 temperature=temperature,
@@ -4455,8 +4459,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 smoothness_mu=smoothness_mu,
                 smoothness_beta=smoothness_beta,
                 smoothness_kappa=smoothness_kappa,
-                smoothness_d=smoothness_d,
-                entropy_min=entropy_min)
+                smoothness_d=smoothness_d)
 
     def update_tv(cv, dv):
         return gas_model.transport.transport_vars(cv, dv, eos)
@@ -4740,6 +4743,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
+                entropy_min=smin,
                 comm_tag=_InitCommTag)
 
             # try making sure the stuff that comes back is used
@@ -4784,12 +4788,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
             grad_fluid_cv = grad_cv_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                time=time, quadrature_tag=quadrature_tag)
+                time=time, quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func, entropy_min=smin)
 
             grad_fluid_t = fluid_grad_t_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
-                time=time, quadrature_tag=quadrature_tag)
+                time=time, quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func, entropy_min=smin)
 
         # now compute the smoothness part
         if use_av == 1:
@@ -4839,8 +4845,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_av_sbeta = restart_data["av_sbeta"]
         restart_av_skappa = restart_data["av_skappa"]
 
-        # we initialize the entropy min to 0, we'll set it before the first step
-        restart_entropy_min = actx.np.zeros_like(restart_cv.mass) + limiter_smin
+        # backwards compatibility, for before entropy_min
+        try:
+            restart_entropy_min = restart_data["entropy_min"]
+        except (KeyError):
+            restart_entropy_min = actx.np.zeros_like(restart_cv.mass) + limiter_smin
+            if rank == 0:
+                print("no data for entropy_min in restart file")
+                print(f"entropy_min will be initialzed to {limiter_smin=}")
 
         # this is so we can restart from legacy, before use_av=3
         try:
@@ -5379,7 +5391,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         return project_fluid_state(
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
-            target_fluid_state, gas_model, limiter_func=limiter_func,
+            target_fluid_state, gas_model,
             entropy_stable=use_esdg
         )
 
@@ -5556,7 +5568,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_sbeta=current_fluid_state.dv.smoothness_beta,
         av_skappa=current_fluid_state.dv.smoothness_kappa,
         av_sd=current_fluid_state.dv.smoothness_d,
-        smin=current_fluid_state.dv.entropy_min)
+        smin=restart_entropy_min)
 
     ####################
     # Ignition Sources #
@@ -6456,6 +6468,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "av_skappa": state.av_skappa,
                 "av_sd": state.av_sd,
                 "temperature_seed": state.tseed,
+                "entropy_min": state.smin,
                 "nspecies": nspecies,
                 "t": t,
                 "step": step,
@@ -7242,6 +7255,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 wall_penalty_amount=wall_penalty_amount,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
+                entropy_min=smin,
                 comm_tag=_UpdateCoupledBoundariesCommTag)
         else:
             updated_fluid_boundaries = uncoupled_fluid_boundaries
@@ -7249,18 +7263,21 @@ def main(actx_class, restart_filename=None, target_filename=None,
             # Get the operator fluid states
             fluid_operator_states_quad = make_operator_fluid_states(
                 dcoll, fluid_state, gas_model, updated_fluid_boundaries,
-                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func,
+                entropy_min=smin)
 
             grad_fluid_cv = grad_cv_operator(
                 dcoll, gas_model, updated_fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
-                time=t, quadrature_tag=quadrature_tag)
+                time=t, quadrature_tag=quadrature_tag, limiter_func=limiter_func,
+                entropy_min=smin)
 
             grad_fluid_t = fluid_grad_t_operator(
                 dcoll=dcoll, gas_model=gas_model,
                 boundaries=updated_fluid_boundaries, state=fluid_state,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
-                time=t, quadrature_tag=quadrature_tag)
+                time=t, quadrature_tag=quadrature_tag, limiter_func=limiter_func,
+                entropy_min=smin)
 
         smoothness_mu = actx.np.zeros_like(cv.mass)
         smoothness_beta = actx.np.zeros_like(cv.mass)
@@ -7296,6 +7313,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             inviscid_numerical_flux_func=inviscid_numerical_flux_func,
             viscous_numerical_flux_func=viscous_numerical_flux_func,
             state=fluid_state,
+            limiter_func=limiter_func,
+            entropy_min=smin,
             time=t,
             quadrature_tag=quadrature_tag,
             comm_tag=_FluidOperatorCommTag)
