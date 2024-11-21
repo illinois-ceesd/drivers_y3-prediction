@@ -1113,8 +1113,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
-    from pytato.array import set_traceback_tag_enabled
-    set_traceback_tag_enabled(True)
+    # from pytato.array import set_traceback_tag_enabled
+    # set_traceback_tag_enabled(True)
 
     if casename is None:
         casename = "mirgecom"
