@@ -4,7 +4,7 @@
 dimen: 3
 generate_mesh: True
 mesh_filename: mesh_trans_3d_unstart.msh
-mesh_size: 0.0008
+mesh_size: 0.001
 use_gmsh: True
 bl_ratio: 1
 interface_ratio: 1
@@ -104,11 +104,11 @@ species_diffusivity:
     H2O: 2.e-5
     CO: 2.e-5
 constant_cfl: 0
-current_dt: 1.e-10
+current_dt: 1.e-8
 #t_final: 5.e-5
 #t_final: 1.e-6
 #t_final: 5.e-6
-t_final: 2.e-9
+t_final: 2.e-7
 #t_final: 1.e-8
 #vel_sigma: -1
 #temp_sigma: -1
