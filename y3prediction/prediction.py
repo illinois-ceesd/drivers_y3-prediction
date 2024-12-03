@@ -1139,6 +1139,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
 
+    use_callbacks = configurate("use_callbacks", input_data, True)
+
     use_gmsh = configurate("use_gmsh", input_data, True)
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
     use_tpe = configurate("use_tensor_product_elements", input_data, False)
@@ -1519,7 +1521,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # param sanity check
     allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144",
-                           "compiled_lsrk54", "ssprk43"]
+                           "compiled_lsrk54", "ssprk43", "compiled_euler"]
     if integrator not in allowed_integrators:
         error_message = "Invalid time integrator: {}".format(integrator)
         raise RuntimeError(error_message)
@@ -1791,8 +1793,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
 
     timestepper = rk4_step
+    compile_timestepper = False
     if integrator == "euler":
         timestepper = euler_step
+    if integrator == "compiled_euler":
+        timestepper = euler_step
+        compile_timestepper = True
     if integrator == "ssprk43":
         timestepper = ssprk43_step
     if integrator == "lsrk54":
@@ -3623,9 +3629,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
                 comm, get_mesh_data, partition_generator_func=part_func)
 
-    local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    fluid_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    wall_nelements = 0
+    print(f"Fluid elements: {fluid_nelements}")
     if use_wall:
-        local_nelements += volume_to_local_mesh_data["wall"][0].nelements
+        wall_nelements = volume_to_local_mesh_data["wall"][0].nelements
+        print(f"Wall elements: {wall_nelements}")
+    local_nelements = fluid_nelements + wall_nelements
+    print(f"Number of elements: {local_nelements}")
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
@@ -7259,7 +7270,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         return rhs_stepper_state.get_obj_array()
 
-    unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
+    unfiltered_rhs_maybe_compiled = unfiltered_rhs
+    if not compile_timestepper:
+        unfiltered_rhs_maybe_compiled = actx.compile(unfiltered_rhs)
 
     def my_rhs(t, state):
 
@@ -7269,7 +7282,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
-        rhs_state = unfiltered_rhs_compiled(t, state)
+        rhs_state = unfiltered_rhs_maybe_compiled(t, state)
         #rhs_data_precompute = precompute_rhs_compiled(t, state)
         #rhs_state = compute_rhs_compiled(t, rhs_data_precompute)
 
@@ -7293,17 +7306,19 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                   current_cfl, t_final, constant_cfl)
     """
 
+    pre_step_callback = my_pre_step if use_callbacks else None
+    post_step_callback = my_post_step if use_callbacks else None
     if advance_time:
         current_step, current_t, current_stepper_state_obj = \
             advance_state(rhs=my_rhs, timestepper=timestepper,
-                          pre_step_callback=my_pre_step,
-                          #pre_step_callback=None,
-                          post_step_callback=my_post_step,
+                          pre_step_callback=pre_step_callback,
+                          post_step_callback=post_step_callback,
                           istep=current_step, dt=current_dt,
                           t=current_t, t_final=t_final,
                           force_eval=force_eval,
                           state=stepper_state.get_obj_array(),
-                          compile_rhs=False)
+                          compile_rhs=False,
+                          compile_timestepper=compile_timestepper)
         current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
     else:
         current_stepper_state = stepper_state

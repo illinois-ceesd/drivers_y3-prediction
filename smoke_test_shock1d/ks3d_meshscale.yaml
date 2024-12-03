@@ -19,8 +19,7 @@ t_final: 2.e-12
 #t_final: 2.e-8
 generate_mesh: True
 use_gmsh: False
-mesh_size: Range(.002,.01, .001)
-use_callbacks: False
+mesh_size: Range(.0010,.0022, .0002)
 init_case: shock1d
 # mesh_filename: data/actii.msh
 dimen: 3
@@ -28,6 +27,7 @@ dimen: 3
 ##############
 # wall model
 ##############
+use_wall: False
 wall_time_scale: 100
 wall_penalty_amount: 0
 wall_material: 2

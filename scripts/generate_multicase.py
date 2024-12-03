@@ -2,6 +2,7 @@ import argparse
 import os
 import yaml
 from pathlib import Path
+from mirgecom.io import read_and_distribute_yaml_data
 
 def parse_range(value):
     """Parse the Range(begin, end, step) string and return a list of values."""
@@ -17,8 +18,7 @@ def parse_range(value):
 
 def generate_input_files(template_file, output_dir, casename):
     """Generate input files based on Range values in the template YAML."""
-    with open(template_file, "r") as f:
-        data = yaml.safe_load(f)
+    data = read_and_distribute_yaml_data(None, template_file)
     output_files = []
     for key, value in data.items():
         if isinstance(value, str):
@@ -32,19 +32,29 @@ def generate_input_files(template_file, output_dir, casename):
                     output_file = Path(output_dir) / filename
                     with open(output_file, "w") as out_f:
                         yaml.safe_dump(modified_data, out_f)
-                    output_files.append((output_file, key, v))
+                    output_files.append((filename, key, v))
 
     return output_files
 
 
 def generate_bash_script(input_files, script, casename, output_dir):
     """Generate a bash script to run the simulation with each input file."""
-    bash_script_path = Path(output_dir) / "run_cases.sh"
+    bash_script_path = Path(output_dir) / f"{casename}_multi_bsub.sh"
     with open(bash_script_path, "w") as bash_script:
-        bash_script.write("#!/bin/bash\n\n")
+        bash_script.write("#!/bin/bash\n\n"
+                          "#BSUB -nnodes 1\n"
+                          "#BSUB -G uiuc\n"
+                          "#BSUB -W 300\n"
+                          f"#BSUB -J {casename}\n"
+                          "#BSUB -q pbatch\n"
+                          f"#BSUB -o {casename}.txt\n\n"
+                          "source ../emirge/config/activate_env.sh\n"
+                          "source ../emirge/mirgecom/scripts/mirge-testing-env.sh\n\n")
         for input_file, param_name, param_value in input_files:
             output_filename = f"{casename}_{param_name}_{param_value:.3g}_out.txt"
-            cmd = f"python -m mpi4py {script} -i {input_file} --lazy >& {output_filename}"
+            base_cmd = f"$MIRGE_MPI_EXEC -n 1 $MIRGE_PARALLEL_SPAWNER nvprof python -m mpi4py"
+            cmd_options = f"{script} -i {input_file} --lazy >& {output_filename}"
+            cmd = f"{base_cmd} {cmd_options}"
             bash_script.write(f"{cmd}\n")
     os.chmod(bash_script_path, 0o755)  # Make the script executable
     print(f"Bash script generated: {bash_script_path}")
