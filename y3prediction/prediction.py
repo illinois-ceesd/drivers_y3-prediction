@@ -172,6 +172,8 @@ class StepperState:
     av_sd: DOFArray
     smin: DOFArray
 
+    __array_ufunc__ = None
+
     def replace(self, **kwargs):
         """Return a copy of *self* with the attributes in *kwargs* replaced."""
         from dataclasses import replace
@@ -198,6 +200,8 @@ class WallStepperState(StepperState):
     """
 
     wv: WallVars
+
+    __array_ufunc__ = None
 
     def get_obj_array(self):
         """Return an object array containing all the stored quantitines."""
