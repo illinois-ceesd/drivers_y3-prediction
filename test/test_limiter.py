@@ -247,9 +247,10 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     #
     from grudge.dof_desc import DD_VOLUME_ALL
     smin = 11
+    entropy_min = actx.np.zeros_like(fluid_cv.mass) + smin
     limited_cv = limit_fluid_state_lv(
         dcoll=dcoll, cv=fluid_cv, temperature_seed=tseed,
-        gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
+        gas_model=gas_model, dd=DD_VOLUME_ALL, entropy_min=entropy_min)
     limited_mass = limited_cv.mass
     print(f"{limited_mass=}")
     assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0
@@ -378,9 +379,10 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
     #
     from grudge.dof_desc import DD_VOLUME_ALL
     smin = 11
+    entropy_min = actx.np.zeros_like(fluid_cv.mass) + smin
     limited_cv = limit_fluid_state_lv(
         dcoll=dcoll, cv=fluid_cv, temperature_seed=tseed,
-        gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
+        gas_model=gas_model, dd=DD_VOLUME_ALL, entropy_min=entropy_min)
     limited_mass = limited_cv.mass
     print(f"{actx.to_numpy(limited_mass)=}")
     assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0

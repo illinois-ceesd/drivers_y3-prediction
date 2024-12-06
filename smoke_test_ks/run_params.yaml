@@ -28,7 +28,7 @@ wall_material: 2
 # model control
 ##############
 nlimit: 1
-use_species_limiter: 1
+use_species_limiter: 2
 smooth_char_length_alpha: 0.025
 smooth_char_length: 5
 #smooth_char_length: 0
