@@ -1115,6 +1115,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
     rank = comm.Get_rank()
     nparts = comm.Get_size()
 
+    first_profiling_step = 4
+    last_profiling_step = 103
+
+    MPI.Pcontrol(0)
+    MPI.Pcontrol(2)
+
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
@@ -6729,6 +6735,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
 
+        if step == first_profiling_step:
+            MPI_Pcontrol(2)
+            MPI.Pcontrol(1)
+
         return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
@@ -6746,6 +6756,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
+        if step == last_profiling_step:
+            MPI.Pcontrol(0)
 
         return state, dt
 
@@ -7347,6 +7359,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa,
                                              smoothness_d=current_av_sd)
+
+    MPI.Pcontrol(0)
+
     if use_wall:
         current_wv = current_stepper_state.wv
         current_wdv = create_wall_dependent_vars_compiled(current_wv)
