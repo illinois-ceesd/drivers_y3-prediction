@@ -1116,10 +1116,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nparts = comm.Get_size()
 
     first_profiling_step = 4
-    last_profiling_step = 103
-
-    MPI.Pcontrol(0)
+    last_profiling_step = 104
+    
     MPI.Pcontrol(2)
+    MPI.Pcontrol(0)
 
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
