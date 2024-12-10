@@ -6736,7 +6736,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             raise
 
         if step == first_profiling_step:
-            MPI_Pcontrol(2)
+            MPI.Pcontrol(2)
             MPI.Pcontrol(1)
 
         return stepper_state.get_obj_array(), dt
