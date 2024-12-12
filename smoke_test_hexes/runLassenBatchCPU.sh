@@ -1,11 +1,11 @@
 #! /bin/bash --login
-#BSUB -nnodes 1
+#BSUB -nnodes 2
 #BSUB -G uiuc
-#BSUB -W 60
+#BSUB -W 90
 #BSUB -J pred_smoke
 #BSUB -q pdebug
-#BSUB -o runOutputCPU_1.txt
-#BSUB -e runOutputCPU_1.txt
+#BSUB -o runOutputCPU_64.txt
+#BSUB -e runOutputCPU_64.txt
 
 module load gcc/8.3.1
 module load spectrum-mpi
@@ -29,7 +29,8 @@ conda deactivate
 
 nnodes=$(echo $LSB_MCPU_HOSTS | wc -w)
 nnodes=$((nnodes/2-1))
-nproc=$((40*nnodes)) # 40 ranks per node, 1 per CPU
+#nproc=$((40*nnodes)) # 40 ranks per node, 1 per CPU
+nproc=64
 
 echo nnodes=$nnodes nproc=$nproc
 
