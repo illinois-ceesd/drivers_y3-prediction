@@ -7147,7 +7147,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         return rhs_stepper_state.get_obj_array()
 
-    # unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
+    unfiltered_rhs_compiled = actx.compile(unfiltered_rhs)
 
     def my_rhs(t, state):
 
@@ -7157,8 +7157,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # Work around long compile issue by computing and filtering RHS in separate
         # compiled functions
-        rhs_state = unfiltered_rhs(t, state)
-        # rhs_state = unfiltered_rhs_compiled(t, state)
+        rhs_state = unfiltered_rhs_compiled(t, state)
         #rhs_data_precompute = precompute_rhs_compiled(t, state)
         #rhs_state = compute_rhs_compiled(t, rhs_data_precompute)
 
@@ -7192,9 +7191,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                           t=current_t, t_final=t_final,
                           force_eval=force_eval,
                           state=stepper_state.get_obj_array(),
-                          compile_rhs=False,
-                          compile_timestepper=True,
-                )
+                          compile_rhs=False)
         current_stepper_state = make_stepper_state_obj(current_stepper_state_obj)
     else:
         current_stepper_state = stepper_state
