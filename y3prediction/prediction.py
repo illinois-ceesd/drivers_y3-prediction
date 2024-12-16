@@ -2924,7 +2924,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         else:
             rho_injection_upstream = \
                 pyro_mech.get_density(
-                    p=pres_injection_upstream,
+                    pressure=pres_injection_upstream,
                     temperature=temp_injection_upstream,
                     mass_fractions=y_fuel)
             gamma_guess = \
@@ -2948,7 +2948,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                              gamma=gamma_guess)
                 rho_injection_upstream = \
                     pyro_mech.get_density(
-                        p=pres_injection_upstream,
+                        pressure=pres_injection_upstream,
                         temperature=temp_injection_upstream,
                         mass_fractions=y_fuel)
                 gamma_injection_upstream = \
@@ -3241,7 +3241,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     else:
                         rho_injection_upstream = \
                             pyro_mech.get_density(
-                                p=pres_injection_upstream,
+                                pressure=pres_injection_upstream,
                                 temperature=temp_injection_upstream,
                                 mass_fractions=y_fuel)
                         gamma_guess = \
@@ -3265,7 +3265,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                          gamma=gamma_guess)
                             rho_injection_upstream = \
                                 pyro_mech.get_density(
-                                    p=pres_injection_upstream,
+                                    pressure=pres_injection_upstream,
                                     temperature=temp_injection_upstream,
                                     mass_fractions=y_fuel)
                             gamma_injection_upstream = \
