@@ -1118,8 +1118,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     first_profiling_step = 4
     last_profiling_step = 104
 
-    MPI.Pcontrol(2)
-    MPI.Pcontrol(0)
+    if first_profiling_step > 0:
+        MPI.Pcontrol(2)
+        MPI.Pcontrol(0)
 
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
@@ -3633,12 +3634,22 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     fluid_nelements = volume_to_local_mesh_data["fluid"][0].nelements
     wall_nelements = 0
-    print(f"Fluid elements: {fluid_nelements}")
     if use_wall:
         wall_nelements = volume_to_local_mesh_data["wall"][0].nelements
-        print(f"Wall elements: {wall_nelements}")
     local_nelements = fluid_nelements + wall_nelements
-    print(f"Number of elements: {local_nelements}")
+
+    # Early grep-ready nelement report
+    for rnk in range(nparts):
+        if rnk == rank:
+            print(f"Rank({rank}) mesh partition")
+            print("---------------------------")
+            if fluid_nelements > 0:
+                print(f"Number of fluid elements: {fluid_nelements}")
+            if wall_nelements > 0:
+                print(f"Number of wall elements: {wall_nelements}")
+            print(f"Number of elements: {local_nelements}")
+            print("---------------------------")
+        comm.Barrier()
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
@@ -7354,7 +7365,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                              smoothness_kappa=current_av_skappa,
                                              smoothness_d=current_av_sd)
 
-    MPI.Pcontrol(0)
+    if last_profiling_step < 0:
+        MPI.Pcontrol(0)
 
     if use_wall:
         current_wv = current_stepper_state.wv
