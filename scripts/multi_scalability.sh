@@ -144,52 +144,16 @@ cd ${DRIVER_PATH}/${test_path}
 nrank=${NUM_PROCS_1}
 while [ $nrank -le $NUM_PROCS ]; do
 
-    if [[ "${nrank}" == "1" ]]; then
-        msize="48"
-        nelem="24036"
-    elif [[ "${nrank}" == "2" ]]; then
-        msize="30.5"
-        nelem="47908"
-    elif [[ "${nrank}" == "4" ]]; then
-        msize="21.5"
-        nelem="96425"
-    elif [[ "${nrank}" == "8" ]]; then
-        msize="16.05"
-        nelem="192658"
-    elif [[ "${nrank}" == "16" ]]; then
-        msize="12.3"
-        nelem="383014"
-    elif [[ "${nrank}" == "32" ]]; then
-        msize="9.535"
-        nelem="768891"
-    elif [[ "${nrank}" == "64" ]]; then
-        msize="7.45"
-        nelem="1536571"
-    elif [[ "${nrank}" == "128" ]]; then
-        msize="5.8545"
-        nelem="3071835"
-    elif [[ "${nrank}" == "256" ]]; then
-        msize="4.61"
-        nelem="6142150"
-    elif [[ "${nrank}" == "512" ]]; then
-        msize="3.6389"
-        nelem="12283032"
-    elif [[ "${nrank}" == "1024" ]]; then
-        msize="3.07"
-        nelem="24423603"
-    elif [[ "${nrank}" == "2048" ]]; then
-        msize="3.6389"
-        nelem="12283032"
-    fi
-
-
     casename="${running_casename_base}_np${nrank}"
     printf "** Running ${casename} on ${nrank} ranks.\n"
 
-    cd data
-    rm actii.msh
-    ./mkmsh --size=${msize} --nelem=${nelem} --link
-    cd ../
+    # Disable mesh generation, for now
+    # cd data
+    # rm actii.msh
+    # ./mkmsh --size=${msize} --nelem=${nelem} --link
+    # cd ../
+    #
+    # Create nranks-specific yaml input file
     rm -f run_params_np${nrank}.yaml
     sed "s|mesh_filename: .*|mesh_filename: data/actii_np${nrank}.msh|" run_params.yaml > run_params_np${nrank}.yaml
     set -x
@@ -197,6 +161,7 @@ while [ $nrank -le $NUM_PROCS ]; do
     if [[ ! -z ${NUM_NODES} ]];then
         runoptions="-N ${NUM_NODES} -n ${nrank}"
     fi
+    # Run prediction driver with generated yaml file
     $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log --lazy
     return_code=$?
     set +x
