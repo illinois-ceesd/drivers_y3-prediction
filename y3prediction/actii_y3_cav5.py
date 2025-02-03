@@ -180,7 +180,8 @@ class InitACTII:
         y = np.zeros(self._nspecies, dtype=object)
         for i in range(self._nspecies):
             y[i] = self._mass_frac[i]
-        mass = actx.to_numpy(eos.get_density(pressure=pres_left, temperature=temp_left,
+        mass = actx.to_numpy(
+            eos.get_density(pressure=pres_left, temperature=temp_left,
                                species_mass_fractions=y))
         energy = mass*actx.to_numpy(eos.get_internal_energy(temperature=temp_left,
                                               species_mass_fractions=y))
@@ -257,9 +258,11 @@ class InitACTII:
             y = np.zeros(self._nspecies, dtype=object)
             for i in range(self._nspecies):
                 y[i] = self._mass_frac[i]
-            mass = actx.to_numpy(eos.get_density(pressure=pres_right, temperature=temp_right,
+            mass = actx.to_numpy(
+                eos.get_density(pressure=pres_right, temperature=temp_right,
                                    species_mass_fractions=y))
-            energy = mass*actx.to_numpy(eos.get_internal_energy(temperature=temp_right,
+            energy = mass*actx.to_numpy(
+                eos.get_internal_energy(temperature=temp_right,
                                                   species_mass_fractions=y))
 
             velocity = np.zeros(self._dim, dtype=object)

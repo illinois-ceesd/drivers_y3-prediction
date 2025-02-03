@@ -5585,9 +5585,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 ("memory_usage_hwm.max",
                  "| \t memory hwm: {value:7g} Mb\n")])
 
-            from mirgecom.array_context import actx_class_is_numpy, actx_class_is_cupy
+            from mirgecom.array_context import (actx_class_is_numpy,
+                                                actx_class_is_cupy)
 
-            if not actx_class_is_numpy(actx_class) and not actx_class_is_cupy(actx_class):
+            if not (actx_class_is_numpy(actx_class) or
+                    actx_class_is_cupy(actx_class)):
                 # numpy/cupy have no CL mempool
                 logmgr.add_watches([
                     ("memory_usage_mempool_managed.max",
