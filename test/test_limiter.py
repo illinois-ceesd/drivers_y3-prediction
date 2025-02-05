@@ -409,6 +409,8 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
     y_sum = actx.np.zeros_like(limited_cv.mass)
     for i in range(nspecies):
         y_sum = y_sum + limited_mass_frac[i]
+    y_sum_m1 = actx.np.abs(y_sum - 1.0)
+    assert actx.to_numpy(actx.np.max(y_sum_m1)) < 1e-11
 
     # check pressure positivity
     assert actx.to_numpy(actx.np.min(pressure_limited)) > 0.

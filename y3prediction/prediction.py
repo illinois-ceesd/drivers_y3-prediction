@@ -848,8 +848,10 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             aux = aux + spec_lim[i]
             sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
             # only rebalance where species limiting actually occured
+        for i in range(0, nspecies):
             spec_lim[i] = actx.np.where(actx.np.greater(balance_spec, 0.),
                                         spec_lim[i]/aux, spec_lim[i])
+
         #spec_lim = spec_lim/aux
 
         # tseed is the best guess at a reasonable temperature after the limiting
