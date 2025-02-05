@@ -401,16 +401,17 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
 
     print(f"{actx.to_numpy(limited_mass_frac)=}")
     # check minimum and maximum
+    spec_tol = 1e-16
     for i in range(nspecies):
-        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) > 0.0 - 1.e-11
-        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) < 1.0 + 1.e-11
+        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) >= 0.0
+        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) < 1.0 + spec_tol
 
     # check y sums to 1
     y_sum = actx.np.zeros_like(limited_cv.mass)
     for i in range(nspecies):
         y_sum = y_sum + limited_mass_frac[i]
     y_sum_m1 = actx.np.abs(y_sum - 1.0)
-    assert actx.to_numpy(actx.np.max(y_sum_m1)) < 1e-11
+    assert actx.to_numpy(actx.np.max(y_sum_m1)) < nspecies*spec_tol
 
     # check pressure positivity
     assert actx.to_numpy(actx.np.min(pressure_limited)) > 0.

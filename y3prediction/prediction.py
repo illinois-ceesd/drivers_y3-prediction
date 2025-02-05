@@ -798,61 +798,69 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     ##################
     # 2.0 limit the species mass fractions
     ##################
+    limit_species = False
+    hammer_species = True
     theta_spec = actx.np.zeros_like(cv.species_mass_fractions)
     balance_spec = actx.np.zeros_like(cv.mass)
     if nspecies > 0:
-        # find theta for all the species
-        for i in range(0, nspecies):
-            mmin_i = op.elementwise_min(dcoll, dd,
-                                        cv_update_rho.species_mass_fractions[i])
-            mmin = 0.
+        spec_lim = 1.*cv_update_rho.species_mass_fractions
+        if limit_species:
+            # find theta for all the species
+            for i in range(0, nspecies):
+                mmin_i = op.elementwise_min(
+                    dcoll, dd, cv_update_rho.species_mass_fractions[i])
+                mmin = 0.
+                #cell_avgs = elem_avg_cv.species_mass_fractions[i]
+                cell_avgs = element_average(
+                    dcoll, dd,
+                    cv_update_rho.species_mass_fractions[i],
+                    volumes=element_vols)
+                cell_avgs = \
+                            actx.np.where(
+                                actx.np.greater(cell_avgs, mmin),
+                                cell_avgs, mmin)
+                _theta = actx.np.maximum(
+                    0., actx.np.where(actx.np.less(mmin_i + toler, mmin),
+                                      (mmin-mmin_i)/(cell_avgs - mmin_i),
+                                      0.)
+                )
+                mmax_i = op.elementwise_max(
+                    dcoll, dd, cv_update_rho.species_mass_fractions[i])
+                mmax = 1.0
+                cell_avgs = actx.np.where(actx.np.less(cell_avgs, mmax), cell_avgs, mmax)
+                _theta = actx.np.maximum(
+                    _theta,
+                    actx.np.where(actx.np.greater(mmax_i - toler, mmax),
+                                  (mmax_i - mmax)/(mmax_i - cell_avgs),
+                                  0.)
+                )
+                theta_spec[i] = _theta*ones
+                balance_spec = actx.np.where(actx.np.greater(theta_spec[i], toler),
+                                             1.0, balance_spec)
+                #print(f"species {i}, {_theta=}")
+                # apply the limiting to all species equally
+                spec_lim[i] = (cv_update_rho.species_mass_fractions[i] +
+                               theta_spec[i]*(
+                                   cell_avgs - cv_update_rho.species_mass_fractions[i]))
 
-            #cell_avgs = elem_avg_cv.species_mass_fractions[i]
-            cell_avgs = element_average(
-                dcoll, dd, cv_update_rho.species_mass_fractions[i],
-                volumes=element_vols)
-            cell_avgs = actx.np.where(actx.np.greater(cell_avgs, mmin), cell_avgs,
-                                      mmin)
+        if hammer_species:
+            # limit the species mass fraction sum to 1.0
+            aux = actx.np.zeros_like(cv_update_rho.mass)
+            sum_theta_y = actx.np.zeros_like(cv_update_rho.mass)
+            zeros_spec = actx.np.zeros_like(cv_update_rho.mass)
+            for i in range(nspecies):
+                spec_lim[i] = actx.np.where(actx.np.less(spec_lim[i], zeros_spec), 
+                                            zeros_spec, spec_lim[i])
 
-            _theta = actx.np.maximum(0.,
-                actx.np.where(actx.np.less(mmin_i + toler, mmin),
-                              (mmin-mmin_i)/(cell_avgs - mmin_i),
-                              0.)
-            )
-
-            mmax_i = op.elementwise_max(dcoll, dd,
-                                        cv_update_rho.species_mass_fractions[i])
-            mmax = 1.0
-            cell_avgs = actx.np.where(actx.np.less(cell_avgs, mmax), cell_avgs, mmax)
-            _theta = actx.np.maximum(_theta,
-                actx.np.where(actx.np.greater(mmax_i - toler, mmax),
-                              (mmax_i - mmax)/(mmax_i - cell_avgs),
-                              0.)
-            )
-
-            theta_spec[i] = _theta*ones
-            balance_spec = actx.np.where(actx.np.greater(theta_spec[i], toler),
-                                      1.0, balance_spec)
-
-            #print(f"species {i}, {_theta=}")
-
-            # apply the limiting to all species equally
-            spec_lim[i] = (cv_update_rho.species_mass_fractions[i] +
-                           theta_spec[i]*(
-                               cell_avgs - cv_update_rho.species_mass_fractions[i]))
-
-        # limit the species mass fraction sum to 1.0
-        aux = actx.np.zeros_like(cv_update_rho.mass)
-        sum_theta_y = actx.np.zeros_like(cv_update_rho.mass)
-        for i in range(0, nspecies):
-            aux = aux + spec_lim[i]
-            sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
+            # spec_lim = actx.np.where(spec_lim > 0., spec_lim, zero_spec)
+            for i in range(0, nspecies):
+                aux = aux + spec_lim[i]
+                sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
             # only rebalance where species limiting actually occured
-        for i in range(0, nspecies):
-            spec_lim[i] = actx.np.where(actx.np.greater(balance_spec, 0.),
-                                        spec_lim[i]/aux, spec_lim[i])
-
-        #spec_lim = spec_lim/aux
+            # for i in range(0, nspecies):
+            #    spec_lim = actx.np.where(actx.np.greater(balance_spec, 0.),
+            #                             spec_lim[i]/aux, spec_lim[i])
+            spec_lim = spec_lim/aux
 
         # tseed is the best guess at a reasonable temperature after the limiting
         # assume that whatever pressure and temperature that was computed was bogus
@@ -935,10 +943,17 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             cv_update_rho.energy
         )
         """
-
+        # This previous version did not use the updated energies, not sure
+        # if it matters
+        #
+        # cv_update_y = make_conserved(dim=dim,
+        #                             mass=cv_update_rho.mass,
+        #                             energy=cv_update_rho.energy,
+        #                             momentum=cv_update_rho.momentum,
+        #                             species_mass=cv_update_rho.mass*spec_lim)
         cv_update_y = make_conserved(dim=dim,
                                      mass=cv_update_rho.mass,
-                                     energy=cv_update_rho.energy,
+                                     energy=energy_lim,
                                      momentum=cv_update_rho.momentum,
                                      species_mass=cv_update_rho.mass*spec_lim)
     else:
@@ -1209,6 +1224,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nrestart = configurate("nrestart", input_data, 5000)
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
+    nspeccheck = configurate("nspeccheck", input_data, 1)
 
     # garbage collection frequency
     ngarbage = configurate("ngarbage", input_data, 10)
@@ -6524,6 +6540,56 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     logger.info("Violators truncated at 50")
                     break
 
+    def spec_check(cv):
+        health_error = False
+        ysum = actx.np.zeros_like(cv.mass)
+        spec_tol = 1e-16
+        for i in range(nspecies):
+            yspec = cv.species_mass_fractions[i]
+            ysum = ysum + yspec
+            if global_range_check(dd_vol_fluid, yspec, 0.0, 1+spec_tol):
+                health_error = True
+                y_min = vol_min(dd_vol_fluid, yspec)
+                y_max = vol_max(dd_vol_fluid, yspec)
+                y_min_loc = vol_min_loc(dd_vol_fluid, yspec)
+                y_max_loc = vol_max_loc(dd_vol_fluid, yspec)
+                if rank == 0:
+                    logger.info("Species mass fraction range violation:\n"
+                                "\tSpecified Limits "
+                                f"({health_mass_frac_min=}, "
+                                f"{health_mass_frac_max=})\n"
+                                f"\tGlobal Range     {species_names[i]}:"
+                                f"({y_min:1.3e}, {y_max:1.3e})")
+                logger.info(f"{rank=}: "
+                            f"Local Range      {species_names[i]}: "
+                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                print(f"{rank=}: "
+                      f"Local Range      {species_names[i]}: "
+                      f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                report_violators(yspec, 0.0, 1.+spec_tol)
+
+        ysum_m1 = actx.np.abs(ysum - 1.0)
+        sum_tol = 1e-15
+        if global_range_check(dd_vol_fluid, ysum_m1, 0., sum_tol):
+            health_error = True
+            local_max = actx.np.max(ysum)
+            local_min = actx.np.min(ysum)
+            global_min = vol_min(dd_vol_fluid, ysum)
+            gloabl_max = vol_max(dd_vol_fluid, ysum)
+            global_min_loc = vol_min_loc(dd_vol_fluid, ysum)
+            global_max_loc = vol_max_loc(dd_vol_fluid, ysum)
+            if rank == 0:
+                logger.info("Total species mass fraction range violation:\n"
+                            f"{sum_tol=}), {global_min=}, {global_max=}\n"
+                            f"{global_min_loc=}, {global_max_loc=}")
+            logger.info(f"{rank=}: "
+                        f"Local sum:      {local_max=}, {local_min=}")
+            print(f"{rank=}: {local_max=}, {local_min=}")
+            report_violators(ysum, 1.-sum_tol, 1.+sum_tol)
+
+        return health_error
+
+
     def my_health_check(fluid_state, wall_temperature):
         health_error = False
         cv = fluid_state.cv
@@ -6771,8 +6837,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
-
         stepper_state = make_stepper_state_obj(state)
+
+        if check_step(step=step, interval=nspeccheck):
+            spec_errors = global_reduce(
+                spec_check(stepper_state.cv), op="lor")
+            if spec_errors:
+                if rank == 0:
+                    logger.info("Solution failed species check.")
+                logger.info(f"{rank=}: Solution failed species check.")
+                print(f"{rank=}: Solution failed species check.")
+                comm.Barrier()  # make msg before any rank raises
+                raise MyRuntimeError("Failed simulation species check.")
 
         if check_step(step=step, interval=ngarbage):
             with gc_timer:
