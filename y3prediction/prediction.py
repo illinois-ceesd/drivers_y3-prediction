@@ -827,7 +827,8 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                 mmax_i = op.elementwise_max(
                     dcoll, dd, cv_update_rho.species_mass_fractions[i])
                 mmax = 1.0
-                cell_avgs = actx.np.where(actx.np.less(cell_avgs, mmax), cell_avgs, mmax)
+                cell_avgs = actx.np.where(actx.np.less(cell_avgs, mmax),
+                                          cell_avgs, mmax)
                 _theta = actx.np.maximum(
                     _theta,
                     actx.np.where(actx.np.greater(mmax_i - toler, mmax),
@@ -839,9 +840,10 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                                              1.0, balance_spec)
                 #print(f"species {i}, {_theta=}")
                 # apply the limiting to all species equally
-                spec_lim[i] = (cv_update_rho.species_mass_fractions[i] +
-                               theta_spec[i]*(
-                                   cell_avgs - cv_update_rho.species_mass_fractions[i]))
+                spec_lim[i] = \
+                    (cv_update_rho.species_mass_fractions[i]
+                     + theta_spec[i]*(cell_avgs
+                                      - cv_update_rho.species_mass_fractions[i]))
 
         if hammer_species:
             # limit the species mass fraction sum to 1.0
@@ -849,7 +851,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             sum_theta_y = actx.np.zeros_like(cv_update_rho.mass)
             zeros_spec = actx.np.zeros_like(cv_update_rho.mass)
             for i in range(nspecies):
-                spec_lim[i] = actx.np.where(actx.np.less(spec_lim[i], zeros_spec), 
+                spec_lim[i] = actx.np.where(actx.np.less(spec_lim[i], zeros_spec),
                                             zeros_spec, spec_lim[i])
 
             # spec_lim = actx.np.where(spec_lim > 0., spec_lim, zero_spec)
@@ -6575,7 +6577,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             local_max = actx.np.max(ysum)
             local_min = actx.np.min(ysum)
             global_min = vol_min(dd_vol_fluid, ysum)
-            gloabl_max = vol_max(dd_vol_fluid, ysum)
+            global_max = vol_max(dd_vol_fluid, ysum)
             global_min_loc = vol_min_loc(dd_vol_fluid, ysum)
             global_max_loc = vol_max_loc(dd_vol_fluid, ysum)
             if rank == 0:
@@ -6588,7 +6590,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             report_violators(ysum, 1.-sum_tol, 1.+sum_tol)
 
         return health_error
-
 
     def my_health_check(fluid_state, wall_temperature):
         health_error = False
