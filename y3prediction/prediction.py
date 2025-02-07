@@ -6853,6 +6853,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
 
+        # This check reports when species mass fractions (Y) violate
+        # the constraints of being in the range [0, 1] +/- 1e-16,
+        # and sum(Y) = 1 +/- 1e-15. If the ranges are violated,
+        # the snippet below will use *hammer_species* to force Y
+        # back into the expected range.
         if check_step(step=step, interval=nspeccheck):
             spec_errors = global_reduce(
                 spec_check(state[0]), op="lor")
@@ -7178,6 +7183,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if use_wall:
         wall_nodes_are_off_axis = actx.np.greater(wall_nodes[0], off_axis_x)
 
+    # This function adds source terms for axisymmetry, but does not consider
+    # when points are on off-axis boundaries. These source terms have been
+    # observed to cause species drift on off-axis noslip boundaries.
+    # The kludgy fix is to use *hammer_species* util to periodically to pound
+    # the species fractions back into [0, 1], and sum(Y)=1.
     def axisym_source_fluid(dcoll, fluid_state, boundaries, grad_cv, grad_t):
         cv = fluid_state.cv
         dv = fluid_state.dv
