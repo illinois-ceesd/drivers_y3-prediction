@@ -653,10 +653,11 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     element_vols = abs(op.elementwise_integral(dcoll, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
-    rank = 1
+    rank = 2
     print_stuff = False
+    print_stuff2 = False
 
-    if print_stuff:
+    if print_stuff is True:
         np.set_printoptions(threshold=sys.maxsize, precision=16)
         my_rank = dcoll.mpi_communicator.Get_rank()
         if my_rank == rank:
@@ -664,18 +665,29 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         else:
             print_stuff = False
 
-    index = 1161
-    if print_stuff is True and isinstance(dd.domain_tag, VolumeDomainTag):
-        print(f"volume limiter {rank=}")
-        index = 1161
-    elif print_stuff is True and (isinstance(dd.domain_tag, BoundaryDomainTag) and
-          dd.domain_tag.tag == "noslip_wall"):
-        print(f"noslip_wall limiter {rank=}")
-        index = 0
-    else:
-        print_stuff = False
+    if print_stuff2 is True:
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
+        my_rank = dcoll.mpi_communicator.Get_rank()
+        if my_rank == rank:
+            print_stuff2 = True
+        else:
+            print_stuff2 = False
 
-    if print_stuff:
+    index = 1161
+    #if print_stuff is True  or print_stuff2 is True:
+    if 0:
+        if isinstance(dd.domain_tag, VolumeDomainTag):
+            print(f"volume limiter {rank=}")
+            index = 1161
+        elif (isinstance(dd.domain_tag, BoundaryDomainTag) and
+              dd.domain_tag.tag == "noslip_wall"):
+            print(f"noslip_wall limiter {rank=}")
+            index = 0
+        else:
+            print_stuff = False
+            print_stuff2 = False
+
+    if print_stuff is True or print_stuff2 is True:
         print("bbbb")
         np.set_printoptions(threshold=sys.maxsize, precision=16)
         print(f"{dd.domain_tag=}")
@@ -6116,11 +6128,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if use_wall:
             fluid_state = viz_state[0]
-            wv = viz_state[1]
+            tseed = viz_state[1]
+            entropy_min = viz_state[2]
+            wv = viz_state[3]
             dv = viz_dv[0]
             wdv = viz_dv[1]
         else:
-            fluid_state = viz_state
+            fluid_state = viz_state[0]
+            tseed = viz_state[1]
+            entropy_min = viz_state[2]
             dv = viz_dv
             wv = None
             wdv = None
@@ -6191,6 +6207,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             entropy = actx.np.log(dv.pressure/(cv.mass**gamma))
 
             fluid_viz_ext = [("entropy", entropy),
+                             ("entropy_min", entropy_min),
                              ("gamma", gamma)]
             fluid_viz_fields.extend(fluid_viz_ext)
 
@@ -6200,6 +6217,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 production_rates = compute_production_rates(cv,
                                                             dv.temperature)
                 fluid_viz_ext = [("temp_resid", temp_resid),
+                                 ("tseed", tseed),
                                  ("production_rates", production_rates)]
                 fluid_viz_fields.extend(fluid_viz_ext)
 
@@ -6830,6 +6848,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         ones = 1. + actx.np.zeros_like(cv.mass)
         # fixed offset
         smin_i = ones*(smin_i - 0.05)
+        #smin_i = ones*(smin_i - 1.05)
+        smin_i = ones*12.
 
         # This re-creation of the state resets *tseed* to current temp and forces the
         # limited cv into state
@@ -6945,10 +6965,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if do_viz:
                 # pack things up
                 if use_wall:
-                    viz_state = make_obj_array([fluid_state, wv])
+                    viz_state = make_obj_array([fluid_state, tseed, smin_i, wv])
                     viz_dv = make_obj_array([dv, wdv])
                 else:
-                    viz_state = fluid_state
+                    viz_state = make_obj_array([fluid_state, tseed, smin_i])
                     viz_dv = dv
 
                 my_write_viz(
@@ -6973,10 +6993,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             # pack things up
             if use_wall:
-                viz_state = make_obj_array([fluid_state, wv])
+                viz_state = make_obj_array([fluid_state, tseed, smin_i, wv])
                 viz_dv = make_obj_array([dv, wdv])
             else:
-                viz_state = fluid_state
+                viz_state = make_obj_array([fluid_state, tseed, smin_i])
                 viz_dv = dv
 
             my_write_viz(
@@ -7658,10 +7678,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if nviz > 0:
         # pack things up
         if use_wall:
-            viz_state = make_obj_array([current_fluid_state, current_wv])
+            viz_state = make_obj_array([current_fluid_state, tseed,
+                                        current_smin, current_wv])
             viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
         else:
-            viz_state = current_fluid_state
+            viz_state = make_obj_array([current_fluid_state, tseed,
+                                        current_smin])
             viz_dv = current_fluid_state.dv
 
         my_write_viz(
