@@ -275,11 +275,11 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
 @pytest.mark.parametrize("nspecies", [2, 7])
 #@pytest.mark.parametrize("order", [1])
 #@pytest.mark.parametrize("dim", [2])
-#@pytest.mark.parametrize("rho_amp", [-0.002])
-#@pytest.mark.parametrize("p_amp", [0.])
-#@pytest.mark.parametrize("y_amp", [0.])
+#@pytest.mark.parametrize("rho_amp", [0.00])
+#@pytest.mark.parametrize("p_amp", [0])
+#@pytest.mark.parametrize("y_amp", [0.3])
 #@pytest.mark.parametrize("vmag", [0.])
-#@pytest.mark.parametrize("nspecies", [7])
+#@pytest.mark.parametrize("nspecies", [2])
 def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
                                              rho_amp, p_amp, y_amp, vmag):
     """Testing positivity-preserving limiter."""
@@ -409,6 +409,11 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
     y_sum = actx.np.zeros_like(limited_cv.mass)
     for i in range(nspecies):
         y_sum = y_sum + limited_mass_frac[i]
+
+    y_ones = 0.*y_sum + 1.0
+    y_sum_mone = y_sum - y_ones
+    print(f"{actx.to_numpy(y_sum)=}")
+    assert actx.to_numpy(actx.np.max(actx.np.abs(y_sum_mone))) < 1e-11
 
     # check pressure positivity
     assert actx.to_numpy(actx.np.min(pressure_limited)) > 0.
