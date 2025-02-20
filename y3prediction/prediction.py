@@ -145,6 +145,10 @@ from mirgecom.fluid import ConservedVars
 from meshmode.dof_array import DOFArray  # noqa
 from grudge.dof_desc import DISCR_TAG_MODAL
 from meshmode.transform_metadata import FirstAxisIsElementsTag
+from arraycontext import outer
+from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
+from meshmode.discretization.connection import FACE_RESTR_ALL
+from mirgecom.flux import num_flux_central
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -358,6 +362,202 @@ class _MyGradTag6:
     pass
 
 
+def my_derivative_function(
+        dcoll, field, field_bounds, quadrature_tag, dd_vol,
+        bnd_cond, comm_tag):
+
+    actx = field.array_context
+    dd_vol_quad = dd_vol.with_discr_tag(quadrature_tag)
+    dd_allfaces_quad = dd_vol_quad.trace(FACE_RESTR_ALL)
+
+    interp_to_surf_quad = partial(
+        tracepair_with_discr_tag, dcoll, quadrature_tag)
+
+    def interior_flux(field_tpair):
+        dd_trace_quad = field_tpair.dd.with_discr_tag(quadrature_tag)
+        #normal_quad = actx.thaw(dcoll.normal(dd_trace_quad))
+        normal_quad = normal_vector(actx, dcoll, dd_trace_quad)
+        bnd_tpair_quad = interp_to_surf_quad(field_tpair)
+        flux_int = outer(
+            num_flux_central(bnd_tpair_quad.int, bnd_tpair_quad.ext),
+            normal_quad)
+
+        return op.project(dcoll, dd_trace_quad, dd_allfaces_quad, flux_int)
+
+    def boundary_flux(bdtag, bdry):
+        if isinstance(bdtag, DOFDesc):
+            bdtag = bdtag.domain_tag
+        dd_bdry_quad = dd_vol_quad.with_domain_tag(bdtag)
+        normal_quad = normal_vector(actx, dcoll, dd_bdry_quad)
+        int_soln_quad = op.project(dcoll, dd_vol, dd_bdry_quad, field)
+
+        # MJA, not sure about this
+        if bnd_cond == "symmetry" and bdtag == "symmetry":
+            ext_soln_quad = 0.0*int_soln_quad
+        else:
+            ext_soln_quad = 1.0*int_soln_quad
+
+        bnd_tpair = TracePair(bdtag, interior=int_soln_quad,
+                              exterior=ext_soln_quad)
+        flux_bnd = outer(
+            num_flux_central(bnd_tpair.int, bnd_tpair.ext), normal_quad)
+
+        return op.project(dcoll, dd_bdry_quad, dd_allfaces_quad, flux_bnd)
+
+    field_quad = op.project(dcoll, dd_vol, dd_vol_quad, field)
+
+    return -1.0*op.inverse_mass(
+        dcoll, dd_vol_quad,
+        op.weak_local_grad(dcoll, dd_vol_quad, field_quad)
+        -  # noqa: W504
+        op.face_mass(
+            dcoll, dd_allfaces_quad,
+            sum(
+                interior_flux(u_tpair) for u_tpair in interior_trace_pairs(
+                    dcoll, field, volume_dd=dd_vol, comm_tag=comm_tag))
+            + sum(
+                 boundary_flux(bdtag, bdry)
+                 for bdtag, bdry in field_bounds.items())
+        )
+    )
+
+
+def axisym_source_fluid(dcoll, fluid_state, fluid_nodes, gas_model,
+                        quadrature_tag, dd_vol_fluid, boundaries, grad_cv, grad_t):
+    cv = fluid_state.cv
+    dv = fluid_state.dv
+    actx = cv.array_context
+
+    mu = fluid_state.tv.viscosity
+    beta = gas_model.transport.volume_viscosity(cv, dv, gas_model.eos)
+    kappa = fluid_state.tv.thermal_conductivity
+    d_ij = fluid_state.tv.species_diffusivity
+
+    grad_v = velocity_gradient(cv, grad_cv)
+    grad_y = species_mass_fraction_gradient(cv, grad_cv)
+
+    u = cv.velocity[0]
+    v = cv.velocity[1]
+
+    dudr = grad_v[0][0]
+    dudy = grad_v[0][1]
+    dvdr = grad_v[1][0]
+    dvdy = grad_v[1][1]
+
+    drhoudr = (grad_cv.momentum[0])[0]
+
+    #d2udr2 = my_derivative_function(dcoll,  dudr, boundaries, dd_vol_fluid,
+    #                                "replicate", comm_tag=_MyGradTag1)[0]
+    d2vdr2 = my_derivative_function(dcoll, dvdr, boundaries, quadrature_tag,
+                                    dd_vol_fluid, "replicate",
+                                    comm_tag=_MyGradTag2)[0]
+    d2udrdy = my_derivative_function(dcoll, dudy, boundaries, quadrature_tag,
+                                     dd_vol_fluid, "replicate",
+                                     comm_tag=_MyGradTag3)[0]
+    dmudr = my_derivative_function(dcoll, mu, boundaries, quadrature_tag,
+                                   dd_vol_fluid, "replicate",
+                                   comm_tag=_MyGradTag4)[0]
+    dbetadr = my_derivative_function(dcoll, beta, boundaries, quadrature_tag,
+                                     dd_vol_fluid, "replicate",
+                                     comm_tag=_MyGradTag5)[0]
+    dbetady = my_derivative_function(dcoll, beta, boundaries, quadrature_tag,
+                                     dd_vol_fluid, "replicate",
+                                     comm_tag=_MyGradTag6)[1]
+
+    qr = -(kappa*grad_t)[0]
+    dqrdr = 0.0
+    off_axis_x = 1.e-7
+    fluid_nodes_are_off_axis = actx.np.greater(fluid_nodes[0], off_axis_x)
+
+    dyidr = grad_y[:, 0]
+    #dyi2dr2 = my_derivative_function(dcoll, dyidr, 'replicate')[:,0]
+
+    tau_ry = 1.0*mu*(dudy + dvdr)
+    tau_rr = 2.0*mu*dudr + beta*(dudr + dvdy)
+    #tau_yy = 2.0*mu*dvdy + beta*(dudr + dvdy)
+    tau_tt = beta*(dudr + dvdy) + 2.0*mu*actx.np.where(
+        fluid_nodes_are_off_axis, u/fluid_nodes[0], dudr)
+
+    dtaurydr = dmudr*dudy + mu*d2udrdy + dmudr*dvdr + mu*d2vdr2
+
+    source_mass_dom = - cv.momentum[0]
+
+    source_rhoU_dom = - cv.momentum[0]*u \
+                      + tau_rr - tau_tt \
+                      + u*dbetadr + beta*dudr \
+                      + beta*actx.np.where(
+                          fluid_nodes_are_off_axis, -u/fluid_nodes[0], -dudr)
+
+    source_rhoV_dom = - cv.momentum[0]*v \
+                      + tau_ry \
+                      + u*dbetady + beta*dudy
+
+    # FIXME add species diffusion term
+    source_rhoE_dom = -((cv.energy+dv.pressure)*u + qr) \
+                      + u*tau_rr + v*tau_ry \
+                      + u**2*dbetadr + beta*2.0*u*dudr \
+                      + u*v*dbetady + u*beta*dvdy + v*beta*dudy
+
+    source_spec_dom = - cv.species_mass*u + cv.mass*d_ij*dyidr
+
+    source_mass_sng = - drhoudr
+    source_rhoU_sng = 0.0
+    source_rhoV_sng = - v*drhoudr + dtaurydr + beta*d2udrdy + dudr*dbetady
+    source_rhoE_sng = -((cv.energy + dv.pressure)*dudr + dqrdr) \
+                            + tau_rr*dudr + v*dtaurydr \
+                            + 2.0*beta*dudr**2 \
+                            + beta*dudr*dvdy \
+                            + v*dudr*dbetady \
+                            + v*beta*d2udrdy
+    #source_spec_sng = - cv.species_mass*dudr + d_ij*dyidr
+    source_spec_sng = - cv.species_mass*dudr
+
+    source_mass = actx.np.where(
+        fluid_nodes_are_off_axis, source_mass_dom/fluid_nodes[0],
+        source_mass_sng)
+    source_rhoU = actx.np.where(
+        fluid_nodes_are_off_axis, source_rhoU_dom/fluid_nodes[0],
+        source_rhoU_sng)
+    source_rhoV = actx.np.where(
+        fluid_nodes_are_off_axis, source_rhoV_dom/fluid_nodes[0],
+        source_rhoV_sng)
+    source_rhoE = actx.np.where(
+        fluid_nodes_are_off_axis, source_rhoE_dom/fluid_nodes[0],
+        source_rhoE_sng)
+
+    source_spec = make_obj_array([
+                  actx.np.where(
+                      fluid_nodes_are_off_axis,
+                      source_spec_dom[i]/fluid_nodes[0],
+                      source_spec_sng[i])
+                  for i in range(cv.nspecies)])
+
+    return make_conserved(dim=2, mass=source_mass, energy=source_rhoE,
+                   momentum=make_obj_array([source_rhoU, source_rhoV]),
+                   species_mass=source_spec)
+
+
+def axisym_source_wall(dcoll, wall_nodes, wall_temperature, thermal_conductivity,
+                       boundaries, grad_t):
+    #dkappadr = 0.0*wall_nodes[0]
+
+    actx = wall_temperature.array_context
+    off_axis_x = 1.e-7
+    wall_nodes_are_off_axis = actx.np.greater(wall_nodes[0], off_axis_x)
+    kappa = thermal_conductivity
+    qr = - (kappa*grad_t)[0]
+    #d2Tdr2  = my_derivative_function(dcoll, grad_t[0], boundaries,
+    #                                 dd_vol_wall, "symmetry")[0]
+    #dqrdr = - (dkappadr*grad_t[0] + kappa*d2Tdr2)
+
+    source_rhoE_dom = - qr
+    source_rhoE_sng = 0.0
+    source_rhoE = actx.np.where(
+        wall_nodes_are_off_axis, source_rhoE_dom/wall_nodes[0], source_rhoE_sng)
+
+    return source_rhoE
+
+
 def make_coupled_operator_fluid_states(
         dcoll, fluid_state, gas_model, boundaries, fluid_dd, wall_dd,
         quadrature_tag=DISCR_TAG_BASE, comm_tag=None, limiter_func=None):
@@ -454,7 +654,10 @@ def coupled_ns_heat_operator(
         fluid_operator_states_quad=None,
         limiter_func=None,
         ns_operator=general_ns_operator,
-        comm_tag=None):
+        comm_tag=None,
+        axisymmetric=False,
+        fluid_nodes=None,
+        wall_nodes=None):
     """Compute the NS and heat operators for the coupled fluid/wall."""
 
     # Insert the interface boundaries
@@ -504,6 +707,26 @@ def coupled_ns_heat_operator(
         dd=wall_dd,
         grad_u=wall_grad_temperature,
         comm_tag=(comm_tag, _WallOperatorCommTag))
+
+    if axisymmetric is True:
+        ns_result = ns_result + \
+            axisym_source_fluid(dcoll=dcoll,
+                                fluid_nodes=fluid_nodes,
+                                fluid_state=fluid_state,
+                                dd_vol_fluid=fluid_dd,
+                                gas_model=gas_model,
+                                quadrature_tag=quadrature_tag,
+                                boundaries=fluid_all_boundaries,
+                                grad_cv=fluid_grad_cv, grad_t=fluid_grad_temperature)
+
+    if axisymmetric is True:
+        diff_result = diff_result + \
+            axisym_source_wall(dcoll=dcoll,
+                               wall_nodes=wall_nodes,
+                               wall_temperature=wall_temperature,
+                               thermal_conductivity=wall_kappa,
+                               boundaries=wall_all_boundaries,
+                               grad_t=wall_grad_temperature)
 
     return ns_result, diff_result
 
@@ -4027,7 +4250,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         itp = interior_trace_pairs(dcoll, field, volume_dd=dd_vol_fluid,
                                    comm_tag=_FluidAvgCVTag)
 
-        from meshmode.discretization.connection import FACE_RESTR_ALL
         dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
         is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
 
@@ -4079,7 +4301,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         itp = interior_trace_pairs(dcoll, field, volume_dd=dd_vol_fluid,
                                           comm_tag=_FluidAvgCVTag)
 
-        from meshmode.discretization.connection import FACE_RESTR_ALL
         dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
         is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
 
@@ -4131,7 +4352,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         itp = interior_trace_pairs(dcoll, cv, volume_dd=dd_vol_fluid,
                                    comm_tag=_FluidAvgCVTag)
 
-        from meshmode.discretization.connection import FACE_RESTR_ALL
         dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
         is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
 
@@ -4183,7 +4403,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         itp = interior_trace_pairs(dcoll, cv, volume_dd=dd_vol_fluid,
                                           comm_tag=_FluidAvgCVTag)
 
-        from meshmode.discretization.connection import FACE_RESTR_ALL
         dd_allfaces = dd_vol_fluid.trace(FACE_RESTR_ALL)
         is_int_face = dcoll.zeros(actx, dd=dd_allfaces, dtype=int)
 
@@ -6694,195 +6913,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         return state, dt
 
-    from arraycontext import outer
-    from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
-    from meshmode.discretization.connection import FACE_RESTR_ALL
-    from mirgecom.flux import num_flux_central
-
-    def my_derivative_function(dcoll, field, field_bounds, dd_vol,
-                               bnd_cond, comm_tag):
-
-        dd_vol_quad = dd_vol.with_discr_tag(quadrature_tag)
-        dd_allfaces_quad = dd_vol_quad.trace(FACE_RESTR_ALL)
-
-        interp_to_surf_quad = partial(
-            tracepair_with_discr_tag, dcoll, quadrature_tag)
-
-        def interior_flux(field_tpair):
-            dd_trace_quad = field_tpair.dd.with_discr_tag(quadrature_tag)
-            #normal_quad = actx.thaw(dcoll.normal(dd_trace_quad))
-            normal_quad = normal_vector(actx, dcoll, dd_trace_quad)
-            bnd_tpair_quad = interp_to_surf_quad(field_tpair)
-            flux_int = outer(
-                num_flux_central(bnd_tpair_quad.int, bnd_tpair_quad.ext),
-                normal_quad)
-
-            return op.project(dcoll, dd_trace_quad, dd_allfaces_quad, flux_int)
-
-        def boundary_flux(bdtag, bdry):
-            if isinstance(bdtag, DOFDesc):
-                bdtag = bdtag.domain_tag
-            dd_bdry_quad = dd_vol_quad.with_domain_tag(bdtag)
-            normal_quad = normal_vector(actx, dcoll, dd_bdry_quad)
-            int_soln_quad = op.project(dcoll, dd_vol, dd_bdry_quad, field)
-
-            # MJA, not sure about this
-            if bnd_cond == "symmetry" and bdtag == "symmetry":
-                ext_soln_quad = 0.0*int_soln_quad
-            else:
-                ext_soln_quad = 1.0*int_soln_quad
-
-            bnd_tpair = TracePair(bdtag, interior=int_soln_quad,
-                                  exterior=ext_soln_quad)
-            flux_bnd = outer(
-                num_flux_central(bnd_tpair.int, bnd_tpair.ext), normal_quad)
-
-            return op.project(dcoll, dd_bdry_quad, dd_allfaces_quad, flux_bnd)
-
-        field_quad = op.project(dcoll, dd_vol, dd_vol_quad, field)
-
-        return -1.0*op.inverse_mass(
-            dcoll, dd_vol_quad,
-            op.weak_local_grad(dcoll, dd_vol_quad, field_quad)
-            -  # noqa: W504
-            op.face_mass(
-                dcoll, dd_allfaces_quad,
-                sum(
-                    interior_flux(u_tpair) for u_tpair in interior_trace_pairs(
-                        dcoll, field, volume_dd=dd_vol, comm_tag=comm_tag))
-                + sum(
-                     boundary_flux(bdtag, bdry)
-                     for bdtag, bdry in field_bounds.items())
-            )
-        )
-
-    off_axis_x = 1e-7
-    fluid_nodes_are_off_axis = actx.np.greater(fluid_nodes[0], off_axis_x)
-    wall_nodes_are_off_axis = None
-    if use_wall:
-        wall_nodes_are_off_axis = actx.np.greater(wall_nodes[0], off_axis_x)
-
-    def axisym_source_fluid(dcoll, fluid_state, boundaries, grad_cv, grad_t):
-        cv = fluid_state.cv
-        dv = fluid_state.dv
-
-        mu = fluid_state.tv.viscosity
-        beta = gas_model.transport.volume_viscosity(cv, dv, eos)
-        kappa = fluid_state.tv.thermal_conductivity
-        d_ij = fluid_state.tv.species_diffusivity
-
-        grad_v = velocity_gradient(cv, grad_cv)
-        grad_y = species_mass_fraction_gradient(cv, grad_cv)
-
-        u = cv.velocity[0]
-        v = cv.velocity[1]
-
-        dudr = grad_v[0][0]
-        dudy = grad_v[0][1]
-        dvdr = grad_v[1][0]
-        dvdy = grad_v[1][1]
-
-        drhoudr = (grad_cv.momentum[0])[0]
-
-        #d2udr2 = my_derivative_function(dcoll,  dudr, boundaries, dd_vol_fluid,
-        #                                "replicate", comm_tag=_MyGradTag1)[0]
-        d2vdr2 = my_derivative_function(dcoll, dvdr, boundaries, dd_vol_fluid,
-                                        "replicate", comm_tag=_MyGradTag2)[0]
-        d2udrdy = my_derivative_function(dcoll, dudy, boundaries, dd_vol_fluid,
-                                         "replicate", comm_tag=_MyGradTag3)[0]
-        dmudr = my_derivative_function(dcoll, mu, boundaries, dd_vol_fluid,
-                                       "replicate", comm_tag=_MyGradTag4)[0]
-        dbetadr = my_derivative_function(dcoll, beta, boundaries, dd_vol_fluid,
-                                         "replicate", comm_tag=_MyGradTag5)[0]
-        dbetady = my_derivative_function(dcoll, beta, boundaries, dd_vol_fluid,
-                                         "replicate", comm_tag=_MyGradTag6)[1]
-
-        qr = -(kappa*grad_t)[0]
-        dqrdr = 0.0
-
-        dyidr = grad_y[:, 0]
-        #dyi2dr2 = my_derivative_function(dcoll, dyidr, 'replicate')[:,0]
-
-        tau_ry = 1.0*mu*(dudy + dvdr)
-        tau_rr = 2.0*mu*dudr + beta*(dudr + dvdy)
-        #tau_yy = 2.0*mu*dvdy + beta*(dudr + dvdy)
-        tau_tt = beta*(dudr + dvdy) + 2.0*mu*actx.np.where(
-            fluid_nodes_are_off_axis, u/fluid_nodes[0], dudr)
-
-        dtaurydr = dmudr*dudy + mu*d2udrdy + dmudr*dvdr + mu*d2vdr2
-
-        source_mass_dom = - cv.momentum[0]
-
-        source_rhoU_dom = - cv.momentum[0]*u \
-                          + tau_rr - tau_tt \
-                          + u*dbetadr + beta*dudr \
-                          + beta*actx.np.where(
-                              fluid_nodes_are_off_axis, -u/fluid_nodes[0], -dudr)
-
-        source_rhoV_dom = - cv.momentum[0]*v \
-                          + tau_ry \
-                          + u*dbetady + beta*dudy
-
-        # FIXME add species diffusion term
-        source_rhoE_dom = -((cv.energy+dv.pressure)*u + qr) \
-                          + u*tau_rr + v*tau_ry \
-                          + u**2*dbetadr + beta*2.0*u*dudr \
-                          + u*v*dbetady + u*beta*dvdy + v*beta*dudy
-
-        source_spec_dom = - cv.species_mass*u + cv.mass*d_ij*dyidr
-
-        source_mass_sng = - drhoudr
-        source_rhoU_sng = 0.0
-        source_rhoV_sng = - v*drhoudr + dtaurydr + beta*d2udrdy + dudr*dbetady
-        source_rhoE_sng = -((cv.energy + dv.pressure)*dudr + dqrdr) \
-                                + tau_rr*dudr + v*dtaurydr \
-                                + 2.0*beta*dudr**2 \
-                                + beta*dudr*dvdy \
-                                + v*dudr*dbetady \
-                                + v*beta*d2udrdy
-        #source_spec_sng = - cv.species_mass*dudr + d_ij*dyidr
-        source_spec_sng = - cv.species_mass*dudr
-
-        source_mass = actx.np.where(
-            fluid_nodes_are_off_axis, source_mass_dom/fluid_nodes[0],
-            source_mass_sng)
-        source_rhoU = actx.np.where(
-            fluid_nodes_are_off_axis, source_rhoU_dom/fluid_nodes[0],
-            source_rhoU_sng)
-        source_rhoV = actx.np.where(
-            fluid_nodes_are_off_axis, source_rhoV_dom/fluid_nodes[0],
-            source_rhoV_sng)
-        source_rhoE = actx.np.where(
-            fluid_nodes_are_off_axis, source_rhoE_dom/fluid_nodes[0],
-            source_rhoE_sng)
-
-        source_spec = make_obj_array([
-                      actx.np.where(
-                          fluid_nodes_are_off_axis,
-                          source_spec_dom[i]/fluid_nodes[0],
-                          source_spec_sng[i])
-                      for i in range(nspecies)])
-
-        return make_conserved(dim=2, mass=source_mass, energy=source_rhoE,
-                       momentum=make_obj_array([source_rhoU, source_rhoV]),
-                       species_mass=source_spec)
-
-    def axisym_source_wall(dcoll, wv, wdv,  boundaries, grad_t):
-        #dkappadr = 0.0*wall_nodes[0]
-
-        kappa = wdv.thermal_conductivity
-        qr = - (kappa*grad_t)[0]
-        #d2Tdr2  = my_derivative_function(dcoll, grad_t[0], boundaries,
-        #                                 dd_vol_wall, "symmetry")[0]
-        #dqrdr = - (dkappadr*grad_t[0] + kappa*d2Tdr2)
-
-        source_rhoE_dom = - qr
-        source_rhoE_sng = 0.0
-        source_rhoE = actx.np.where(
-            wall_nodes_are_off_axis, source_rhoE_dom/wall_nodes[0], source_rhoE_sng)
-
-        return source_rhoE
-
     def unfiltered_rhs(t, state):
 
         stepper_state = make_stepper_state_obj(state)
@@ -6999,13 +7029,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 quadrature_tag=quadrature_tag,
                 fluid_operator_states_quad=fluid_operator_states_quad,
                 limiter_func=limiter_func,
-                ns_operator=ns_operator)
-
-            if use_axisymmetric:
-                wall_energy_rhs = wall_energy_rhs + \
-                    axisym_source_wall(dcoll, wv, wdv,
-                                       uncoupled_wall_boundaries,
-                                       grad_wall_t)
+                ns_operator=ns_operator,
+                axisymmetric=use_axisymmetric,
+                fluid_nodes=fluid_nodes,
+                wall_nodes=wall_nodes)
 
         else:
             fluid_rhs = ns_operator(
@@ -7023,9 +7050,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             if use_axisymmetric:
                 fluid_rhs = fluid_rhs + \
-                    axisym_source_fluid(dcoll, fluid_state,
-                                        uncoupled_fluid_boundaries,
-                                        grad_fluid_cv, grad_fluid_t)
+                    axisym_source_fluid(dcoll=dcoll, fluid_state=fluid_state,
+                                        fluid_nodes=fluid_nodes,
+                                        gas_model=gas_model,
+                                        quadrature_tag=quadrature_tag,
+                                        dd_vol_fluid=dd_vol_fluid,
+                                        boundaries=uncoupled_fluid_boundaries,
+                                        grad_cv=grad_fluid_cv, grad_t=grad_fluid_t)
 
         if use_combustion:
             fluid_rhs = fluid_rhs + \
