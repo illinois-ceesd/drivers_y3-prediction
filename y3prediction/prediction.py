@@ -5570,20 +5570,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             logmgr.add_watches([
                 ("memory_usage_python.max",
-                 "| Memory:\n| \t python memory: {value:7g} Mb\n")
+                 "| Memory:\n| \t host memory: {value:7g} Mb\n")
             ])
 
             try:
                 logmgr.add_watches([
                     ("memory_usage_gpu.max",
-                     "| \t gpu memory: {value:7g} Mb\n")
+                     "| \t device memory: {value:7g} Mb\n")
                 ])
             except KeyError:
                 pass
 
             logmgr.add_watches([
                 ("memory_usage_hwm.max",
-                 "| \t memory hwm: {value:7g} Mb\n")])
+                 "| \t host memory hwm: {value:7g} Mb\n")])
 
             from mirgecom.array_context import actx_class_is_numpy
 
@@ -5591,9 +5591,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 # numpy has no CL mempool
                 logmgr.add_watches([
                     ("memory_usage_mempool_managed.max",
-                    "| \t mempool total: {value:7g} Mb\n"),
+                    "| \t device mempool total: {value:7g} Mb\n"),
                     ("memory_usage_mempool_active.max",
-                    "| \t mempool active: {value:7g} Mb")
+                    "| \t device mempool active: {value:7g} Mb")
                 ])
 
         if use_profiling:
