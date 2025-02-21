@@ -1397,6 +1397,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
     rank = comm.Get_rank()
     nparts = comm.Get_size()
 
+    first_profiling_step = 4
+    last_profiling_step = 104
+
+    if first_profiling_step > 0:
+        MPI.Pcontrol(2)
+        MPI.Pcontrol(0)
+
     from mirgecom.simutil import global_reduce as _global_reduce
     global_reduce = partial(_global_reduce, comm=comm)
 
@@ -1420,6 +1427,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     from mirgecom.simutil import configurate
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
+
+    use_callbacks = configurate("use_callbacks", input_data, True)
 
     use_gmsh = configurate("use_gmsh", input_data, True)
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
@@ -3905,9 +3914,24 @@ def main(actx_class, restart_filename=None, target_filename=None,
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
                 comm, get_mesh_data, partition_generator_func=part_func)
 
-    local_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    fluid_nelements = volume_to_local_mesh_data["fluid"][0].nelements
+    wall_nelements = 0
     if use_wall:
-        local_nelements += volume_to_local_mesh_data["wall"][0].nelements
+        wall_nelements = volume_to_local_mesh_data["wall"][0].nelements
+    local_nelements = fluid_nelements + wall_nelements
+
+    # Early grep-ready nelement report
+    for rnk in range(nparts):
+        if rnk == rank:
+            print(f"Rank({rank}) mesh partition")
+            print("---------------------------")
+            if fluid_nelements > 0:
+                print(f"Number of fluid elements: {fluid_nelements}")
+            if wall_nelements > 0:
+                print(f"Number of wall elements: {wall_nelements}")
+            print(f"Number of elements: {local_nelements}")
+            print("---------------------------")
+        comm.Barrier()
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
@@ -5807,20 +5831,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             logmgr.add_watches([
                 ("memory_usage_python.max",
-                 "| Memory:\n| \t python memory: {value:7g} Mb\n")
+                 "| Memory:\n| \t host memory: {value:7g} Mb\n")
             ])
 
             try:
                 logmgr.add_watches([
                     ("memory_usage_gpu.max",
-                     "| \t gpu memory: {value:7g} Mb\n")
+                     "| \t device memory: {value:7g} Mb\n")
                 ])
             except KeyError:
                 pass
 
             logmgr.add_watches([
                 ("memory_usage_hwm.max",
-                 "| \t memory hwm: {value:7g} Mb\n")])
+                 "| \t host memory hwm: {value:7g} Mb\n")])
 
             from mirgecom.array_context import actx_class_is_numpy
 
@@ -5828,9 +5852,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 # numpy has no CL mempool
                 logmgr.add_watches([
                     ("memory_usage_mempool_managed.max",
-                    "| \t mempool total: {value:7g} Mb\n"),
+                    "| \t device mempool total: {value:7g} Mb\n"),
                     ("memory_usage_mempool_active.max",
-                    "| \t mempool active: {value:7g} Mb")
+                    "| \t device mempool active: {value:7g} Mb")
                 ])
 
         if use_profiling:
@@ -6893,9 +6917,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
             comm.Barrier()  # cross and dot t's and i's (sync point)
             raise
 
+        if step == first_profiling_step:
+            MPI.Pcontrol(2)
+            MPI.Pcontrol(1)
+
         return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
+
+        if step == last_profiling_step:
+            MPI.Pcontrol(0)
 
         if step == first_step+2:
             with gc_timer:
@@ -7287,12 +7318,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                   current_cfl, t_final, constant_cfl)
     """
 
+    pre_step_callback = my_pre_step if use_callbacks else None
+    post_step_callback = my_post_step if use_callbacks else None
     if advance_time:
         current_step, current_t, current_stepper_state_obj = \
             advance_state(rhs=my_rhs, timestepper=timestepper,
-                          pre_step_callback=my_pre_step,
-                          #pre_step_callback=None,
-                          post_step_callback=my_post_step,
+                          pre_step_callback=pre_step_callback,
+                          post_step_callback=post_step_callback,
                           istep=current_step, dt=current_dt,
                           t=current_t, t_final=t_final,
                           force_eval=force_eval,
@@ -7326,6 +7358,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa,
                                              smoothness_d=current_av_sd)
+
+    if last_profiling_step < 0:
+        MPI.Pcontrol(0)
+
     if use_wall:
         current_wv = current_stepper_state.wv
         current_wdv = create_wall_dependent_vars_compiled(current_wv)
