@@ -6866,7 +6866,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     entropy_min=stepper_state.smin,
                     dd=dd_vol_fluid, viz_theta=True)
 
-
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
@@ -6875,7 +6874,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                          smoothness_d=stepper_state.av_sd,
                                          entropy_min=stepper_state.smin)
 
-        print_stuff = True
+        print_stuff = False
         index = 6000
         if print_stuff is True:
             # initial state
