@@ -3121,7 +3121,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
+            rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -3144,7 +3144,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -7033,6 +7033,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         ones = 1. + actx.np.zeros_like(cv.mass)
         # fixed offset
         smin_i = ones*(smin_i - 0.05)
+        smin_i = ones*limiter_smin
 
         # This re-creation of the state resets *tseed* to current temp and forces the
         # limited cv into state
