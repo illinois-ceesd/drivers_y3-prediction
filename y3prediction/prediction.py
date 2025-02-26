@@ -104,7 +104,7 @@ from mirgecom.diffusion import (
 )
 from mirgecom.initializers import Uniform, MulticomponentLump
 from mirgecom.eos import (
-    IdealSingleGas, PyrometheusMixture,
+    IdealSingleGas, PyrometheusMixture, MixtureEOS,
     MixtureDependentVars, GasDependentVars
 )
 from mirgecom.transport import (SimpleTransport,
@@ -922,6 +922,29 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
     return cv_lim
 
 
+def hammer_species(cv):
+    # limit the species mass fraction (Y) to [0, 1.0] and
+    # sum(Y) = 1.0
+    actx = cv.array_context
+    aux = actx.np.zeros_like(cv.mass)
+    zeros_spec = actx.np.zeros_like(cv.mass)
+    ones_spec = zeros_spec + 1.0
+    spec_lim = cv.species_mass_fractions
+    for i in range(cv.nspecies):
+        spec_lim[i] = actx.np.where(actx.np.less(spec_lim[i], zeros_spec),
+                                    zeros_spec, spec_lim[i])
+        spec_lim[i] = actx.np.where(actx.np.greater(spec_lim[i], ones_spec),
+                                    ones_spec, spec_lim[i])
+        aux = aux + spec_lim[i]
+
+    spec_lim = spec_lim / aux
+    # return cv.replace(species_mass=cv.mass*spec_lim)
+    return make_conserved(dim=cv.dim, mass=cv.mass,
+                          momentum=cv.momentum,
+                          energy=cv.energy,
+                          species_mass=cv.mass*spec_lim)
+
+
 def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                          gas_model, dd, viz_theta=False):
     r"""Entropy-based positivity preserving limiter
@@ -934,7 +957,10 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     actx = cv.array_context
     nspecies = cv.nspecies
     dim = cv.dim
-    toler = 1.e-13
+    toler = 1.e-15
+    min_allowed_density = 1.e-6
+    min_allowed_pressure = 1.e-12
+
     ones = 1. + actx.np.zeros_like(cv.mass)
     element_vols = abs(op.elementwise_integral(dcoll, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
@@ -995,7 +1021,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     ##################
     #elem_avg_cv = _element_average_cv(dcoll, cv, dd)
     #rho_lim = elem_avg_cv.mass*0.1
-    rho_lim = 1.e-6
+    rho_lim = min_allowed_density
 
     cell_avgs = element_average(dcoll, dd, cv.mass, volumes=element_vols)
     #cell_avgs = elem_avg_cv.mass
@@ -1133,6 +1159,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         for i in range(0, nspecies):
             aux = aux + spec_lim[i]
             sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
+        for i in range(nspecies):
             # only rebalance where species limiting actually occured
             spec_lim[i] = actx.np.where(actx.np.greater(balance_spec, 0.),
                                         spec_lim[i]/aux, spec_lim[i])
@@ -1171,7 +1198,8 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                 cv=cv_update_rho, temperature=temperature_update_rho)
 
             kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-            positive_pressure = actx.np.greater(pressure_update_rho, 1.e-12)
+            positive_pressure = actx.np.greater(pressure_update_rho,
+                                                min_allowed_pressure)
 
             update_dv = positive_pressure
 
@@ -1222,7 +1250,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
 
         cv_update_y = make_conserved(dim=dim,
                                      mass=cv_update_rho.mass,
-                                     energy=cv_update_rho.energy,
+                                     energy=energy_lim,
                                      momentum=cv_update_rho.momentum,
                                      species_mass=cv_update_rho.mass*spec_lim)
     else:
@@ -1315,11 +1343,14 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     ])
     energy_lim = (cv_updated.energy +
                   theta_pressure*(elem_avg_cv_safe.energy - cv_updated.energy))
-    spec_lim = make_obj_array([cv_updated.species_mass[i] +
-        theta_pressure*(elem_avg_cv_safe.species_mass[i] -
-                        cv_updated.species_mass[i])
-        for i in range(0, nspecies)
-    ])
+    if isinstance(gas_model.eos, MixtureEOS):
+        spec_lim = make_obj_array([cv_updated.species_mass[i] +
+                                   theta_pressure*(elem_avg_cv_safe.species_mass[i] -
+                                                   cv_updated.species_mass[i])
+                                   for i in range(0, nspecies)
+                                   ])
+    else:
+        spec_lim = mass_lim * cv_updated.species_mass_fractions
 
     cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                             momentum=mom_lim,
@@ -1502,6 +1533,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nrestart = configurate("nrestart", input_data, 5000)
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
+    nspeccheck = configurate("nspeccheck", input_data, 1)
 
     # garbage collection frequency
     ngarbage = configurate("ngarbage", input_data, 10)
@@ -1775,6 +1807,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     total_pres_inflow = configurate("total_pres_inflow", input_data, 2.745e5)
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
     mf_o2 = configurate("mass_fraction_o2", input_data, 0.273)
+    mole_c2h4 = configurate("mole_c2h4", input_data, 0.5)
+    mole_h2 = configurate("mole_h2", input_data, 0.5)
 
     # injection flow properties
     total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
@@ -2232,7 +2266,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if fluid_gamma > 0:
         gamma = fluid_gamma
 
-    mf_c2h4 = mw_c2h4/(mw_c2h4 + mw_h2)
+    mf_c2h4 = mole_c2h4*mw_c2h4/(mole_c2h4*mw_c2h4 + mole_h2*mw_h2)
     mf_h2 = 1 - mf_c2h4
 
     # user can reset the mw to whatever they want
@@ -6721,9 +6755,60 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                 f"({guilty_node_x[i]}, {guilty_node_y[i]}, "
                                 f"{guilty_node_z[i]}): "
                                 f"data value {guilty_data[i]}")
-                if i > 50:
-                    logger.info("Violators truncated at 50")
+                if i > 5:
+                    logger.info("Violators truncated at 5")
                     break
+
+    def spec_check(cv):
+        health_error = False
+        ysum = actx.np.zeros_like(cv.mass)
+        spec_tol = 1e-16
+        for i in range(nspecies):
+            yspec = cv.species_mass_fractions[i]
+            ysum = ysum + yspec
+            if global_range_check(dd_vol_fluid, yspec, 0.0, 1+spec_tol):
+                health_error = True
+                y_min = vol_min(dd_vol_fluid, yspec)
+                y_max = vol_max(dd_vol_fluid, yspec)
+                y_min_loc = vol_min_loc(dd_vol_fluid, yspec)
+                y_max_loc = vol_max_loc(dd_vol_fluid, yspec)
+                if rank == 0:
+                    logger.info("Species mass fraction range violation:\n"
+                                "\tSpecified Limits "
+                                f"({health_mass_frac_min=}, "
+                                f"{health_mass_frac_max=})\n"
+                                f"\tGlobal Range     {species_names[i]}:"
+                                f"({y_min:1.3e}, {y_max:1.3e})")
+                logger.info(f"{rank=}: "
+                            f"Local Range      {species_names[i]}: "
+                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                print(f"{rank=}: "
+                      f"Local Range      {species_names[i]}: "
+                      f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                report_violators(yspec, 0.0, 1.+spec_tol)
+
+        ysum_m1 = actx.np.abs(ysum - 1.0)
+        sum_tol = 1e-15
+        if global_range_check(dd_vol_fluid, ysum_m1, 0., sum_tol):
+            health_error = True
+            local_max = actx.np.max(ysum)
+            local_min = actx.np.min(ysum)
+            global_min = vol_min(dd_vol_fluid, ysum)
+            global_max = vol_max(dd_vol_fluid, ysum)
+            global_min_loc = vol_min_loc(dd_vol_fluid, ysum)
+            global_max_loc = vol_max_loc(dd_vol_fluid, ysum)
+            if rank == 0:
+                logger.info("Total species mass fraction range violation:\n"
+                            f"{sum_tol=}), {global_min=}, {global_max=}\n"
+                            f"{global_min_loc=}, {global_max_loc=}")
+            logger.info(f"{rank=}: "
+                        f"Local sum:      {actx.to_numpy(local_max)=},"
+                        f" {actx.to_numpy(local_min)=}")
+            print(f"{rank=}: {actx.to_numpy(local_max)=}, "
+                  f"{actx.to_numpy(local_min)=}")
+            report_violators(ysum, 1.-sum_tol, 1.+sum_tol)
+
+        return health_error
 
     def my_health_check(fluid_state, wall_temperature):
         health_error = False
@@ -6973,6 +7058,25 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
 
+        # This check reports when species mass fractions (Y) violate
+        # the constraints of being in the range [0, 1] +/- 1e-16,
+        # and sum(Y) = 1 +/- 1e-15. If the ranges are violated,
+        # the snippet below will use *hammer_species* to force Y
+        # back into the expected range.
+        if nspecies > 0:
+            if check_step(step=step, interval=nspeccheck):
+                spec_errors = global_reduce(
+                    spec_check(state[0]), op="lor")
+                if spec_errors:
+                    if rank == 0:
+                        logger.info("Solution failed species check.")
+                    logger.info(f"{rank=}: Solution failed species check.")
+                    print(f"{rank=}: Solution failed species check - limiting more.")
+                    comm.Barrier()  # make msg before any rank raises
+                    # Don't raise, just hammer Y back to [0, 1], sum(Y)=1
+                    # raise MyRuntimeError("Failed simulation species check.")
+                    state[0] = hammer_species(state[0])
+
         stepper_state = make_stepper_state_obj(state)
 
         if check_step(step=step, interval=ngarbage):
@@ -6999,19 +7103,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             #smoothness = actx.np.zeros_like(stepper_state.cv.mass) + 1.0
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
-
-        # we can't get the limited viz data back from create_fluid_state
-        # so call the limiter directly first, basically doing the limiting twice
-        theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
-        theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
-        theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
-        if viz_level >= 2 and use_species_limiter == 2:
-            cv_lim, theta_rho, theta_Y, theta_pres = \
-                limit_fluid_state_lv(
-                    dcoll, cv=stepper_state.cv, gas_model=gas_model,
-                    temperature_seed=stepper_state.tseed,
-                    entropy_min=stepper_state.smin,
-                    dd=dd_vol_fluid, viz_theta=True)
 
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
@@ -7147,6 +7238,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
 
             if do_viz:
+                # we can't get the limited viz data back from create_fluid_state
+                # so call the limiter directly first, basically doing the limiting
+                # twice
+                theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+                theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+                theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
+                if viz_level >= 2 and use_species_limiter == 2:
+                    cv_lim, theta_rho, theta_Y, theta_pres = \
+                        limit_fluid_state_lv(
+                            dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                            temperature_seed=stepper_state.tseed,
+                            entropy_min=stepper_state.smin,
+                            dd=dd_vol_fluid, viz_theta=True)
+
                 # pack things up
                 if use_wall:
                     viz_state = make_obj_array([fluid_state, wv])
@@ -7168,6 +7273,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
         except MyRuntimeError:
             if rank == 0:
                 logger.error("Errors detected; attempting graceful exit.")
+
+            # we can't get the limited viz data back from create_fluid_state
+            # so call the limiter directly first, basically doing the limiting
+            # twice
+            theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+            theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+            theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
+            if viz_level >= 2 and use_species_limiter == 2:
+                cv_lim, theta_rho, theta_Y, theta_pres = \
+                    limit_fluid_state_lv(
+                        dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                        temperature_seed=stepper_state.tseed,
+                        entropy_min=stepper_state.smin,
+                        dd=dd_vol_fluid, viz_theta=True)
 
             if viz_interval_type == 0:
                 dump_number = step
@@ -7223,6 +7342,68 @@ def main(actx_class, restart_filename=None, target_filename=None,
             logmgr.tick_after()
 
         return state, dt
+
+    from arraycontext import outer
+    from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
+    from meshmode.discretization.connection import FACE_RESTR_ALL
+    from mirgecom.flux import num_flux_central
+
+    def my_derivative_function(dcoll, field, field_bounds, dd_vol,
+                               bnd_cond, comm_tag):
+
+        dd_vol_quad = dd_vol.with_discr_tag(quadrature_tag)
+        dd_allfaces_quad = dd_vol_quad.trace(FACE_RESTR_ALL)
+
+        interp_to_surf_quad = partial(
+            tracepair_with_discr_tag, dcoll, quadrature_tag)
+
+        def interior_flux(field_tpair):
+            dd_trace_quad = field_tpair.dd.with_discr_tag(quadrature_tag)
+            #normal_quad = actx.thaw(dcoll.normal(dd_trace_quad))
+            normal_quad = normal_vector(actx, dcoll, dd_trace_quad)
+            bnd_tpair_quad = interp_to_surf_quad(field_tpair)
+            flux_int = outer(
+                num_flux_central(bnd_tpair_quad.int, bnd_tpair_quad.ext),
+                normal_quad)
+
+            return op.project(dcoll, dd_trace_quad, dd_allfaces_quad, flux_int)
+
+        def boundary_flux(bdtag, bdry):
+            if isinstance(bdtag, DOFDesc):
+                bdtag = bdtag.domain_tag
+            dd_bdry_quad = dd_vol_quad.with_domain_tag(bdtag)
+            normal_quad = normal_vector(actx, dcoll, dd_bdry_quad)
+            int_soln_quad = op.project(dcoll, dd_vol, dd_bdry_quad, field)
+
+            # MJA, not sure about this
+            if bnd_cond == "symmetry" and bdtag == "symmetry":
+                ext_soln_quad = 0.0*int_soln_quad
+            else:
+                ext_soln_quad = 1.0*int_soln_quad
+
+            bnd_tpair = TracePair(bdtag, interior=int_soln_quad,
+                                  exterior=ext_soln_quad)
+            flux_bnd = outer(
+                num_flux_central(bnd_tpair.int, bnd_tpair.ext), normal_quad)
+
+            return op.project(dcoll, dd_bdry_quad, dd_allfaces_quad, flux_bnd)
+
+        field_quad = op.project(dcoll, dd_vol, dd_vol_quad, field)
+
+        return -1.0*op.inverse_mass(
+            dcoll, dd_vol_quad,
+            op.weak_local_grad(dcoll, dd_vol_quad, field_quad)
+            -  # noqa: W504
+            op.face_mass(
+                dcoll, dd_allfaces_quad,
+                sum(
+                    interior_flux(u_tpair) for u_tpair in interior_trace_pairs(
+                        dcoll, field, volume_dd=dd_vol, comm_tag=comm_tag))
+                + sum(
+                     boundary_flux(bdtag, bdry)
+                     for bdtag, bdry in field_bounds.items())
+            )
+        )
 
     def unfiltered_rhs(t, state):
 
