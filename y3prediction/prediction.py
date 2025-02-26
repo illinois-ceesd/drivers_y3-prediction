@@ -679,10 +679,11 @@ def coupled_ns_heat_operator(
             comm_tag=comm_tag)
 
     # Get the operator fluid states with the updated boundaries
-    fluid_operator_states_quad = make_operator_fluid_states(
-        dcoll, fluid_state, gas_model, fluid_all_boundaries,
-        quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
-        comm_tag=(comm_tag, _FluidOpStatesCommTag))
+    if fluid_operator_states_quad is None:
+        fluid_operator_states_quad = make_operator_fluid_states(
+            dcoll, fluid_state, gas_model, fluid_all_boundaries,
+            quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+            comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
     ns_result = ns_operator(
         dcoll=dcoll,
