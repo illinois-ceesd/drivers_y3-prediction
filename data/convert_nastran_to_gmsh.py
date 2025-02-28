@@ -40,17 +40,20 @@ def read_nastran_mesh(file_path):
         if current_record:
             records.append(current_record)
 
+        print("Reading from disk finished. Starting mesh processing")
         # operate on the concatenated file
         for line in records:
             if line.startswith("$ Node cards"):
                 reading_nodes = True
                 reading_elements = False
                 reading_physical_names = False
+                print("Processing Nodes")
                 continue
             elif line.startswith("$ Element cards"):
                 reading_elements = True
                 reading_nodes = False
                 reading_physical_names = False
+                print("Processing Elements")
                 continue
             elif line.startswith("$ Property cards"):
                 reading_elements = False
@@ -177,6 +180,7 @@ def write_gmsh_mesh(file_path, nodes, elements, mesh_format,
 
 def convert_mesh(input_mesh, output_mesh):
     # Read the nastran file
+    print(f"Reading mesh.")
     begin_read_time = time.perf_counter()
     nodes, elements, element_tags, physical_names, physical_dim = read_nastran_mesh(input_mesh)
     end_read_time = time.perf_counter()
@@ -202,7 +206,7 @@ def convert_mesh(input_mesh, output_mesh):
         #print(f"Element Nodes for Element {element_id}: {element_nodes}")
     print(f"Read {len(elements)} elements, first element id {first_element}, last element id {last_element}")
     end_minmax_time = time.perf_counter()
-    print(f"Spent {(end_read_time - begin_read_time):.1f} seconds finding min/max node and element numbers.")
+    print(f"Spent {(end_minmax_time - begin_minmax_time):.1f} seconds finding min/max node and element numbers.")
 
     # renumber nodes to start at 1
     begin_renumber_nodes_time = time.perf_counter()
