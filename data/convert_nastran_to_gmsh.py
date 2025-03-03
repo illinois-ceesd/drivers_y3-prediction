@@ -40,17 +40,20 @@ def read_nastran_mesh(file_path):
         if current_record:
             records.append(current_record)
 
+        print("Reading from disk finished. Starting mesh processing")
         # operate on the concatenated file
         for line in records:
             if line.startswith("$ Node cards"):
                 reading_nodes = True
                 reading_elements = False
                 reading_physical_names = False
+                print("Processing Nodes")
                 continue
             elif line.startswith("$ Element cards"):
                 reading_elements = True
                 reading_nodes = False
                 reading_physical_names = False
+                print("Processing Elements")
                 continue
             elif line.startswith("$ Property cards"):
                 reading_elements = False

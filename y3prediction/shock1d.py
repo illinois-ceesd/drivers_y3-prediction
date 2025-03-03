@@ -463,11 +463,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         # this only works for non-slanty meshes
         def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face):
 
-            if use_quads:
-                from meshmode.mesh import TensorProductElementGroup
-                group_cls = TensorProductElementGroup
-            else:
-                group_cls = None
+            from meshmode.mesh import TensorProductElementGroup
+            group_cls = TensorProductElementGroup if use_quads else None
 
             mesh = generate_regular_rect_mesh(
                 a=a, b=b, nelements_per_axis=nelements_per_axis,
@@ -480,7 +477,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             x_avg = np.sum(x, axis=1)/x.shape[1]
             tag_to_elements = {
                 "fluid": np.where(x_avg < fluid_length)[0],
-                "wall": np.where(x_avg > fluid_length)[0]}
+                "wall_insert": np.where(x_avg > fluid_length)[0]}
 
             return mesh, tag_to_elements
 
