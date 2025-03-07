@@ -149,6 +149,7 @@ from arraycontext import outer
 from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
 from meshmode.discretization.connection import FACE_RESTR_ALL
 from mirgecom.flux import num_flux_central
+import time
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -6703,6 +6704,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     def my_pre_step(step, t, dt, state):
 
+        if logmgr is None:
+            print(f"prestep entry time={time.time()}, {step=}")
+
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
 
@@ -6921,9 +6925,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
             MPI.Pcontrol(2)
             MPI.Pcontrol(1)
 
+        if logmgr is None:
+            print(f"prestep exit time={time.time()}")
+
         return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
+
+        if logmgr is None:
+            print(f"poststep entry time={time.time()}, {step=}")
 
         if step == last_profiling_step:
             MPI.Pcontrol(0)
@@ -6941,6 +6951,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
+
+        if logmgr is None:
+            print(f"poststep exit time={time.time()}")
 
         return state, dt
 
