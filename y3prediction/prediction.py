@@ -780,7 +780,7 @@ def element_average(dcoll, dd, field, volumes=None):
     actx = field.array_context
     cell_avgs = op.elementwise_integral(dcoll, dd, field)
     if volumes is None:
-        volumes = abs(op.elementwise_integral(
+        volumes = actx.np.abs(op.elementwise_integral(
             dcoll, dd, actx.np.zeros_like(field) + 1.0))
 
     return cell_avgs/volumes
@@ -1522,7 +1522,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                         input_data, "actii_2d")
     periodic_mesh = configurate("periodic_mesh", input_data, "False")
     noslip = configurate("noslip", input_data, True)
-    use_1d_part = configurate("use_1d_part", input_data, True)
+    use_1d_part = configurate("use_1d_part", input_data, False)
     part_tol = configurate("partition_tolerance", input_data, 0.01)
 
     # setting these to none in the input file toggles the check for that
@@ -3749,7 +3749,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     else:  # generate the grid from scratch
 
         # eventually encapsulate these inside a class for the respective inits
-        if init_case == "shock1d" or init_case == "flame1d":
+        if init_case == "shock1d" or init_case == "flame1d" or init_case == "unstart_ramp":
 
             def get_mesh_data():
                 if generate_mesh is True:
@@ -4554,7 +4554,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                 smoothness_kappa=smoothness_kappa,
                                 smoothness_d=smoothness_d,
                                 limiter_func=limiter_func,
-                                limiter_dd=dd_vol_fluid)
+                                limiter_dd=dd_vol_fluid,
+                                outline=False)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
@@ -4818,7 +4819,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid)
+                                       limiter_dd=dd_vol_fluid,
+                                       outline=False)
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
@@ -5432,8 +5434,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
             target_fluid_state, gas_model, limiter_func=limiter_func,
-            entropy_stable=use_esdg
-        )
+            # FIXME: Currently, freeze doesn't seem to process outlined functions
+            make_fluid_state_func=partial(make_fluid_state, outline=False),
+            entropy_stable=use_esdg)
 
     # is there a way to generalize this?
     if bndry_config["inflow"] == "isentropic_pressure_ramp":
@@ -6969,7 +6972,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid)
+                                       limiter_dd=dd_vol_fluid,
+                                       outline=False)
 
         cv = fluid_state.cv  # reset cv to the limited version
 
@@ -7268,8 +7272,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in reverse_ox_tpairs})
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
-                    dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
-                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    dcoll, actx.np.zeros_like(fluid_ox_mass), fluid_ox_boundaries,
+                    # FIXME: Figure out why this was OK before, but not now
+                    # dcoll, 0, fluid_ox_boundaries,
+                    fluid_ox_mass, quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
