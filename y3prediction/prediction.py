@@ -975,19 +975,28 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         print(f"{dd=}")
         print(f"{dd.domain_tag=}")
         print(f"{dd.domain_tag.tag=}")
+        print(f"{type(dd.domain_tag.tag)=}")
         print(f"{cv.mass[0].shape=} elements in discretization")
 
         my_rank = dcoll.mpi_communicator.Get_rank()
 
     print_all_nodes = False
-    index = 0
+    index = [0]
+    from meshmode.discretization.connection.face import FACE_RESTR_INTERIOR
     if print_stuff is True and isinstance(dd.domain_tag, VolumeDomainTag):
-        print(f"volume limiter {rank=}")
-        index = 6000
+        index = [6000]
+        print(f"volume limiter {rank=}, element index {index}")
     elif print_stuff is True and (isinstance(dd.domain_tag, BoundaryDomainTag) and
           dd.domain_tag.tag == "noslip_wall"):
-        print(f"isothermal_wall limiter {rank=}")
-        index = 0
+        index = [0]
+        print(f"isothermal_wall limiter {rank=}, element index {index}")
+        print_all_nodes = False
+    elif print_stuff is True and (isinstance(dd.domain_tag, BoundaryDomainTag) and
+          #isinstance(dd.domain_tag.tag, FACE_RESTR_INTERIOR)):
+          dd.domain_tag.tag is FACE_RESTR_INTERIOR):
+        index = [76755, 5940, 80880]
+        for ind in index:
+            print(f"interior volume faces {rank=}, element index {ind}")
         print_all_nodes = False
     else:
         print_stuff = False
@@ -1009,15 +1018,14 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             print(f"element location x {nodes_x[0]=}")
             print(f"element location y {nodes_y[0]=}")
         else:
-            print(f"element location x {nodes_x[0][index]=}")
-            print(f"element location y {nodes_y[0][index]=}")
+            for ind in index:
+                print(f"element {ind} location x {nodes_x[0][ind]=}")
+                print(f"element {ind} location y {nodes_y[0][ind]=}")
         #if (isinstance(dd.domain_tag, BoundaryDomainTag) and
               #dd.domain_tag.tag == "isothermal_wall"):
             #print(f"element location x {nodes_x[0]=}")
             #print(f"element location y {nodes_y[0]=}")
         print("eeee")
-
-    print_stuff = False
 
     if print_stuff is True:
         temperature_initial = gas_model.eos.temperature(
@@ -1025,15 +1033,17 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         pressure_initial = gas_model.eos.pressure(
             cv=cv, temperature=temperature_initial)
         # initial state
-        data = actx.to_numpy(cv.mass)
-        print(f"cv.mass \n {data[0][index]}")
-        data = actx.to_numpy(temperature_initial)
-        print(f"temperature_initial \n {data[0][index]}")
-        data = actx.to_numpy(pressure_initial)
-        print(f"pressure_initial \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(cv.species_mass_fractions)
-            print(f"Y_initial[{i}] \n {data[i][0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            data = actx.to_numpy(cv.mass)
+            print(f"cv.mass \n {data[0][ind]}")
+            data = actx.to_numpy(temperature_initial)
+            print(f"temperature_initial \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_initial)
+            print(f"pressure_initial \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y_initial[{i}] \n {data[i][0][ind]}")
 
     #print(f"inside limiter")
 
@@ -1078,26 +1088,28 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         #print(f"{theta_rho=}")
         #print(f"{theta_pressure=}")
         print("After rho limit")
-        data = actx.to_numpy(theta_rho)
-        print(f"theta_rho \n {data[0][index]}")
-        data = actx.to_numpy(cell_avgs)
-        print(f"cell_avgs \n {data[0][index]}")
-        temperature_rho = gas_model.eos.temperature(
-            cv=cv_update_rho, temperature_seed=temperature_seed)
-        pressure_rho = gas_model.eos.pressure(
-            cv=cv_update_rho, temperature=temperature_rho)
-        # initial state
-        data = actx.to_numpy(cv_update_rho.mass)
-        print(f"cv.mass \n {data[0][index]}")
-        data = actx.to_numpy(temperature_rho)
-        print(f"temperature_rho \n {data[0][index]}")
-        data = actx.to_numpy(pressure_rho)
-        print(f"pressure_rho \n {data[0][index]}")
-        #data = actx.to_numpy(temperature_seed)
-        #print(f"temperature_seed \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(cv.species_mass_fractions)
-            print(f"Y_rho[{i}] \n {data[i][0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            data = actx.to_numpy(theta_rho)
+            print(f"theta_rho \n {data[0][ind]}")
+            data = actx.to_numpy(cell_avgs)
+            print(f"cell_avgs \n {data[0][ind]}")
+            temperature_rho = gas_model.eos.temperature(
+                cv=cv_update_rho, temperature_seed=temperature_seed)
+            pressure_rho = gas_model.eos.pressure(
+                cv=cv_update_rho, temperature=temperature_rho)
+            # initial state
+            data = actx.to_numpy(cv_update_rho.mass)
+            print(f"cv.mass \n {data[0][ind]}")
+            data = actx.to_numpy(temperature_rho)
+            print(f"temperature_rho \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_rho)
+            print(f"pressure_rho \n {data[0][ind]}")
+            #data = actx.to_numpy(temperature_seed)
+            #print(f"temperature_seed \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y_rho[{i}] \n {data[i][0][ind]}")
 
     ##################
     # 2.0 limit the species mass fractions
@@ -1117,15 +1129,6 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                 volumes=element_vols)
             cell_avgs = actx.np.where(actx.np.greater(cell_avgs, mmin), cell_avgs,
                                       mmin)
-
-            if print_stuff is True:
-                np.set_printoptions(threshold=sys.maxsize, precision=16)
-                # initial state
-                #print(f"{theta_rho=}")
-                #print(f"{theta_pressure=}")
-                print("species  limit")
-                data = actx.to_numpy(cell_avgs)
-                print(f"cell_avgs \n {data[0][index]}")
 
             _theta = actx.np.maximum(0.,
                 actx.np.where(actx.np.less(mmin_i + do_limit_toler, mmin),
@@ -1155,9 +1158,11 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                                cell_avgs - cv_update_rho.species_mass_fractions[i]))
 
             if print_stuff is True:
-                np.set_printoptions(threshold=sys.maxsize, precision=16)
-                data = actx.to_numpy(spec_lim[i])
-                print(f"spec_lim[i] \n {data[0][index]}")
+                for ind in index:
+                    print(f"element {ind}")
+                    np.set_printoptions(threshold=sys.maxsize, precision=16)
+                    data = actx.to_numpy(spec_lim[i])
+                    print(f"spec_lim[i] \n {data[0][ind]}")
 
         # limit the species mass fraction sum to 1.0
         aux = actx.np.zeros_like(cv_update_rho.mass)
@@ -1212,16 +1217,18 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             cv=cv_update_y, temperature_seed=temperature_seed)
         pressure_update_y = gas_model.eos.pressure(
             cv=cv_update_y, temperature=temperature_update_y)
-        data = actx.to_numpy(temperature_update_y)
-        print(f"temperature_update_y \n {data[0][index]}")
-        data = actx.to_numpy(pressure_update_y)
-        print(f"pressure_update_y \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(theta_spec)
-            print(f"theta_spec[{i}] \n {data[i][0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(cv_update_y.species_mass_fractions)
-            print(f"Y_update_y[{i}] \n {data[i][0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            data = actx.to_numpy(temperature_update_y)
+            print(f"temperature_update_y \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_update_y)
+            print(f"pressure_update_y \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(theta_spec)
+                print(f"theta_spec[{i}] \n {data[i][0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_update_y.species_mass_fractions)
+                print(f"Y_update_y[{i}] \n {data[i][0][ind]}")
 
     ##################
     # 3.0 find the average element cv and pressure
@@ -1367,52 +1374,51 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         #print(f"{temperature_final}")
         #print(f"{temp_resid=}")
         print("All done limiting")
-        #data = actx.to_numpy(temp_resid)
-        #print(f"temp_resid \n {data[0][index]}")
-        data = actx.to_numpy(theta_rho)
-        print(f"theta_rho \n {data[0][index]}")
-        data = actx.to_numpy(theta_pressure)
-        print(f"theta_pressure \n {data[0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            #data = actx.to_numpy(temp_resid)
+            #print(f"temp_resid \n {data[0][ind]}")
+            data = actx.to_numpy(theta_rho)
+            print(f"theta_rho \n {data[0][ind]}")
+            data = actx.to_numpy(theta_pressure)
+            print(f"theta_pressure \n {data[0][ind]}")
 
-        data = actx.to_numpy(entropy_min)
-        print(f"entropy_min \n {data[0][index]}")
-        entropy_initial = actx.np.log(pressure_initial/cv.mass**1.4)
-        data = actx.to_numpy(entropy_initial)
-        print(f"entropy_initial \n {data[0][index]}")
-        entropy_final = actx.np.log(pressure_final/cv_lim.mass**1.4)
-        data = actx.to_numpy(entropy_final)
-        print(f"entropy_final \n {data[0][index]}")
+            data = actx.to_numpy(entropy_min)
+            print(f"entropy_min \n {data[0][ind]}")
+            entropy_initial = actx.np.log(pressure_initial/cv.mass**1.4)
+            data = actx.to_numpy(entropy_initial)
+            print(f"entropy_initial \n {data[0][ind]}")
+            entropy_final = actx.np.log(pressure_final/cv_lim.mass**1.4)
+            data = actx.to_numpy(entropy_final)
+            print(f"entropy_final \n {data[0][ind]}")
 
-        data = actx.to_numpy(theta_savg)
-        print(f"theta_savg \n {data[0][index]}")
-        data = actx.to_numpy(theta_smin)
-        print(f"theta_smin_i \n {data[0][index]}")
-        data = actx.to_numpy(theta_smin_i)
-        print(f"theta_smin_i \n {data[0][index]}")
+            data = actx.to_numpy(theta_savg)
+            print(f"theta_savg \n {data[0][ind]}")
+            data = actx.to_numpy(theta_smin)
+            print(f"theta_smin_i \n {data[0][ind]}")
+            data = actx.to_numpy(theta_smin_i)
+            print(f"theta_smin_i \n {data[0][ind]}")
 
-        for i in range(0, nspecies):
-            data = actx.to_numpy(theta_spec)
-            print(f"theta_Y[{i}] \n {data[i][0][index]}")
-        data = actx.to_numpy(cv_lim.mass)
-        print(f"cv_lim.mass \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(cv_lim.species_mass_fractions)
-            print(f"Y_final[{i}] \n {data[i][0][index]}")
-        for i in range(0, dim):
-            data = actx.to_numpy(cv_lim.momentum)
-            print(f"cv_lim.momentum_final[{i}] \n {data[i][0][index]}")
-        for i in range(0, dim):
-            data = actx.to_numpy(cv_lim.velocity)
-            print(f"cv_lim.velocity_final[{i}] \n {data[i][0][index]}")
-        data = actx.to_numpy(temperature_final)
-        print(f"temperature_final \n {data[0][index]}")
-        data = actx.to_numpy(pressure_final)
-        print(f"pressure_final \n {data[0][index]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(theta_spec)
+                print(f"theta_Y[{i}] \n {data[i][0][ind]}")
+            data = actx.to_numpy(cv_lim.mass)
+            print(f"cv_lim.mass \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_lim.species_mass_fractions)
+                print(f"Y_final[{i}] \n {data[i][0][ind]}")
+            for i in range(0, dim):
+                data = actx.to_numpy(cv_lim.momentum)
+                print(f"cv_lim.momentum_final[{i}] \n {data[i][0][ind]}")
+            for i in range(0, dim):
+                data = actx.to_numpy(cv_lim.velocity)
+                print(f"cv_lim.velocity_final[{i}] \n {data[i][0][ind]}")
+            data = actx.to_numpy(temperature_final)
+            print(f"temperature_final \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_final)
+            print(f"pressure_final \n {data[0][ind]}")
 
-    if print_stuff is True:
-        print("End of limiting")
-        print(f"{dd.domain_tag=}")
-        print(f"{dd.domain_tag.tag=}")
+            print("End of limiting")
 
     if viz_theta:
         return make_obj_array([cv_lim, theta_rho,
@@ -7436,7 +7442,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_sd = stepper_state.av_sd
         smin = stepper_state.smin
 
-        print_stuff = False
+        print_stuff = True
         index = 6000
         if print_stuff is True:
             # initial state
