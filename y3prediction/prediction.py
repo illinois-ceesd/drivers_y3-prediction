@@ -1371,7 +1371,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False):
+         disable_fallbacks=False, profile_steps=None):
+
+    if profile_steps:
+        profile_steps = frozenset(profile_steps)
+    else:
+        profile_steps = frozenset()
+
+    if profile_steps:
+        import pyinstrument
+        profiler = pyinstrument.Profiler()
 
     allow_fallbacks = not disable_fallbacks
     # control log messages
@@ -6706,6 +6715,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
 
+        if step in profile_steps:
+            profiler.start()
+
         stepper_state = make_stepper_state_obj(state)
 
         if check_step(step=step, interval=ngarbage):
@@ -6942,6 +6954,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
+
+        if step-1 in profile_steps:
+            profiler.stop()
+            if logmgr:
+                html = profiler.output_html()
+                logmgr.set_constant(f"pyinstrument_profile_step{step}", html)
+            else:
+                print(profiler.output_text(unicode=True, color=True))
+            profiler.reset()
 
         return state, dt
 

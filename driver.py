@@ -38,6 +38,9 @@ if __name__ == "__main__":
     parser.add_argument("--numpy", action="store_true",
         help="use numpy-based eager actx.")
 
+    parser.add_argument("--profile-steps", type=int, nargs="+",
+                        help="enable profiling specific time step(s) [OFF]")
+
     args = parser.parse_args()
 
     # for writing output
@@ -86,4 +89,5 @@ if __name__ == "__main__":
          disable_logpyle=args.nolog,
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
-         disable_fallbacks=args.disable_fallbacks)
+         disable_fallbacks=args.disable_fallbacks,
+         profile_steps=args.profile_steps)
