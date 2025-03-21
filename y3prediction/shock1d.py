@@ -482,6 +482,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             group_cls = TensorProductElementGroup if use_quads else None
             if periodic is False:
                 periodic = (False,)*dim
+                if dim == 3:
+                    periodic[2] = True
             elif periodic and noflow:
                 periodic = [False, True]
                 if dim == 3:
