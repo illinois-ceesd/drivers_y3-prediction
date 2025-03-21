@@ -480,14 +480,15 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             from meshmode.mesh import TensorProductElementGroup
             dim = len(a)
             group_cls = TensorProductElementGroup if use_quads else None
-            if periodic is False:
-                periodic = (False,)*dim
-                if dim == 3:
-                    periodic[2] = True
-            elif periodic and noflow:
-                periodic = [False, True]
-                if dim == 3:
-                    periodic = [False, True, True]
+            periodic = (False, True, False)
+            # if periodic is False:
+            #    periodic = (False,)*dim
+            #    if dim == 3:
+            #        periodic[2] = True
+            # elif periodic and noflow:
+            #    periodic = [False, True]
+            #    if dim == 3:
+            #        periodic = [False, True, True]
 
             mesh = generate_regular_rect_mesh(
                 a=a, b=b, nelements_per_axis=nelements_per_axis,
@@ -522,19 +523,21 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         else:
             a = (bottom_inflow[0], bottom_inflow[1], 0.)
             b = (top_wall[0], top_wall[1], 0.02)
-            wall_farfield = ["+x", "-y", "+y", "-z", "+z"]
-            if noflow and periodic:
-                wall_farfield = ["-x"]
+            # wall_farfield = ["+x", "-y", "+y", "-z", "+z"]
+            isothermal_wall = ["-z", "+z"]
+            wall_farfield = ["+x", "-z", "+z"]
+            # if noflow and periodic:
+            #    wall_farfield = ["-x"]
             boundary_tag_to_face = {
                 "inflow": ["-x"],
                 "outflow": ["+x"],
                 "flow": ["-x", "+x"],
-                "noflow_fluid_farfield": ["-x"],
+                "fluid_farfield": ["-x"],
                 "noflow_wall_farfield": ["+x"],
-                "isothermal_wall": ["-y", "+y", "-z", "+z"],
+                "isothermal_wall": isothermal_wall,
                 "wall_farfield": wall_farfield,
-                "noflow_periodic": ["-y", "+y", "-z", "+z"]}
-            nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
+                "noflow_periodic": ["-y", "+y"]}
+            nelements_per_axis = (int((fluid_length+wall_length)/size),
                                   int(height/size), int(.02/size))
             #nelements_per_axis = (3, 2, 2)
             #print(f"{nelements_per_axis=}")
