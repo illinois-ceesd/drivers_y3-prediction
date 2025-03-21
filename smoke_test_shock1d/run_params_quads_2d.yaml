@@ -5,7 +5,7 @@ init_case: shock1d
 dimen: 2
 use_tensor_product_elements: True
 use_gmsh: False
-mesh_size: 0.000031
+mesh_size: 0.00003
 bl_ratio: 1
 interface_ratio: 1
 transfinite: True

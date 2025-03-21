@@ -28,7 +28,8 @@ class PlanarDiscontinuityMulti:
             velocity_cross=None,
             species_mass_left=None, species_mass_right=None,
             convective_velocity=None, sigma=0.5,
-            temp_sigma=0., vel_sigma=0., temp_wall=300., y_top=0.01, y_bottom=-0.01
+            temp_sigma=0., vel_sigma=0., temp_wall=300., y_top=0.01, y_bottom=-0.01,
+            geom_scale=None, noflow=False
     ):
         r"""Initialize mixture parameters.
 
@@ -81,7 +82,11 @@ class PlanarDiscontinuityMulti:
             species_mass_left = np.zeros(shape=(nspecies,))
         if species_mass_right is None:
             species_mass_right = np.zeros(shape=(nspecies,))
+        if geom_scale is None:
+            geom_scale = np.ones(shape=(dim,))
 
+        self._noflow = noflow
+        self._geom_scale = geom_scale
         self._nspecies = nspecies
         self._dim = dim
         self._disc_location = disc_location
@@ -144,6 +149,8 @@ class PlanarDiscontinuityMulti:
         xtanh = 1.0/self._sigma*dist
         weight = 0.5*(1.0 - actx.np.tanh(xtanh))
         y = self._yl + (self._yr - self._yl)*weight
+        if self._noflow:
+            y = 0.*y + self._yr
 
         # now solve for T, P, velocity
         dist = np.dot(x0 - x_vec, self._normal)
@@ -152,13 +159,17 @@ class PlanarDiscontinuityMulti:
         pressure = self._pl + (self._pr - self._pl)*weight
         temperature = self._tl + (self._tr - self._tl)*weight
         velocity = self._ul + (self._ur - self._ul)*weight + self._ut
+        if self._noflow:
+            pressure = self._pr
+            temperature = self._tr
+            velocity = 0.0*velocity
 
         # modify the temperature in the near wall region to match the
         # isothermal boundaries
         y_top = self._y_top
         y_bottom = self._y_bottom
         sigma = self._temp_sigma
-        if sigma > 0:
+        if sigma > 0 and not self._noflow:
             wall_temperature = self._temp_wall
             smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
             smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
@@ -168,10 +179,12 @@ class PlanarDiscontinuityMulti:
         # modify the velocity in the near wall region to match the
         # noslip boundaries
         sigma = self._vel_sigma
-        if sigma > 0:
+        if sigma > 0 and not self._noflow:
             smoothing_top = smooth_step(actx, -sigma*(ypos - y_top))
             smoothing_bottom = smooth_step(actx, sigma*(ypos - y_bottom))
             velocity = velocity*smoothing_top*smoothing_bottom
+        if self._noflow:
+            velocity = 0.0*velocity
 
         mass = eos.get_density(pressure, temperature,
                                species_mass_fractions=y)
@@ -190,10 +203,10 @@ class PlanarDiscontinuityMulti:
 
 def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
              transfinite=False, use_wall=True, use_quads=False,
-             use_gmsh=True):
+             use_gmsh=True, geom_scale=1., periodic=False, noflow=False):
     """Generate a grid using `gmsh`."""
 
-    height = 0.02
+    height = 0.02*geom_scale
     fluid_length = 0.1
     wall_length = 0.05
     bottom_inflow = np.zeros(shape=(dim,))
@@ -206,7 +219,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     # rotate the mesh around the bottom-left corner
     theta = angle/180.*np.pi
     bottom_inflow[0] = 0.0
-    bottom_inflow[1] = -0.01
+    bottom_inflow[1] = -0.01*geom_scale
     top_inflow[0] = bottom_inflow[0] - height*np.sin(theta)
     top_inflow[1] = bottom_inflow[1] + height*np.cos(theta)
 
@@ -461,14 +474,22 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         from meshmode.mesh.generation import generate_regular_rect_mesh
 
         # this only works for non-slanty meshes
-        def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face):
+        def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face,
+                              periodic=False, noflow=False):
 
             from meshmode.mesh import TensorProductElementGroup
+            dim = len(a)
             group_cls = TensorProductElementGroup if use_quads else None
+            if periodic is False:
+                periodic = (False,)*dim
+            elif periodic and noflow:
+                periodic = [False, True]
+                if dim == 3:
+                    periodic = [False, True, True]
 
             mesh = generate_regular_rect_mesh(
                 a=a, b=b, nelements_per_axis=nelements_per_axis,
-                group_cls=group_cls,
+                group_cls=group_cls, periodic=periodic,
                 boundary_tag_to_face=boundary_tag_to_face
                 )
 
@@ -488,6 +509,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 "inflow": ["-x"],
                 "outflow": ["+x"],
                 "flow": ["-x", "+x"],
+                "noflow_fluid_farfield": ["-x"],
                 "isothermal_wall": ["-y", "+y"],
                 "periodic_y_top": ["+y"],
                 "periodic_y_bottom": ["-y"],
@@ -498,18 +520,24 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         else:
             a = (bottom_inflow[0], bottom_inflow[1], 0.)
             b = (top_wall[0], top_wall[1], 0.02)
+            wall_farfield = ["+x", "-y", "+y", "-z", "+z"]
+            if noflow and periodic:
+                wall_farfield = ["-x"]
             boundary_tag_to_face = {
                 "inflow": ["-x"],
                 "outflow": ["+x"],
                 "flow": ["-x", "+x"],
+                "noflow_fluid_farfield": ["-x"],
+                "noflow_wall_farfield": ["+x"],
                 "isothermal_wall": ["-y", "+y", "-z", "+z"],
-                "wall_farfield": ["+x", "-y", "+y", "-z", "+z"]}
+                "wall_farfield": wall_farfield,
+                "noflow_periodic": ["-y", "+y", "-z", "+z"]}
             nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
-                                  int(height/size),
-                                  int(height/size))
+                                  int(height/size), int(.02/size))
             #nelements_per_axis = (3, 2, 2)
             #print(f"{nelements_per_axis=}")
 
         return partial(get_meshmode_mesh,
                        a=a, b=b, boundary_tag_to_face=boundary_tag_to_face,
-                       nelements_per_axis=nelements_per_axis)
+                       nelements_per_axis=nelements_per_axis, periodic=periodic,
+                       noflow=noflow)

@@ -88,6 +88,7 @@ from mirgecom.boundary import (
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
     PressureOutflowBoundary,
+    FarfieldBoundary,
     DummyBoundary
 )
 from mirgecom.diffusion import (
@@ -1372,8 +1373,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False):
+         disable_fallbacks=False, geom_scale=1., noflow=False):
 
+    if geom_scale is None:
+        geom_scale = 1
+
+    noflow = False
     allow_fallbacks = not disable_fallbacks
     # control log messages
     logger = logging.getLogger(__name__)
@@ -1583,7 +1588,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "pressure_outflow",
         "riemann_outflow",
         "prescribed",
-        "isentropic_pressure_ramp"
+        "isentropic_pressure_ramp",
+        "fluid_farfield"
     ]
 
     # boundary sanity check
@@ -2350,6 +2356,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
     transport_beta = 4.093e-7
     transport_sigma = 2.0
     transport_n = 0.666
+    ff_press = 0
+    ff_temp = 0
+    ff_y = 0
+    # ff_vel = 0
 
     # use the species names to populate the default species diffusivities
     default_species_diffusivity = {}
@@ -2602,6 +2612,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tpost-shock total pressure {pressure2_total}")
             print(f"\tpost-shock total temperature {temperature2_total}")
             print(f"\tpost-shock mach {mach2}")
+        ff_press = pressure1
+        ff_temp = temperature1
+        # ff_velocity = 0.0*vel_right
+        ff_y = y_fuel
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -2621,7 +2635,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             species_mass_right=y_fuel,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
-            temp_sigma=temp_sigma)
+            temp_sigma=temp_sigma,
+            noflow=noflow)
 
     if init_case == "mixing_layer":
         temperature = 300.
@@ -3751,6 +3766,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # eventually encapsulate these inside a class for the respective inits
         if init_case == "shock1d" or init_case == "flame1d":
+            periodic = noflow
 
             def get_mesh_data():
                 if generate_mesh is True:
@@ -3761,7 +3777,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         dim=dim, angle=0.*mesh_angle, size=mesh_size,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
-                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                        use_quads=use_tpe, use_gmsh=use_gmsh,
+                        geom_scale=geom_scale, periodic=periodic,
+                        noflow=noflow)()
                 else:
                     if rank == 0:
                         print("Reading mesh")
@@ -3789,7 +3807,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 #print(f"{mesh=}")
 
                 # apply periodicity
-                if periodic_mesh is True:
+                if periodic_mesh is True and use_gmsh:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
 
@@ -4040,7 +4058,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "adiabatic_noslip": AdiabaticNoslipWallBoundary(),
         "adiabatic_slip": AdiabaticSlipBoundary(),
         "isothermal_slip": IsothermalSlipWallBoundary(),
-        "pressure_outflow": PressureOutflowBoundary(outflow_pressure)
+        "pressure_outflow": PressureOutflowBoundary(outflow_pressure),
+        "fluid_farfield":  FarfieldBoundary(
+            free_stream_pressure=ff_press,
+            free_stream_velocity=np.zeros(shape=(dim,)),
+            free_stream_temperature=ff_temp,
+            free_stream_mass_fractions=ff_y
+        )
     }
 
     wall_farfield = DirichletDiffusionBoundary(temp_wall)
@@ -6093,7 +6117,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # in post-processing
         fluid_viz_fields = [("cv", cv),
                             ("dv", dv),
-                            ("dt" if constant_cfl else "cfl", ts_field_fluid)]
+                            ("dt" if constant_cfl else "cfl", ts_field_fluid),
+                            ("rank", rank)]
 
         if use_wall:
             wall_kappa = wdv.thermal_conductivity
@@ -6108,7 +6133,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 ("wv", wv),
                 ("wall_kappa", wall_kappa),
                 ("wall_temperature", wall_temperature),
-                ("dt" if constant_cfl else "cfl", ts_field_wall)
+                ("dt" if constant_cfl else "cfl", ts_field_wall),
+                ("rank", rank)
             ]
 
         # extra viz quantities, things here are often used for post-processing
@@ -6706,6 +6732,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if logmgr is None:
             print(f"prestep entry time={time.time()}, {step=}")
+        else:
+            logmgr.tick_before()
 
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
@@ -6751,8 +6779,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
 
         try:
-            if logmgr:
-                logmgr.tick_before()
 
             # disable non-constant dt timestepping for now
             # re-enable when we're ready
