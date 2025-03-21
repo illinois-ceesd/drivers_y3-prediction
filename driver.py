@@ -22,6 +22,8 @@ if __name__ == "__main__":
                         action="store", help="simulation case name")
     parser.add_argument("-s", "--scale", type=int,
                         help="scale geometry by int factor")
+    parser.add_argument("--noflow", action="store_true", default=False,
+                        help="Use a noflow configuration for shock1d")
     parser.add_argument("--esdg", action="store_true", default=False,
                         help="enable entropy-stable for inviscid terms. [OFF]")
     parser.add_argument("--profile", action="store_true", default=False,
@@ -86,4 +88,4 @@ if __name__ == "__main__":
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
          disable_fallbacks=args.disable_fallbacks,
-         geom_scale=args.scale)
+         geom_scale=args.scale, noflow=args.noflow)

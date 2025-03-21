@@ -1373,12 +1373,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False, geom_scale=1., noflow=False):
+         disable_fallbacks=False, geom_scale=None, noflow=False):
 
     if geom_scale is None:
-        geom_scale = 1
+        geom_scale = 1.
 
-    noflow = False
     allow_fallbacks = not disable_fallbacks
     # control log messages
     logger = logging.getLogger(__name__)
@@ -3766,7 +3765,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # eventually encapsulate these inside a class for the respective inits
         if init_case == "shock1d" or init_case == "flame1d":
-            periodic = noflow
+            periodic = periodic_mesh or noflow
 
             def get_mesh_data():
                 if generate_mesh is True:
