@@ -10,6 +10,8 @@ bl_ratio: 1
 interface_ratio: 1
 transfinite: True
 mesh_angle: 0.
+use_1d_part: True
+partition_axis: 'Y'
 #
 # parameters to control the initialization
 #
