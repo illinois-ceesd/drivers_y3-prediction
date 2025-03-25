@@ -6718,6 +6718,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if step in profile_steps:
             profiler.start()
 
+        if logmgr:
+            logmgr.tick_before()
+
         stepper_state = make_stepper_state_obj(state)
 
         if check_step(step=step, interval=ngarbage):
@@ -6774,9 +6777,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
 
         try:
-            if logmgr:
-                logmgr.tick_before()
-
             # disable non-constant dt timestepping for now
             # re-enable when we're ready
 
