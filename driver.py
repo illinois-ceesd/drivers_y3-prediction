@@ -20,6 +20,8 @@ if __name__ == "__main__":
                         action="store", help="simulation case name")
     parser.add_argument("-g", "--logpath", type=ascii, dest="log_path", nargs="?",
                         action="store", help="simulation case name")
+    parser.add_argument("-s", "--scale", type=float, default=1.,
+                        help="scale geometry by int factor")
     parser.add_argument("--esdg", action="store_true", default=False,
                         help="enable entropy-stable for inviscid terms. [OFF]")
     parser.add_argument("--profile", action="store_true", default=False,
@@ -80,7 +82,7 @@ if __name__ == "__main__":
     main(actx_class, restart_filename=restart_filename,
          target_filename=target_filename,
          user_input_file=input_file, log_path=log_path,
-         disable_logpyle=args.nolog,
+         disable_logpyle=args.nolog, geom_scale=args.scale,
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
          disable_fallbacks=args.disable_fallbacks)

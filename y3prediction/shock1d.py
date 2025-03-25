@@ -190,10 +190,10 @@ class PlanarDiscontinuityMulti:
 
 def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
              transfinite=False, use_wall=True, use_quads=False,
-             use_gmsh=True):
+             use_gmsh=True, geom_scale=1., periodic=False):
     """Generate a grid using `gmsh`."""
 
-    height = 0.02
+    height = 0.02*geom_scale
     fluid_length = 0.1
     wall_length = 0.05
     bottom_inflow = np.zeros(shape=(dim,))
@@ -206,7 +206,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     # rotate the mesh around the bottom-left corner
     theta = angle/180.*np.pi
     bottom_inflow[0] = 0.0
-    bottom_inflow[1] = -0.01
+    bottom_inflow[1] = -0.01*geom_scale
     top_inflow[0] = bottom_inflow[0] - height*np.sin(theta)
     top_inflow[1] = bottom_inflow[1] + height*np.cos(theta)
 
@@ -461,16 +461,23 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         from meshmode.mesh.generation import generate_regular_rect_mesh
 
         # this only works for non-slanty meshes
-        def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face):
+        def get_meshmode_mesh(a, b, nelements_per_axis, boundary_tag_to_face,
+                              periodic=False):
 
             from meshmode.mesh import TensorProductElementGroup
             group_cls = TensorProductElementGroup if use_quads else None
+            dim = len(a)
+
+            if periodic:
+                periodic = (False, True, False) if dim == 3 else (False, True)
+            else:
+                periodic = (False,)*dim
 
             mesh = generate_regular_rect_mesh(
                 a=a, b=b, nelements_per_axis=nelements_per_axis,
-                group_cls=group_cls,
+                group_cls=group_cls, periodic=periodic,
                 boundary_tag_to_face=boundary_tag_to_face
-                )
+            )
 
             mgrp = mesh.groups[0]
             x = mgrp.nodes[0, :, :]
@@ -498,18 +505,21 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
         else:
             a = (bottom_inflow[0], bottom_inflow[1], 0.)
             b = (top_wall[0], top_wall[1], 0.02)
+            if not periodic:
+                wall_farfield = ["+x", "-y", "+y", "-z", "+z"]
+                isothermal_wall = ["-y", "+y", "-z", "+z"]
+            else:
+                wall_farfield = ["+x", "-z", "+z"]
+                isothermal_wall = ["-z", "+z"]
             boundary_tag_to_face = {
                 "inflow": ["-x"],
                 "outflow": ["+x"],
                 "flow": ["-x", "+x"],
-                "isothermal_wall": ["-y", "+y", "-z", "+z"],
-                "wall_farfield": ["+x", "-y", "+y", "-z", "+z"]}
-            nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
-                                  int(height/size),
-                                  int(height/size))
-            #nelements_per_axis = (3, 2, 2)
-            #print(f"{nelements_per_axis=}")
+                "isothermal_wall": isothermal_wall,
+                "wall_farfield": wall_farfield}
+            nelements_per_axis = (int((fluid_length+wall_length)/size),
+                                  int(height/size), int(.02/size))
 
         return partial(get_meshmode_mesh,
                        a=a, b=b, boundary_tag_to_face=boundary_tag_to_face,
-                       nelements_per_axis=nelements_per_axis)
+                       nelements_per_axis=nelements_per_axis, periodic=periodic)

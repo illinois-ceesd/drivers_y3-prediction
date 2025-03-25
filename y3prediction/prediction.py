@@ -1370,7 +1370,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
 @mpi_entry_point
 def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
-         disable_logpyle=False,
+         disable_logpyle=False, geom_scale=1.,
          casename=None, log_path="log_data", use_esdg=False,
          disable_fallbacks=False):
 
@@ -1525,6 +1525,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, False)
     part_tol = configurate("partition_tolerance", input_data, 0.01)
+    part_axis = configurate("partition_axis", input_data, None)
 
     # setting these to none in the input file toggles the check for that
     # boundary off provides support for legacy runs only where you could
@@ -3761,7 +3762,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         dim=dim, angle=0.*mesh_angle, size=mesh_size,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
-                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                        use_quads=use_tpe, use_gmsh=use_gmsh,
+                        geom_scale=geom_scale, periodic=periodic_mesh)()
                 else:
                     if rank == 0:
                         print("Reading mesh")
@@ -3786,10 +3788,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 import sys
                 import numpy
                 numpy.set_printoptions(threshold=sys.maxsize)
-                #print(f"{mesh=}")
 
                 # apply periodicity
-                if periodic_mesh is True:
+                if periodic_mesh is True and use_gmsh:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
 
@@ -3910,7 +3911,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 from mirgecom.simutil import geometric_mesh_partitioner
                 return geometric_mesh_partitioner(
                     mesh, num_ranks, auto_balance=True, imbalance_tolerance=part_tol,
-                    debug=False)
+                    debug=False, part_axis=part_axis)
 
             part_func = my_partitioner if use_1d_part else None
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
@@ -4171,7 +4172,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if use_smoothed_char_length:
         for i in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
-                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, i)
+                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, 0)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
@@ -6096,7 +6097,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # in post-processing
         fluid_viz_fields = [("cv", cv),
                             ("dv", dv),
-                            ("dt" if constant_cfl else "cfl", ts_field_fluid)]
+                            ("dt" if constant_cfl else "cfl", ts_field_fluid),
+                            ("rank", rank)]
 
         if use_wall:
             wall_kappa = wdv.thermal_conductivity
@@ -6111,7 +6113,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 ("wv", wv),
                 ("wall_kappa", wall_kappa),
                 ("wall_temperature", wall_temperature),
-                ("dt" if constant_cfl else "cfl", ts_field_wall)
+                ("dt" if constant_cfl else "cfl", ts_field_wall),
+                ("rank", rank)
             ]
 
         # extra viz quantities, things here are often used for post-processing
@@ -6180,17 +6183,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     ("D_"+species_names[i], fluid_diffusivity[i])
                     for i in range(nspecies))
 
-            if nparts > 1:
-                fluid_viz_ext = [("rank", rank)]
-                fluid_viz_fields.extend(fluid_viz_ext)
-
             if use_wall:
                 wall_viz_ext = [("wall_kappa", wall_kappa)]
                 wall_viz_fields.extend(wall_viz_ext)
-
-                if nparts > 1:
-                    wall_viz_ext = [("rank", rank)]
-                    wall_viz_fields.extend(wall_viz_ext)
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:
@@ -6709,9 +6704,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if logmgr is None:
             print(f"prestep entry time={time.time()}, {step=}")
-
-        # I don't think this should be needed, but shouldn't hurt anything
-        #state = force_evaluation(actx, state)
+        else:
+            if logmgr:
+                logmgr.tick_before()
 
         stepper_state = make_stepper_state_obj(state)
 
@@ -6754,8 +6749,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
 
         try:
-            if logmgr:
-                logmgr.tick_before()
 
             # disable non-constant dt timestepping for now
             # re-enable when we're ready

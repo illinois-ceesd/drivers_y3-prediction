@@ -162,7 +162,9 @@ while [ $nrank -le $NUM_PROCS ]; do
         runoptions="-N ${NUM_NODES} -n ${nrank}"
     fi
     # Run prediction driver with generated yaml file
-    $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log --lazy
+    # $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -O -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log --lazy
+    $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log --lazy
+    # $MPI_EXEC ${runoptions} $PARALLEL_SPAWNER python -u -m mpi4py driver.py -c ${casename} -g ${LOG_PATH} -i run_params_np${nrank}.yaml --log
     return_code=$?
     set +x
 

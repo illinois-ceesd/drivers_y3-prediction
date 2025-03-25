@@ -1,8 +1,10 @@
 #!/bin/bash
 
 #flux: --nodes=256
-#flux: --time=60
+#flux: --time=240
 #flux: --output=scal1024.txt
+
+export MIRGE_CACHE_ROOT="./mirge-cache_256nodes"
 
 source ../emirge/config/activate_env.sh
 source ../emirge/mirgecom/scripts/mirge-testing-env.sh
