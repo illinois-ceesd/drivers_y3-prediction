@@ -8,6 +8,9 @@ if __name__ == "__main__":
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         level=logging.INFO)
 
+    # So warnings get the same format as logging messages
+    logging.captureWarnings(True)
+
     parser = argparse.ArgumentParser(
         description="MIRGE-Com Isentropic Nozzle Driver")
     parser.add_argument("-r", "--restart_file", type=ascii, dest="restart_file",
