@@ -20,7 +20,7 @@ if __name__ == "__main__":
                         action="store", help="simulation case name")
     parser.add_argument("-g", "--logpath", type=ascii, dest="log_path", nargs="?",
                         action="store", help="simulation case name")
-    parser.add_argument("-s", "--scale", type=float, default=1., 
+    parser.add_argument("-s", "--scale", type=float, default=1.,
                         help="scale geometry by factor")
     parser.add_argument("--esdg", action="store_true", default=False,
                         help="enable entropy-stable for inviscid terms. [OFF]")
@@ -86,4 +86,4 @@ if __name__ == "__main__":
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
          disable_fallbacks=args.disable_fallbacks,
-         geom_scale=args.scale, noflow=args.noflow)
+         geom_scale=args.scale)
