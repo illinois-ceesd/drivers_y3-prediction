@@ -24,7 +24,7 @@ fuel_loc_x: 0.07
 # boundary condition setup
 #
 use_outflow_boundary: "none"
-use_inflow_boundary: "fluid_farfield"
+use_inflow_boundary: "prescribed"
 use_flow_boundary: "none"
 use_wall_boundary: "adiabatic_slip"
 use_interface_boundary: "none"
