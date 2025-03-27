@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#flux: --nodes={{ nodes }}
+#flux: --time={{ time }}
+#flux: --bank={{ bank }}
+#flux: --output={{ outfile }}
+
+export MIRGE_CACHE_ROOT="./mirge-cache_{{ nodes }}node"
+
+source {{ emirge_path }}/config/activate_env.sh
+source {{ emirge_path }}/mirgecom/scripts/mirge-testing-env.sh
+
+{% for r in ranks %}
+$MIRGE_MPI_EXEC -N {{ nodes }} -n {{ r }} $MIRGE_PARALLEL_SPAWNER python -u -O -m mpi4py ./driver.py -i {{ input_file }}.yaml -s {{ r }} --lazy --overintegration -c {{ casename }}_np{{ r }}
+{% endfor %}
