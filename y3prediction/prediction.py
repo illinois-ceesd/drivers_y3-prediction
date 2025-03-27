@@ -88,7 +88,6 @@ from mirgecom.boundary import (
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
     PressureOutflowBoundary,
-    FarfieldBoundary,
     DummyBoundary
 )
 from mirgecom.diffusion import (
@@ -1373,10 +1372,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False, geom_scale=None, noflow=False):
-
-    if geom_scale is None:
-        geom_scale = 1.
+         disable_fallbacks=False, geom_scale=1.):
 
     allow_fallbacks = not disable_fallbacks
     # control log messages
@@ -1588,8 +1584,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "pressure_outflow",
         "riemann_outflow",
         "prescribed",
-        "isentropic_pressure_ramp",
-        "fluid_farfield"
+        "isentropic_pressure_ramp"
     ]
 
     # boundary sanity check
@@ -1906,8 +1901,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         for bname, bsetting in bndry_config.items():
             msg_action = "Checking for" if bsetting else "Ignoring"
             bnd_msg = bnd_msg + f"\t{msg_action} {bname} boundary in mesh.\n"
-        if rank == 0:
-            print(bnd_msg)
+        print(bnd_msg)
 
         if noslip:
             print("\tInterface wall boundary conditions are noslip for velocity")
@@ -2317,7 +2311,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     else:
         species_names = pyro_mech.species_names
 
-    print(f"{species_names=}")
+    if rank == 0:
+        print(f"{species_names=}")
 
     # initialize eos and species mass fractions
     y = np.zeros(nspecies)
@@ -2356,10 +2351,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
     transport_beta = 4.093e-7
     transport_sigma = 2.0
     transport_n = 0.666
-    ff_press = 0
-    ff_temp = 0
-    ff_y = 0
-    # ff_vel = 0
 
     # use the species names to populate the default species diffusivities
     default_species_diffusivity = {}
@@ -2370,7 +2361,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "species_diffusivity", input_data, default_species_diffusivity)
 
     # now read the diffusivities from input
-    print(f"{input_species_diffusivity}")
+    if rank == 0:
+        print(f"{input_species_diffusivity=}")
 
     species_diffusivity = spec_diff * np.ones(nspecies)
     for i in range(nspecies):
@@ -2612,10 +2604,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"\tpost-shock total pressure {pressure2_total}")
             print(f"\tpost-shock total temperature {temperature2_total}")
             print(f"\tpost-shock mach {mach2}")
-        ff_press = pressure1
-        ff_temp = temperature1
-        # ff_velocity = 0.0*vel_right
-        ff_y = y_fuel
 
         bulk_init = PlanarDiscontinuityMulti(
             dim=dim,
@@ -2635,8 +2623,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             species_mass_right=y_fuel,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
-            temp_sigma=temp_sigma,
-            noflow=noflow)
+            temp_sigma=temp_sigma)
 
     if init_case == "mixing_layer":
         temperature = 300.
@@ -2714,8 +2701,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         #mech_data = get_mechanism_input("uiuc_updated")
         mech_file = (f"{pyro_mech_name}.yaml")
-
-        print(f"{mech_file=}")
+        if rank == 0:
+            print(f"{mech_file=}")
         import cantera
         cantera_soln = cantera.Solution(f"{mech_file}", "gas")
 
@@ -2740,7 +2727,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         pres_unburned = 101325.0
 
         # Let the user know about how Cantera is being initilized
-        print(f"Input state (T,P,X) = ({temp_unburned}, {pres_unburned}, {x}")
+        if rank == 0:
+            print(f"Input state (T,P,X) = ({temp_unburned}, {pres_unburned}, {x}")
         # Set Cantera internal gas temperature, pressure, and mole fractios
         cantera_soln.TPX = temp_unburned, pres_unburned, x
         # Pull temperature, total density, mass fractions, and pressure from Cantera
@@ -3766,7 +3754,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # eventually encapsulate these inside a class for the respective inits
         if init_case == "shock1d" or init_case == "flame1d":
-            periodic = periodic_mesh or noflow
 
             def get_mesh_data():
                 if generate_mesh is True:
@@ -3778,8 +3765,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
                         use_quads=use_tpe, use_gmsh=use_gmsh,
-                        geom_scale=geom_scale, periodic=periodic,
-                        noflow=noflow)()
+                        geom_scale=geom_scale, periodic=periodic_mesh)()
                 else:
                     if rank == 0:
                         print("Reading mesh")
@@ -3806,7 +3792,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 numpy.set_printoptions(threshold=sys.maxsize)
                 #print(f"{mesh=}")
 
-                # apply periodicity
+                # apply periodicity for gmsh meshes
                 if periodic_mesh is True and use_gmsh:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
@@ -3951,6 +3937,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"Number of wall elements: {wall_nelements}")
             print(f"Number of elements: {local_nelements}")
             print("---------------------------")
+            sys.stdout.flush()
         comm.Barrier()
 
     # target data, used for sponge and prescribed boundary condtitions
@@ -4059,12 +4046,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "adiabatic_slip": AdiabaticSlipBoundary(),
         "isothermal_slip": IsothermalSlipWallBoundary(),
         "pressure_outflow": PressureOutflowBoundary(outflow_pressure),
-        "fluid_farfield":  FarfieldBoundary(
-            free_stream_pressure=ff_press,
-            free_stream_velocity=np.zeros(shape=(dim,)),
-            free_stream_temperature=ff_temp,
-            free_stream_mass_fractions=ff_y
-        )
     }
 
     wall_farfield = DirichletDiffusionBoundary(temp_wall)
@@ -6203,17 +6184,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     ("D_"+species_names[i], fluid_diffusivity[i])
                     for i in range(nspecies))
 
-            if nparts > 1:
-                fluid_viz_ext = [("rank", rank)]
-                fluid_viz_fields.extend(fluid_viz_ext)
-
             if use_wall:
                 wall_viz_ext = [("wall_kappa", wall_kappa)]
                 wall_viz_fields.extend(wall_viz_ext)
-
-                if nparts > 1:
-                    wall_viz_ext = [("rank", rank)]
-                    wall_viz_fields.extend(wall_viz_ext)
 
         # additional viz quantities, add in some non-dimensional numbers
         if viz_level > 1:

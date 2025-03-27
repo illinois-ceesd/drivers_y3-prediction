@@ -20,10 +20,8 @@ if __name__ == "__main__":
                         action="store", help="simulation case name")
     parser.add_argument("-g", "--logpath", type=ascii, dest="log_path", nargs="?",
                         action="store", help="simulation case name")
-    parser.add_argument("-s", "--scale", type=int,
-                        help="scale geometry by int factor")
-    parser.add_argument("--noflow", action="store_true", default=False,
-                        help="Use a noflow configuration for shock1d")
+    parser.add_argument("-s", "--scale", type=float, default=1., 
+                        help="scale geometry by factor")
     parser.add_argument("--esdg", action="store_true", default=False,
                         help="enable entropy-stable for inviscid terms. [OFF]")
     parser.add_argument("--profile", action="store_true", default=False,
