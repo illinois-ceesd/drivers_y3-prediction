@@ -1,1 +1,1 @@
-batch_gen/shock1d_weak_small_batch_scripts/run_128node_tuo.sh
+batch_gen/shock1d_weak_batch_scripts/run_128node_tuo.sh

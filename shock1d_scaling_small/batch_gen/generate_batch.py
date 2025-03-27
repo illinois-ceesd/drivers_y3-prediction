@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--template", type=Path, default=Path("template_flux.sh.j2"),
                         help="Path to the Jinja2 template")
     parser.add_argument("--input-file", type=str, help="Name of input file")
+    parser.add_argument("--casename", type=str, default="shock1d", help="case name")
     parser.add_argument("--bank", type=str, default="uiuc", help="Bank to use")
     parser.add_argument("--time", type=int, default=120,
                         help="Time limit in minutes (default: 120)")
@@ -48,6 +49,7 @@ def main():
             ranks=ranks,
             emirge_path=args.emirge_path,
             input_file=args.input_file,
+            casename=args.casename,
             bank=args.bank
         )
 
