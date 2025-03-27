@@ -6939,6 +6939,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                             "future GC collections")
                 gc.freeze()
 
+        if queue:
+            queue.finish()
+
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
