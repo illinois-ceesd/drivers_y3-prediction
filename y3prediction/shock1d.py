@@ -489,8 +489,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             return mesh, tag_to_elements
 
         boundary_tag_to_face = {
-            "inflow": ["-x"]
-            "outflow": ["+x"]
+            "inflow": ["-x"],
+            "outflow": ["+x"],
             "flow": ["-x", "+x"]
         }
         if periodic:
