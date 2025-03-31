@@ -1371,7 +1371,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False):
+         disable_fallbacks=False, axi_filename=None):
 
     allow_fallbacks = not disable_fallbacks
     # control log messages
@@ -1447,6 +1447,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nrestart = configurate("nrestart", input_data, 5000)
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
+
+    # Restart from previous axisymmetric run
+    # Enable axi restart by setting "axi_filename" on
+    # command line or in input yaml file.
+    if axi_filename is None:
+        axi_filename = configurate("axi_filename", None)
+    restart_from_axi = axi_filename is not None
 
     # garbage collection frequency
     ngarbage = configurate("ngarbage", input_data, 10)
@@ -3721,11 +3728,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_path + "{cname}-{step:09d}-{rank:04d}.pkl"
     )
 
-    if restart_filename:  # read the grid from restart data
+    from mirgecom.restart import read_restart_data
+    if restart_from_axi:
+        axi_restart_data = read_restart_data(actx, axi_filename)
+        vol_to_axi_mesh = axi_restart_data["volume_to_local_mesh_data"]
+        axi_vol_meshes = {
+            vol: mesh for vol, (mesh, _) in vol_to_axi_mesh.items()}
+    elif restart_filename:  # read the grid from restart data
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
-
-        from mirgecom.restart import read_restart_data
         restart_data = read_restart_data(actx, restart_filename)
+
         current_step = restart_data["step"]
         first_step = current_step
         current_t = restart_data["t"]
@@ -3738,7 +3750,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_order = int(restart_data["order"])
 
         restart_nspecies = restart_data["nspecies"]
-        #assert restart_data["nparts"] == nparts
 
         restart_nparts = restart_data["num_parts"]
         if restart_nparts != nparts:
@@ -3920,6 +3931,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if use_wall:
         wall_nelements = volume_to_local_mesh_data["wall"][0].nelements
     local_nelements = fluid_nelements + wall_nelements
+    vol_meshes = {vol: mesh for vol, (mesh, _) in volume_to_local_mesh_data.items()}
 
     # Early grep-ready nelement report
     for rnk in range(nparts):
@@ -3973,13 +3985,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.info(disc_msg)
 
     dcoll = create_discretization_collection(
-        actx,
-        volume_meshes={
-            vol: mesh
-            for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-        order=order,
-        quadrature_order=quadrature_order,
-        tensor_product_elements=use_tpe)
+        actx, volume_meshes=vol_meshes, order=order,
+        quadrature_order=quadrature_order, tensor_product_elements=use_tpe)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -4898,6 +4905,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     ##################################
 
     restart_wv = None
+    # Restart from a given filename assumed to have same geometry
     if restart_filename:
         if rank == 0:
             logger.info("Restarting soln.")
@@ -4918,12 +4926,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if use_wall:
             restart_wv = restart_data["wv"]
+
         if restart_order != order:
             restart_dcoll = create_discretization_collection(
-                actx,
-                volume_meshes={
-                    vol: mesh
-                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
+                actx, volume_meshes=vol_meshes,
                 order=restart_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
@@ -4954,6 +4960,67 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temperature_seed = fluid_connection(restart_data["temperature_seed"])
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
+
+    # Or restart from a previous axisymmetric version of geometry
+    elif restart_from_axi:
+
+        from mirgecom.simutil import remap_dofarrays_in_structure
+
+        if rank == 0:
+            logger.info("Restarting from axisymmetric soln.")
+
+        # For now, hardcode the axi->3D assuming Y is the axis
+        # of symmetry in the axi run and X is the long axis in
+        # 3D.
+        def target_point_map(target_point):
+            tx = target_point[0]
+            ty = target_point[1]
+            tz = target_point[2]
+            y_axi = tx
+            x_axi = np.sqrt(ty*ty + tz*tz)
+            return np.array([x_axi, y_axi])
+
+        # Take care to respect volume-specific data items
+        axi_fluid_items = {
+            "tseed": axi_restart_data["temperature_seed"],
+            "cv": axi_restart_data["cv"],
+            "av_smu": axi_restart_data["av_smu"],
+            "av_sbeta": axi_restart_data["av_sbeta"],
+            "av_skappa": axi_restart_data["av_skappa"]
+        }
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            axi_av_sd = axi_restart_data["av_sd"]
+        except (KeyError):
+            axi_av_sd = actx.np.zeros_like(axi_fluid_items["av_smu"])
+            if rank == 0:
+                print("no data for av_sd in axi restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+        axi_fluid_items["av_sd"] = axi_av_sd
+
+        x_vol = "fluid"
+        fluid_restart_items = remap_dofarrays_in_structure(
+            actx, axi_fluid_items, axi_vol_meshes[x_vol],
+            vol_meshes[x_vol], target_point_map=target_point_map)
+        temperature_seed = fluid_restart_items["tseed"]
+        restart_cv = fluid_restart_items["cv"]
+        restart_av_smu = fluid_restart_items["av_smu"]
+        restart_av_sbeta = fluid_restart_items["av_sbeta"]
+        restart_av_skappa = fluid_restart_items["av_skappa"]
+        restart_av_sd = fluid_restart_items["av_sd"]
+
+        if use_wall:
+            axi_wall_items = {}
+            axi_wall_items["wv"] = axi_restart_data["wv"]
+            x_vol = "wall"
+            wall_restart_items = remap_dofarrays_in_structure(
+                actx, axi_wall_items, axi_vol_meshes[x_vol],
+                vol_meshes[x_vol], target_point_map=target_point_map)
+            restart_wv = wall_restart_items["wv"]
+
+    # Intialize the solution from restarted data
+    if restart_filename or restart_from_axi:
 
         if restart_nspecies != nspecies:
             if rank == 0:
@@ -5041,8 +5108,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
+
+    # Not a restart of any sort, Set the current state from time 0
     else:
-        # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
@@ -5153,10 +5221,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             logger.info("Reading target soln.")
         if target_order != order:
             target_dcoll = create_discretization_collection(
-                actx,
-                volume_meshes={
-                    vol: mesh
-                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
+                actx, volume_meshes=vol_meshes,
                 order=target_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
