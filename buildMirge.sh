@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # default branch for building mirgecom for this driver
-mirge-branch="test-tuo-perf-volpart"
+mirge_branch="test-tuo-perf-volpart"
 # conda environment name
 conda_env="mirgeDriver.Y3prediction"
 
