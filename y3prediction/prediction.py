@@ -4912,7 +4912,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     restart_av_smu = None
     restart_av_sbeta = None
     restart_av_skappa = None
-    restart_av_ad = None
+    restart_av_sd = None
     # Restart from a given filename assumed to have same geometry
     if restart_filename:
         if rank == 0:
