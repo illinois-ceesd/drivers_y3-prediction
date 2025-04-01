@@ -3734,7 +3734,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
         vol_to_axi_mesh = axi_restart_data["volume_to_local_mesh_data"]
         axi_vol_meshes = {
             vol: mesh for vol, (mesh, _) in vol_to_axi_mesh.items()}
-    elif restart_filename:  # read the grid from restart data
+        restart_order = int(axi_restart_data["order"])
+        restart_nspecies = axi_restart_data["nspecies"]
+
+    if restart_filename:  # read the grid from restart data
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
         restart_data = read_restart_data(actx, restart_filename)
 
@@ -4909,6 +4912,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if restart_filename:
         if rank == 0:
             logger.info("Restarting soln.")
+
         temperature_seed = restart_data["temperature_seed"]
         restart_cv = restart_data["cv"]
         restart_av_smu = restart_data["av_smu"]
@@ -5003,6 +5007,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         fluid_restart_items = remap_dofarrays_in_structure(
             actx, axi_fluid_items, axi_vol_meshes[x_vol],
             vol_meshes[x_vol], target_point_map=target_point_map)
+
         temperature_seed = fluid_restart_items["tseed"]
         restart_cv = fluid_restart_items["cv"]
         restart_av_smu = fluid_restart_items["av_smu"]
