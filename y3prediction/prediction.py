@@ -3729,6 +3729,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     )
 
     from mirgecom.restart import read_restart_data
+    restart_nspecies = 0
     if restart_from_axi:
         axi_restart_data = read_restart_data(actx, axi_filename)
         vol_to_axi_mesh = axi_restart_data["volume_to_local_mesh_data"]
