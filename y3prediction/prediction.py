@@ -4986,7 +4986,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             tx = target_point[0]
             ty = target_point[1]
             tz = target_point[2]
-            y_axi = tx
+            y_axi = np.abs(tx)
             x_axi = np.sqrt(ty*ty + tz*tz)
             return np.array([x_axi, y_axi])
 
