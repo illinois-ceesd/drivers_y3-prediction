@@ -5011,8 +5011,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         x_vol = "fluid"
         fluid_restart_items = remap_dofarrays_in_structure(
-            actx, axi_fluid_items, axi_vol_meshes[x_vol],
-            vol_meshes[x_vol], target_point_map=target_point_map)
+            actx, axi_fluid_items, axi_vol_meshes,
+            vol_meshes, target_point_map=target_point_map,
+            volume_id=x_vol)
 
         temperature_seed = fluid_restart_items["tseed"]
         restart_cv = fluid_restart_items["cv"]
@@ -5026,8 +5027,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             axi_wall_items["wv"] = axi_restart_data["wv"]
             x_vol = "wall"
             wall_restart_items = remap_dofarrays_in_structure(
-                actx, axi_wall_items, axi_vol_meshes[x_vol],
-                vol_meshes[x_vol], target_point_map=target_point_map)
+                actx, axi_wall_items, axi_vol_meshes,
+                vol_meshes, target_point_map=target_point_map,
+                volume_id=x_vol)
             restart_wv = wall_restart_items["wv"]
 
     # Intialize the solution from restarted data
