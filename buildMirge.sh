@@ -48,17 +48,17 @@ fi
 # get emirge
 if [ -z "$(ls -A emirge)" ]; then
   if [ $opt_git_ssh -eq 1 ]; then
-    echo "git clone git@github.com:illinois-ceesd/emirge.git emirge"
-    git clone git@github.com:illinois-ceesd/emirge.git emirge
+    echo "git clone git@github.com:astro-friedel/emirge.git emirge"
+    git clone git@github.com:astro-friedel/emirge.git emirge
   else
-    echo "git clone https://github.com/illinois-ceesd/emirge.git emirge"
-    git clone https://github.com/illinois-ceesd/emirge.git emirge
+    echo "git clone https://github.com/astro-friedel/emirge.git emirge"
+    git clone https://github.com/astro-friedel/emirge.git emirge
   fi
 else
   echo "emirge install already present. Remove to build anew"
 fi
 
-# install script for mirgecom, 
+# install script for mirgecom,
 if [ ${opt_restore_build} -eq 1 ]; then
 # attempt to restore an existing build
   echo "Building MIRGE-Com from existing known configuration"

@@ -10,3 +10,5 @@ runOutput*
 *.msh
 
 __pycache__/
+
+.idea/
