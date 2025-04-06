@@ -10,7 +10,7 @@ bl_ratio: 1
 interface_ratio: 1
 transfinite: True
 mesh_angle: 0.
-use_1d_part: False
+use_1d_part: True
 partition_axis: 'Y'
 #
 # parameters to control the initialization
@@ -24,7 +24,7 @@ fuel_loc_x: 0.07
 # boundary condition setup
 #
 use_outflow_boundary: "none"
-use_inflow_boundary: "fluid_farfield"
+use_inflow_boundary: "prescribed"
 use_flow_boundary: "none"
 use_wall_boundary: "adiabatic_slip"
 use_interface_boundary: "none"

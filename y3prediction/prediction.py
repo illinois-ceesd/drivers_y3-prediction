@@ -150,6 +150,11 @@ from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
 from meshmode.discretization.connection import FACE_RESTR_ALL
 from mirgecom.flux import num_flux_central
 import time
+# import tau
+# from tau import pytau
+
+
+# pytau.disableInstrumentation()
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -1399,10 +1404,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
     rank = comm.Get_rank()
     nparts = comm.Get_size()
 
-    first_profiling_step = 4
-    last_profiling_step = 104
+    first_profiling_step = 0
+    last_profiling_step = 1
+    # nsteps = 10
 
     if first_profiling_step > 0:
+        # Clear and stop the profling
         MPI.Pcontrol(2)
         MPI.Pcontrol(0)
 
@@ -1472,6 +1479,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     t_viz_interval = configurate("t_viz_interval", input_data, 1.e-8)
     current_cfl = configurate("current_cfl", input_data, 1.0)
     constant_cfl = configurate("constant_cfl", input_data, False)
+    # t_final = nsteps * current_dt
 
     # these are modified below for a restart
     current_t = configurate("current_t", input_data, 0.0)
@@ -3929,7 +3937,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 from mirgecom.simutil import geometric_mesh_partitioner
                 return geometric_mesh_partitioner(
                     mesh, num_ranks, auto_balance=True, imbalance_tolerance=part_tol,
-                    debug=True, part_axis=part_axis)
+                    debug=False, part_axis=part_axis)
 
             part_func = my_partitioner if use_1d_part else None
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
@@ -7011,8 +7019,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
             raise
 
         if step == first_profiling_step:
+            # clear and start the profiling
             MPI.Pcontrol(2)
             MPI.Pcontrol(1)
+            #            pytau.enableInstrumentation()
 
         if logmgr is None:
             print(f"prestep exit time={time.time()}")
@@ -7025,7 +7035,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"poststep entry time={time.time()}, {step=}")
 
         if step == last_profiling_step:
+            # Stop the profiling
             MPI.Pcontrol(0)
+            # pytau.disableInstrumentation()
 
         if step == first_step+2:
             with gc_timer:
@@ -7463,6 +7475,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     if last_profiling_step < 0:
         MPI.Pcontrol(0)
+        # pytau.disableInstrumentation()
 
     if use_wall:
         current_wv = current_stepper_state.wv
@@ -7530,5 +7543,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     finish_tol = 2*current_dt
     assert np.abs(current_t - t_final) < finish_tol
+    # tau.writeProfiles()
 
 # vim: foldmethod=marker
