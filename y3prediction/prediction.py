@@ -5021,8 +5021,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
             vol_meshes, target_point_map=target_point_map,
             volume_id=x_vol)
 
+        axi_cv = fluid_restart_items["cv"]
+        axi_mom = axi_cv.momentum
+        fl_y = fluid_nodes[1]
+        fl_z = fluid_nodes[2]
+        fl_r = actx.np.sqrt(fl_y*fl_y + fl_z*fl_z)
+        xfer_mom_x = axi_mom[1]  # y-component of axi maps to Vx
+        xfer_mom_y = axi_mom[0] * fl_y/fl_r  # Vy_axi * r_hat_x
+        xfer_mom_z = axi_mom[0] * fl_z/fl_r  # Vy_axi * r_hat_y
+        restart_mom = make_obj_array([xfer_mom_x, xfer_mom_y, xfer_mom_z])
+        restart_cv = axi_cv.replace(momentum=restart_mom)
+
         temperature_seed = fluid_restart_items["tseed"]
-        restart_cv = fluid_restart_items["cv"]
         restart_av_smu = fluid_restart_items["av_smu"]
         restart_av_sbeta = fluid_restart_items["av_sbeta"]
         restart_av_skappa = fluid_restart_items["av_skappa"]
