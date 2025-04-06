@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #flux: --nodes=64
-#flux: --time=60
+#flux: --time=120
 #flux: --output=scal256.txt
 
 export MIRGE_CACHE_ROOT="./mirge-cache_64nodes"

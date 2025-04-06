@@ -28,8 +28,8 @@ class PlanarDiscontinuityMulti:
             velocity_cross=None,
             species_mass_left=None, species_mass_right=None,
             convective_velocity=None, sigma=0.5,
-            temp_sigma=0., vel_sigma=0., temp_wall=300., y_top=0.01, y_bottom=-0.01
-    ):
+            temp_sigma=0., vel_sigma=0., temp_wall=300.,
+            y_top=0.01, y_bottom=-0.01):
         r"""Initialize mixture parameters.
 
         Parameters
@@ -465,6 +465,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                               periodic=False):
 
             from meshmode.mesh import TensorProductElementGroup
+            dim = len(a)
             group_cls = TensorProductElementGroup if use_quads else None
             dim = len(a)
 
@@ -472,6 +473,11 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 periodic = (False, True, False) if dim == 3 else (False, True)
             else:
                 periodic = (False,)*dim
+
+            if dim == 2:
+                periodic = (False, periodic)
+            else:
+                periodic = (False, True, periodic)
 
             mesh = generate_regular_rect_mesh(
                 a=a, b=b, nelements_per_axis=nelements_per_axis,
@@ -488,35 +494,31 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
             return mesh, tag_to_elements
 
+        boundary_tag_to_face = {
+            "inflow": ["-x"],
+            "outflow": ["+x"],
+            "flow": ["-x", "+x"]
+        }
+        if periodic:
+            boundary_tag_to_face["wall_farfield"] = ["+x"]
         if dim == 2:
             a = (bottom_inflow[0], bottom_inflow[1])
             b = (top_wall[0], top_wall[1])
-            boundary_tag_to_face = {
-                "inflow": ["-x"],
-                "outflow": ["+x"],
-                "flow": ["-x", "+x"],
-                "isothermal_wall": ["-y", "+y"],
-                "periodic_y_top": ["+y"],
-                "periodic_y_bottom": ["-y"],
-                "wall_farfield": ["+x"],
-            }
+            if not periodic:
+                boundary_tag_to_face["wall_farfield"] = \
+                    ["+x", "-y", "+y"]
+                boundary_tag_to_face["isothermal_wall"] = \
+                    ["-y", "+y"]
             nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
                                   int(height/size))
         else:
             a = (bottom_inflow[0], bottom_inflow[1], 0.)
             b = (top_wall[0], top_wall[1], 0.02)
-            if not periodic:
-                wall_farfield = ["+x", "-y", "+y", "-z", "+z"]
-                isothermal_wall = ["-y", "+y", "-z", "+z"]
-            else:
-                wall_farfield = ["+x", "-z", "+z"]
-                isothermal_wall = ["-z", "+z"]
-            boundary_tag_to_face = {
-                "inflow": ["-x"],
-                "outflow": ["+x"],
-                "flow": ["-x", "+x"],
-                "isothermal_wall": isothermal_wall,
-                "wall_farfield": wall_farfield}
+            if not periodic:  # For 3D meshmode Y is *always* periodic
+                boundary_tag_to_face["wall_farfield"] = \
+                    ["+x", "-z", "+z"]
+                boundary_tag_to_face["isothermal_wall"] = \
+                    ["-z", "+z"]
             nelements_per_axis = (int((fluid_length+wall_length)/size),
                                   int(height/size), int(.02/size))
 
