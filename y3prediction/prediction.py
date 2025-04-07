@@ -959,7 +959,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     nspecies = cv.nspecies
     dim = cv.dim
     do_limit_toler = 1.e-9
-    min_allowed_density = 1.e-6
+    min_allowed_density = 1.e-7
     min_allowed_pressure = 1.e-12
 
     ones = 1. + actx.np.zeros_like(cv.mass)
@@ -1657,6 +1657,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_sponge = configurate("use_sponge", input_data, True)
     use_time_dependent_sponge = configurate("use_time_dependent_sponge",
                                             input_data, False)
+    use_gauss_outlet = configurate("use_gauss_outlet", input_data, False)
     sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
 
     # artificial viscosity control
@@ -1670,6 +1671,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     #    1 - limit in on call to make_fluid_state
     use_species_limiter = configurate("use_species_limiter", input_data, 0)
     limiter_smin = configurate("limiter_smin", input_data, 10)
+    constant_smin = configurate("constant_smin", input_data, True)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -1821,6 +1823,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                          input_data, -0.021)
     injection_source_loc_z_comb = configurate("injection_source_loc_z_comb",
                                          input_data, 0.0)
+    injection_source_mass_comb = configurate("injection_source_mass_comb",
+                                        input_data, 2.)
+    injection_source_mom_x_comb = configurate("injection_source_mom_x_comb",
+                                         input_data, 3.)
+    injection_source_mom_y_comb = configurate("injection_source_mom_y_comb",
+                                         input_data, 3.)
+    injection_source_mom_z_comb = configurate("injection_source_mom_z_comb",
+                                         input_data, 0.)
+    injection_source_energy_comb = configurate("injection_source_energy_comb",
+                                          input_data, 1.e3)
 
     # initialization for the sponge
     inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
@@ -3044,6 +3056,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
         #
         vel_inflow = np.zeros(shape=(dim,))
         vel_outflow = np.zeros(shape=(dim,))
+        vel_bulk = np.zeros(shape=(dim,))
+
+        if use_gauss_outlet is True:
+            mdot = 0.022
+            outflow_density = pres_bkrnd/temp_bkrnd/r
+            # this number is hard coded for outlet size R=1.45, sigma=0.5
+            sigma = 0.25
+            radius = 1.45
+            factor = 1./(2*3.14159*sigma**2*(
+                1 - math.exp(-(radius**2/(2*sigma**2)))))
+            if use_axisymmetric:
+                vel_outflow[1] = mdot/outflow_density*factor
+            else:
+                vel_outflow[0] = mdot/outflow_density*factor
 
         throat_height = 6.3028e-3
         inlet_area_ratio = inlet_height/throat_height
@@ -3153,7 +3179,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             inlet_height=inlet_height,
             pressure_bulk=pres_bkrnd,
             temperature_bulk=temp_bkrnd,
-            velocity_bulk=vel_outflow,
+            velocity_bulk=vel_bulk,
             mass_frac_bulk=y,
             pressure_inlet=pres_inflow,
             temperature_inlet=temp_inflow,
@@ -3166,7 +3192,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             inlet_pressure_func=inlet_ramp_pressure,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
-            temp_sigma=temp_sigma)
+            temp_sigma=temp_sigma,
+            gauss_outlet=use_gauss_outlet)
 
     elif init_case == "y3prediction_ramp":
 
@@ -4891,6 +4918,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         """
 
         div_v = np.trace(vel_grad)
+        # use a constant, the smallest (strongest) value in each
+        div_v = op.elementwise_min(dcoll, dd_vol_fluid, div_v)
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         # somehow this can be negative ... which is bad
@@ -4908,6 +4937,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                            + indicator_max)*href
 
         grad_t_mag = actx.np.sqrt(np.dot(grad_t, grad_t))
+        grad_t_mag = op.elementwise_max(dcoll, dd_vol_fluid, grad_t_mag)
         indicator = href*grad_t_mag/static_temp
 
         # limit the indicator range
@@ -4937,6 +4967,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                           vel_grad[1][2]*vel_grad[1][2] +
                                           vel_grad[2][0]*vel_grad[2][0] +
                                           vel_grad[2][1]*vel_grad[2][1])/vmax
+
+        indicator = op.elementwise_max(dcoll, dd_vol_fluid, indicator)
 
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
@@ -5078,75 +5110,38 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if restart_filename:
         if rank == 0:
             logger.info("Restarting soln.")
-        temperature_seed = restart_data["temperature_seed"]
-        restart_cv = restart_data["cv"]
-        restart_av_smu = restart_data["av_smu"]
-        restart_av_sbeta = restart_data["av_sbeta"]
-        restart_av_skappa = restart_data["av_skappa"]
 
-        # backwards compatibility, for before entropy_min
-        try:
-            restart_entropy_min = restart_data["entropy_min"]
-        except (KeyError):
-            restart_entropy_min = actx.np.zeros_like(restart_cv.mass) + limiter_smin
-            if rank == 0:
-                print("no data for entropy_min in restart file")
-                print(f"entropy_min will be initialzed to {limiter_smin=}")
+        #
+        # sometimes the restart data is missing it tagging, say when restarting from
+        # a non-lazy simulation
+        # make a dummy init to get the tagging and append the restart data to it
+        #
+        dummy_cv = bulk_init(
+            dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
+            time=current_t)
 
-        # this is so we can restart from legacy, before use_av=3
-        try:
-            restart_av_sd = restart_data["av_sd"]
-        except (KeyError):
-            restart_av_sd = actx.np.zeros_like(restart_av_smu)
-            if rank == 0:
-                print("no data for av_sd in restart file")
-                print("av_sd will be initialzed to 0 on the mesh")
+        dummy_cv = force_evaluation(actx, dummy_cv)
 
-        if use_wall:
-            restart_wv = restart_data["wv"]
-        if restart_order != order:
-            restart_dcoll = create_discretization_collection(
-                actx,
-                volume_meshes={
-                    vol: mesh
-                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-                order=restart_order, tensor_product_elements=use_tpe)
-            from meshmode.discretization.connection import make_same_mesh_connection
-            fluid_connection = make_same_mesh_connection(
-                actx,
-                dcoll.discr_from_dd(dd_vol_fluid),
-                restart_dcoll.discr_from_dd(dd_vol_fluid)
-            )
-            if use_wall:
-                wall_connection = make_same_mesh_connection(
-                    actx,
-                    dcoll.discr_from_dd(dd_vol_wall),
-                    restart_dcoll.discr_from_dd(dd_vol_wall)
-                )
-            restart_cv = fluid_connection(restart_data["cv"])
-            restart_av_smu = fluid_connection(restart_data["av_smu"])
-            restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
-            restart_av_skappa = fluid_connection(restart_data["av_skappa"])
+        dummy_temperature_seed = actx.np.zeros_like(dummy_cv.mass) + init_temperature
+        dummy_temperature_seed = force_evaluation(actx, dummy_temperature_seed)
 
-            # this is so we can restart from legacy, before use_av=3
-            try:
-                restart_av_sd = fluid_connection(restart_data["av_sd"])
-            except (KeyError):
-                restart_av_sd = actx.np.zeros_like(restart_av_smu)
-                if rank == 0:
-                    print("no data for av_sd in restart file")
-                    print("av_sd will be initialzed to 0 on the mesh")
+        dummy_av_smu = actx.np.zeros_like(dummy_cv.mass)
+        dummy_av_sbeta = actx.np.zeros_like(dummy_cv.mass)
+        dummy_av_skappa = actx.np.zeros_like(dummy_cv.mass)
+        dummy_av_sd = actx.np.zeros_like(dummy_cv.mass)
+        dummy_entropy_min = actx.np.zeros_like(dummy_cv.mass) + limiter_smin
 
-            temperature_seed = fluid_connection(restart_data["temperature_seed"])
-            if use_wall:
-                restart_wv = wall_connection(restart_data["wv"])
-
+        # get restart_ cv
+        temperature_seed = restart_data["temperature_seed"] +\
+                           0.*dummy_temperature_seed
         if restart_nspecies != nspecies:
             if rank == 0:
                 print(f"Transitioning restart from {restart_nspecies} to {nspecies}")
                 print("Preserving pressure and temperature")
 
             restart_eos = IdealSingleGas(gamma=gamma, gas_const=r)
+
+            restart_cv = restart_data["cv"]
 
             mass = restart_cv.mass
             velocity = restart_cv.momentum/mass
@@ -5195,12 +5190,88 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     species_mass=restart_cv.mass*y)
 
             restart_cv = modified_cv
+        else:
+            restart_cv = restart_data["cv"] + 0.*dummy_cv
 
+        # get rest of the actual restart data
+        restart_av_smu = restart_data["av_smu"] + 0.*dummy_av_smu
+        restart_av_sbeta = restart_data["av_sbeta"] + 0.*dummy_av_sbeta
+        restart_av_skappa = restart_data["av_skappa"] + 0.*dummy_av_skappa
+
+        # backwards compatibility, for before entropy_min
+        try:
+            restart_entropy_min = restart_data["entropy_min"] + 0.*dummy_entropy_min
+        except (KeyError):
+            restart_entropy_min = actx.np.zeros_like(restart_cv.mass)\
+                + limiter_smin + 0.*dummy_entropy_min
+            if rank == 0:
+                print("no data for entropy_min in restart file")
+                print(f"entropy_min will be initialzed to {limiter_smin=}")
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            restart_av_sd = restart_data["av_sd"] + 0.*dummy_av_sd
+        except (KeyError):
+            restart_av_sd = actx.np.zeros_like(restart_av_smu)
+            if rank == 0:
+                print("no data for av_sd in restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+
+        if use_wall:
+            restart_wv = restart_data["wv"]
+        if restart_order != order:
+            restart_dcoll = create_discretization_collection(
+                actx,
+                volume_meshes={
+                    vol: mesh
+                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
+                order=restart_order, tensor_product_elements=use_tpe)
+            from meshmode.discretization.connection import make_same_mesh_connection
+            fluid_connection = make_same_mesh_connection(
+                actx,
+                dcoll.discr_from_dd(dd_vol_fluid),
+                restart_dcoll.discr_from_dd(dd_vol_fluid)
+            )
+            if use_wall:
+                wall_connection = make_same_mesh_connection(
+                    actx,
+                    dcoll.discr_from_dd(dd_vol_wall),
+                    restart_dcoll.discr_from_dd(dd_vol_wall)
+                )
+            restart_cv = fluid_connection(restart_data["cv"])
+            restart_av_smu = fluid_connection(restart_data["av_smu"])
+            restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
+            restart_av_skappa = fluid_connection(restart_data["av_skappa"])
+
+            # this is so we can restart from legacy, before use_av=3
+            try:
+                restart_av_sd = fluid_connection(restart_data["av_sd"])
+            except (KeyError):
+                restart_av_sd = actx.np.zeros_like(restart_av_smu)
+                if rank == 0:
+                    print("no data for av_sd in restart file")
+                    print("av_sd will be initialzed to 0 on the mesh")
+
+            temperature_seed = fluid_connection(restart_data["temperature_seed"])
+            if use_wall:
+                restart_wv = wall_connection(restart_data["wv"])
+
+        """
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
             smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd,
             entropy_min=restart_entropy_min)
+        """
+
+        restart_fluid_state = create_fluid_state(
+            cv=0.*dummy_cv + restart_cv,
+            temperature_seed=0.*dummy_temperature_seed + temperature_seed,
+            smoothness_mu=0.*dummy_av_smu + restart_av_smu,
+            smoothness_beta=0.*dummy_av_sbeta + restart_av_sbeta,
+            smoothness_kappa=0.*dummy_av_skappa + restart_av_skappa,
+            smoothness_d=0.*dummy_av_sd + restart_av_sd,
+            entropy_min=0.*dummy_entropy_min + restart_entropy_min)
 
         # update current state with injection intialization
         if init_injection:
@@ -5865,6 +5936,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                    amplitude_func=injection_source_time_func,
                                    #amplitude_func=None,
                                    width=injection_source_diameter)
+    source_mass = injection_source_mass_comb
+    source_mom = np.zeros(shape=(dim,))
+    source_mom[0] = injection_source_mom_x_comb
+    source_mom[1] = injection_source_mom_y_comb
+    if dim == 3:
+        source_mom[2] = injection_source_mom_z_comb
+    source_energy = injection_source_energy_comb
     injection_source_comb = StateSource(dim=dim, nspecies=nspecies,
                                         center=injection_source_center_comb,
                                         mass_amplitude=source_mass,
@@ -6994,6 +7072,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         return status, dt, dumps_so_far + last_viz_interval
 
     #check_time = _check_time
+    from pytato.array import set_traceback_tag_enabled
+    set_traceback_tag_enabled(True)
 
     def my_pre_step(step, t, dt, state):
 
@@ -7060,14 +7140,21 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # update temperature seed and our limiter bounds for entropy
         tseed = fluid_state.temperature
-        gamma = gas_model.eos.gamma(cv, fluid_state.temperature)
-        smin = actx.np.log(fluid_state.pressure/fluid_state.mass_density**gamma)
-        smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
+
         ones = 1. + actx.np.zeros_like(cv.mass)
-        # fixed offset
-        smin_i = ones*(smin_i - 0.05)
-        #smin_i = ones*(smin_i - 1.05)
-        smin_i = ones*limiter_smin
+        if constant_smin is True:
+            smin_i = ones*limiter_smin
+        else:
+            gamma = gas_model.eos.gamma(cv, fluid_state.temperature)
+            smin = actx.np.log(fluid_state.pressure/fluid_state.mass_density**gamma)
+            #smin_nbr_avg = _neighbor_average(smin)
+            # fixed offset
+            #smin_i = ones*(smin_nbr_avg - 0.05)
+            smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
+            # fixed offset
+            smin_i = ones*(smin_i - 0.05)
+
+        #tags = slef
 
         # This re-creation of the state resets *tseed* to current temp and forces the
         # limited cv into state
