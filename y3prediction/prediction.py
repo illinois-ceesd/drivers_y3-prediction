@@ -1393,7 +1393,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False):
+         disable_fallbacks=False, axi_filename=None):
 
     allow_fallbacks = not disable_fallbacks
     # control log messages
@@ -1470,6 +1470,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
     nspeccheck = configurate("nspeccheck", input_data, 1)
+
+    # Restart from previous axisymmetric run
+    # Enable axi restart by setting "axi_filename" on
+    # command line or in input yaml file.
+    if axi_filename is None:
+        axi_filename = configurate("axi_filename", None)
+    restart_from_axi = axi_filename is not None
 
     # garbage collection frequency
     ngarbage = configurate("ngarbage", input_data, 10)
@@ -3831,11 +3838,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_path + "{cname}-{step:09d}-{rank:04d}.pkl"
     )
 
+    from mirgecom.restart import read_restart_data
+    restart_nspecies = 0
+    if restart_from_axi:
+        axi_restart_data = read_restart_data(actx, axi_filename)
+        vol_to_axi_mesh = axi_restart_data["volume_to_local_mesh_data"]
+        axi_vol_meshes = {
+            vol: mesh for vol, (mesh, _) in vol_to_axi_mesh.items()}
+        restart_order = int(axi_restart_data["order"])
+        restart_nspecies = axi_restart_data["nspecies"]
+
     if restart_filename:  # read the grid from restart data
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
-
-        from mirgecom.restart import read_restart_data
         restart_data = read_restart_data(actx, restart_filename)
+
         current_step = restart_data["step"]
         first_step = current_step
         current_t = restart_data["t"]
@@ -3848,7 +3864,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_order = int(restart_data["order"])
 
         restart_nspecies = restart_data["nspecies"]
-        #assert restart_data["nparts"] == nparts
 
         restart_nparts = restart_data["num_parts"]
         if restart_nparts != nparts:
@@ -4098,6 +4113,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if use_wall:
         wall_nelements = volume_to_local_mesh_data["wall"][0].nelements
     local_nelements = fluid_nelements + wall_nelements
+    vol_meshes = {vol: mesh for vol, (mesh, _) in volume_to_local_mesh_data.items()}
 
     # Early grep-ready nelement report
     for rnk in range(nparts):
@@ -4159,13 +4175,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.info(disc_msg)
 
     dcoll = create_discretization_collection(
-        actx,
-        volume_meshes={
-            vol: mesh
-            for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-        order=order,
-        quadrature_order=quadrature_order,
-        tensor_product_elements=use_tpe)
+        actx, volume_meshes=vol_meshes, order=order,
+        quadrature_order=quadrature_order, tensor_product_elements=use_tpe)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -5107,9 +5118,22 @@ def main(actx_class, restart_filename=None, target_filename=None,
     ##################################
 
     restart_wv = None
+    temperature_seed = None
+    restart_av_smu = None
+    restart_av_sbeta = None
+    restart_av_skappa = None
+    restart_av_sd = None
+    restart_entropy_min = None
+    # Restart from a given filename assumed to have same geometry
     if restart_filename:
         if rank == 0:
             logger.info("Restarting soln.")
+
+        #temperature_seed = restart_data["temperature_seed"]
+        #restart_cv = restart_data["cv"]
+        #restart_av_smu = restart_data["av_smu"]
+        #restart_av_sbeta = restart_data["av_sbeta"]
+        #restart_av_skappa = restart_data["av_skappa"]
 
         #
         # sometimes the restart data is missing it tagging, say when restarting from
@@ -5122,6 +5146,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         dummy_cv = force_evaluation(actx, dummy_cv)
 
+        if use_wall:
+            restart_wv = restart_data["wv"]
+
         dummy_temperature_seed = actx.np.zeros_like(dummy_cv.mass) + init_temperature
         dummy_temperature_seed = force_evaluation(actx, dummy_temperature_seed)
 
@@ -5131,9 +5158,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
         dummy_av_sd = actx.np.zeros_like(dummy_cv.mass)
         dummy_entropy_min = actx.np.zeros_like(dummy_cv.mass) + limiter_smin
 
-        # get restart_ cv
+        # need this for species transition
         temperature_seed = restart_data["temperature_seed"] +\
                            0.*dummy_temperature_seed
+
+        # figure out cv first
         if restart_nspecies != nspecies:
             if rank == 0:
                 print(f"Transitioning restart from {restart_nspecies} to {nspecies}")
@@ -5219,6 +5248,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if use_wall:
             restart_wv = restart_data["wv"]
+
         if restart_order != order:
             restart_dcoll = create_discretization_collection(
                 actx,
@@ -5256,22 +5286,85 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if use_wall:
                 restart_wv = wall_connection(restart_data["wv"])
 
-        """
+    # Or restart from a previous axisymmetric version of geometry
+    elif restart_from_axi:
+
+        from mirgecom.simutil import remap_dofarrays_in_structure
+
+        if rank == 0:
+            logger.info("Restarting from axisymmetric soln.")
+
+        # For now, hardcode the axi->3D assuming Y is the axis
+        # of symmetry in the axi run and X is the long axis in
+        # 3D.
+        def target_point_map(target_point):
+            tx = target_point[0]
+            ty = target_point[1]
+            tz = target_point[2]
+            y_axi = tx
+            x_axi = np.sqrt(ty*ty + tz*tz)
+            return np.array([x_axi, y_axi])
+
+        # Take care to respect volume-specific data items
+        axi_fluid_items = {
+            "tseed": axi_restart_data["temperature_seed"],
+            "cv": axi_restart_data["cv"],
+            "av_smu": axi_restart_data["av_smu"],
+            "av_sbeta": axi_restart_data["av_sbeta"],
+            "av_skappa": axi_restart_data["av_skappa"]
+        }
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            axi_av_sd = axi_restart_data["av_sd"]
+        except (KeyError):
+            axi_av_sd = actx.np.zeros_like(axi_fluid_items["av_smu"])
+            if rank == 0:
+                print("no data for av_sd in axi restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+        axi_fluid_items["av_sd"] = axi_av_sd
+
+        x_vol = "fluid"
+        fluid_restart_items = remap_dofarrays_in_structure(
+            actx, axi_fluid_items, axi_vol_meshes,
+            vol_meshes, target_point_map=target_point_map,
+            volume_id=x_vol)
+
+        axi_cv = fluid_restart_items["cv"]
+        axi_mom = axi_cv.momentum
+        fl_y = fluid_nodes[1]
+        fl_z = fluid_nodes[2]
+        fl_r = actx.np.sqrt(fl_y*fl_y + fl_z*fl_z)
+        xfer_mom_x = axi_mom[1]  # y-component of axi maps to Vx
+        xfer_mom_y = axi_mom[0] * fl_y/fl_r  # Vy_axi * r_hat_x
+        xfer_mom_z = axi_mom[0] * fl_z/fl_r  # Vy_axi * r_hat_y
+        restart_mom = make_obj_array([xfer_mom_x, xfer_mom_y, xfer_mom_z])
+        restart_cv = axi_cv.replace(momentum=restart_mom)
+
+        temperature_seed = fluid_restart_items["tseed"]
+        restart_av_smu = fluid_restart_items["av_smu"]
+        restart_av_sbeta = fluid_restart_items["av_sbeta"]
+        restart_av_skappa = fluid_restart_items["av_skappa"]
+        restart_av_sd = fluid_restart_items["av_sd"]
+
+        if use_wall:
+            axi_wall_items = {}
+            axi_wall_items["wv"] = axi_restart_data["wv"]
+            x_vol = "wall"
+            wall_restart_items = remap_dofarrays_in_structure(
+                actx, axi_wall_items, axi_vol_meshes,
+                vol_meshes, target_point_map=target_point_map,
+                volume_id=x_vol)
+            restart_wv = wall_restart_items["wv"]
+
+    # Intialize the solution from restarted data
+    if restart_filename or restart_from_axi:
+
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
             smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd,
             entropy_min=restart_entropy_min)
-        """
-
-        restart_fluid_state = create_fluid_state(
-            cv=0.*dummy_cv + restart_cv,
-            temperature_seed=0.*dummy_temperature_seed + temperature_seed,
-            smoothness_mu=0.*dummy_av_smu + restart_av_smu,
-            smoothness_beta=0.*dummy_av_sbeta + restart_av_sbeta,
-            smoothness_kappa=0.*dummy_av_skappa + restart_av_skappa,
-            smoothness_d=0.*dummy_av_sd + restart_av_sd,
-            entropy_min=0.*dummy_entropy_min + restart_entropy_min)
 
         # update current state with injection intialization
         if init_injection:
@@ -5301,8 +5394,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
+
+    # Not a restart of any sort, Set the current state from time 0
     else:
-        # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
@@ -5419,10 +5513,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             logger.info("Reading target soln.")
         if target_order != order:
             target_dcoll = create_discretization_collection(
-                actx,
-                volume_meshes={
-                    vol: mesh
-                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
+                actx, volume_meshes=vol_meshes,
                 order=target_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
@@ -7079,6 +7170,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
+        if logmgr:
+            logmgr.tick_before()
 
         # This check reports when species mass fractions (Y) violate
         # the constraints of being in the range [0, 1] +/- 1e-16,
@@ -7147,14 +7240,30 @@ def main(actx_class, restart_filename=None, target_filename=None,
         else:
             gamma = gas_model.eos.gamma(cv, fluid_state.temperature)
             smin = actx.np.log(fluid_state.pressure/fluid_state.mass_density**gamma)
-            #smin_nbr_avg = _neighbor_average(smin)
+
+            from mirgecom.simutil import (
+                inverse_element_connectivity,
+                compute_vertex_averages,
+                scatter_vertex_values_to_dofarray,
+            )
+
+            iconn = inverse_element_connectivity(
+                mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh)
+
+            def nodal_average(field):
+                # Compute cell averages of the state
+                actx = field.array_context
+                nodal_avg = compute_vertex_averages(actx, field, iconn)
+                return scatter_vertex_values_to_dofarray(
+                    actx, field, iconn, nodal_avg)
+
+            element_average_smin = element_average(dcoll, dd_vol_fluid, smin)
+            smin_i = nodal_average(element_average_smin)
+
             # fixed offset
-            #smin_i = ones*(smin_nbr_avg - 0.05)
-            smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
+            #smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
             # fixed offset
             smin_i = ones*(smin_i - 0.05)
-
-        #tags = slef
 
         # This re-creation of the state resets *tseed* to current temp and forces the
         # limited cv into state
@@ -7162,9 +7271,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         fluid_state = replace_fluid_state(fluid_state, gas_model, entropy_min=smin_i)
 
         try:
-            if logmgr:
-                logmgr.tick_before()
-
             # disable non-constant dt timestepping for now
             # re-enable when we're ready
 
