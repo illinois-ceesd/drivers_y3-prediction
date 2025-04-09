@@ -91,4 +91,4 @@ if __name__ == "__main__":
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
          disable_fallbacks=args.disable_fallbacks,
-         geom_scale=args.scale, axi_filename=args.axi_filename)
+         axi_filename=args.axi_filename)
