@@ -7116,7 +7116,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # work good for shock 1d
 
         tau = current_dt/smoothness_tau
-        epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
+        epsilon_diff = (
+            actx.np.zeros_like(cv.mass)
+            + smoothness_alpha*smoothed_char_length_fluid**2/current_dt)
 
         if use_av > 0:
             # regular boundaries for smoothness mu
@@ -7240,7 +7242,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in ox_tpairs})
 
                 wall_ox_mass_rhs = diffusion_operator(
-                    dcoll, wall_model.oxygen_diffusivity,
+                    dcoll, wall_model.oxygen_diffusivity + actx.np.zeros_like(wv.mass),
                     wall_ox_boundaries, wv.ox_mass,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
@@ -7268,7 +7270,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in reverse_ox_tpairs})
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
-                    dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
+                    dcoll, actx.np.zeros_like(fluid_ox_mass), fluid_ox_boundaries,
+                    fluid_ox_mass,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
