@@ -149,6 +149,7 @@ from arraycontext import outer
 from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
 from meshmode.discretization.connection import FACE_RESTR_ALL
 from mirgecom.flux import num_flux_central
+import time
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -6703,6 +6704,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     def my_pre_step(step, t, dt, state):
 
+        if logmgr is None:
+            print(f"prestep entry time={time.time()}, {step=}")
+
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
 
@@ -6736,29 +6740,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
 
-        # we can't get the limited viz data back from create_fluid_state
-        # so call the limiter directly first, basically doing the limiting twice
-        theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
-        theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
-        theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
-        if viz_level >= 2 and use_species_limiter == 2:
-            cv_lim, theta_rho, theta_Y, theta_pres = \
-                limit_fluid_state_lv(
-                    dcoll, cv=stepper_state.cv, gas_model=gas_model,
-                    temperature_seed=stepper_state.tseed,
-                    dd=dd_vol_fluid, viz_theta=True)
-
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
                                          smoothness_beta=stepper_state.av_sbeta,
                                          smoothness_kappa=stepper_state.av_skappa,
                                          smoothness_d=stepper_state.av_sd)
-
-        if use_wall:
-            wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
-        cv = fluid_state.cv  # reset cv to limited version
         tseed = fluid_state.temperature
+        cv = fluid_state.cv  # reset cv to limited version
 
         # This re-creation of the state resets *tseed* to current temp and forces the
         # limited cv into state
@@ -6780,6 +6769,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             cfl_fluid = 0.
             cfl_wall = cfl_fluid
             if any([do_viz, do_restart, do_health, do_status]):
+                if use_wall:
+                    wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
                 wv = None
                 if not force_eval:
                     fluid_state = force_evaluation(actx, fluid_state)
@@ -6842,7 +6833,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             """
 
             t_wall = t_wall_start + (step - first_step)*dt*wall_time_scale
-            my_write_status_lite(step=step, t=t, t_wall=t_wall)
+            # my_write_status_lite(step=step, t=t, t_wall=t_wall)
 
             # these status updates require global reductions on state data
             if do_status:
@@ -6868,6 +6859,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
 
             if do_viz:
+                # we can't get the limited viz data back from create_fluid_state
+                # so call the limiter directly first, doing the limiting twie
+                theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+                theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+                theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
+                if viz_level >= 2 and use_species_limiter == 2:
+                    cv_lim, theta_rho, theta_Y, theta_pres = \
+                        limit_fluid_state_lv(
+                            dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                            temperature_seed=stepper_state.tseed,
+                            dd=dd_vol_fluid, viz_theta=True)
+
                 # pack things up
                 if use_wall:
                     viz_state = make_obj_array([fluid_state, wv])
@@ -6922,9 +6925,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
             MPI.Pcontrol(2)
             MPI.Pcontrol(1)
 
+        if logmgr is None:
+            print(f"prestep exit time={time.time()}")
+
         return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
+
+        if logmgr is None:
+            print(f"poststep entry time={time.time()}, {step=}")
 
         if step == last_profiling_step:
             MPI.Pcontrol(0)
@@ -6942,6 +6951,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
+
+        if logmgr is None:
+            print(f"poststep exit time={time.time()}")
 
         return state, dt
 
