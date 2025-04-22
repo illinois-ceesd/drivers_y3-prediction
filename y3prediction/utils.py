@@ -378,6 +378,175 @@ class StateSource:
                               momentum=momentum, species_mass=species_mass)
 
 
+class StateSource3d:
+    r"""State variable deposition from a collection of sources"
+
+    Density, momentum, energy, and species mass fraction
+    are deposited as a gaussian  of the form:
+
+    .. math::
+
+        e &= e + e_{a}\exp^{(1-r^{2})}\\
+
+    hard-coded to match the Y4 3D injection pattern
+
+    .. automethod:: __init__
+    .. automethod:: __call__
+    """
+    def __init__(self, *, dim, nspecies,
+                 center=None, width=1.0,
+                 mass_amplitude,
+                 mom_amplitude,
+                 energy_amplitude,
+                 y_amplitude,
+                 amplitude_func=None):
+        r"""Initialize the source parameters.
+
+        Parameters
+        ----------
+        center: numpy.ndarray
+            center of source
+        amplitude: float
+            source strength modifier
+        amplitude_fun: function
+            variation of amplitude with time
+        """
+
+        if center is None:
+            center = np.zeros(shape=(dim,))
+        self._center = center
+        self._dim = dim
+        self._nspecies = nspecies
+        self._mass_amplitude = mass_amplitude
+        self._mom_amplitude = mom_amplitude
+        self._energy_amplitude = energy_amplitude
+        self._y_amplitude = y_amplitude
+        self._width = width
+        self._amplitude_func = amplitude_func
+
+    def __call__(self, x_vec, cv, time, **kwargs):
+        """
+        Create the energy deposition at time *t* and location *x_vec*.
+
+        the source at time *t* is created by evaluting the gaussian
+        with time-dependent amplitude at *t*.
+
+        Parameters
+        ----------
+        cv: :class:`mirgecom.gas_model.FluidState`
+            Fluid state object with the conserved and thermal state.
+        time: float
+            Current time at which the solution is desired
+        x_vec: numpy.ndarray
+            Nodal coordinates
+        """
+
+        def gaussian_point(loc, source_cv, mass_amp, mom_amp, y_amp, e_amp):
+
+            # coordinates relative to lump center
+            rel_center = make_obj_array(
+                [x_vec[i] - loc[i] for i in range(self._dim)]
+            )
+            actx = x_vec[0].array_context
+            r = actx.np.sqrt(np.dot(rel_center, rel_center))
+            expterm = time_amplitude*actx.np.exp(-(r**2)/(2*self._width*self._width))
+
+            mass = actx.np.zeros_like(cv.mass) + self._mass_amplitude*expterm
+            momentum = actx.np.zeros_like(cv.momentum)
+            for i in range(self._dim):
+                momentum[i] = self._mom_amplitude[i]*expterm
+
+            species_mass = actx.np.zeros_like(cv.species_mass)
+            for i in range(self._nspecies):
+                species_mass[i] = mass*self._y_amplitude[i]
+
+            kinetic_energy = actx.np.where(
+                actx.np.greater(mass, 0.), 0.5*np.dot(momentum, momentum)/mass, 0.)
+
+            energy = actx.np.zeros_like(cv.energy) + \
+                self._energy_amplitude*expterm + kinetic_energy
+
+            return source_cv + make_conserved(
+                dim=self._dim, mass=mass, energy=energy,
+                momentum=momentum, species_mass=species_mass)
+
+        t = time
+        if self._amplitude_func is not None:
+            time_amplitude = self._amplitude_func(t)
+        else:
+            time_amplitude = 1.0
+
+        #print(f"{time=} {amplitude=}")
+
+        loc = self._center
+        source_cv = gaussian_point(loc, cv, mass_amp=0., e_amp=0.,
+                                   mom_amp=np.zeros(shape=(self._dim,)),
+                                   y_amp=np.zeros(shape=(self._nspecies,)))
+
+        # distance from the axis to each injector source
+        injector_radius = 0.013
+
+        # isolator injectors
+        # put in the target flow rates here
+        rate_factor = 1./(2.*np.pi*self._width**2)**(3/2)
+        mass = 5.95e-4*rate_factor
+        eng = 1.79e+2*rate_factor
+        mom_mag = 3.23e-1*rate_factor
+
+        # top and bottom y have radius 0.375 mm
+        loc = [0.125, injector_radius, 0.]
+        mom = [mom_mag, -mom_mag, 0.]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.125, -injector_radius, 0.]
+        mom = [mom_mag, mom_mag, 0.]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+
+        # fore and aft z have radius 0.25 mm
+        mass = 2.65e-4*rate_factor
+        eng = 7.9718e1*rate_factor
+        mom_mag = 1.4373e-1*rate_factor
+
+        loc = [0.125, 0., injector_radius]
+        mom = [mom_mag, 0., -mom_mag]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.125, 0., -injector_radius]
+        mom = [mom_mag, 0., mom_mag]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+
+        # combustor injectors, radius 0.125 mm
+        mass = 5.78e-5*rate_factor
+        mom_mag = 3.14e-2*rate_factor
+        eng = 1.74e1*rate_factor
+
+        loc = [0.47534, injector_radius, 0.]
+        mom = [mom_mag, -mom_mag, 0.]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.47534, -injector_radius, 0.]
+        mom = [mom_mag, mom_mag, 0.]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.47534, 0., injector_radius]
+        mom = [mom_mag, 0., -mom_mag]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.47534, 0., -injector_radius]
+        mom = [mom_mag, 0., mom_mag]
+
+        factor = np.math.sqrt(2)/2
+        loc = [0.47534, injector_radius*factor, injector_radius*factor]
+        mom = [mom_mag, -mom_mag*factor, -mom_mag*factor]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.47534, -injector_radius*factor, injector_radius*factor]
+        mom = [mom_mag, -mom_mag*factor, mom_mag*factor]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.47534, injector_radius*factor, -injector_radius*factor]
+        mom = [mom_mag, -mom_mag*factor, mom_mag*factor]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        loc = [0.47534, -injector_radius*factor, -injector_radius*factor]
+        mom = [mom_mag, mom_mag*factor, mom_mag*factor]
+        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+
+        return source_cv
+
+
 class InitSponge:
     r"""Solution initializer for flow in the ACT-II facility
 

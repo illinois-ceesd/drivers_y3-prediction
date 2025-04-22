@@ -28,7 +28,7 @@ class InitUnstartRamp:
                  pressure_outlet, temperature_outlet, velocity_outlet,
                  mass_frac_outlet,
                  temp_wall, temp_sigma, vel_sigma,
-                 gauss_outlet=False,
+                 gauss_outlet=False, gauss_outlet_sigma=0.25,
                  inlet_pressure_func=None, outlet_pressure_func=None):
         r"""Initialize mixture parameters.
 
@@ -52,6 +52,7 @@ class InitUnstartRamp:
         self._temp_sigma = temp_sigma
         self._vel_sigma = vel_sigma
         self._gauss_outlet = gauss_outlet
+        self._gauss_outlet_sigma = gauss_outlet_sigma
 
         # bulk fluid conditions (background)
         self._temp_bulk = temperature_bulk
@@ -276,10 +277,13 @@ class InitUnstartRamp:
         # initial discontinuity location
         if self._gauss_outlet:
             if self._dim == 2:
-                y0 = 2.0
+                # needs better meshing in the plume region
+                #y0 = 2.0
+                y0 = 0.95
                 dist = x_vec[1] - y0
             else:
-                x0 = 2.0
+                #x0 = 2.0
+                x0 = 0.95
                 dist = x_vec[0] - x0
         else:
             if self._dim == 2:
@@ -303,7 +307,7 @@ class InitUnstartRamp:
             else:
                 r2 = (x_vec[1])**2 + (x_vec[2])**2
             # form a gaussian about the symmetry axis with standard deviation sigma
-            sigma = 0.25
+            sigma = self._gauss_outlet_sigma
             velocity_outlet = self._vel_outlet*actx.np.exp(-r2/2./sigma)
         velocity = velocity_outlet + (velocity - velocity_outlet)*weight
 

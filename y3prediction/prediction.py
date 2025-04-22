@@ -1656,6 +1656,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_injection_source = configurate("use_injection_source", input_data, True)
     use_injection_source_comb = configurate("use_injection_source_comb",
                                             input_data, False)
+    use_injection_source_3d = configurate("use_injection_source_3d",
+                                          input_data, False)
     use_injection = configurate("use_injection", input_data, True)
     init_injection = configurate("init_injection", input_data, False)
     use_upstream_injection = configurate("use_upstream_injection", input_data, False)
@@ -1665,6 +1667,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_time_dependent_sponge = configurate("use_time_dependent_sponge",
                                             input_data, False)
     use_gauss_outlet = configurate("use_gauss_outlet", input_data, False)
+    gauss_outlet_radius = configurate("gauss_outlet_radius", input_data, 1.45)
+    gauss_outlet_sigma = configurate("gauss_outlet_sigma", input_data, 0.5)
     sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
 
     # artificial viscosity control
@@ -1679,6 +1683,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_species_limiter = configurate("use_species_limiter", input_data, 0)
     limiter_smin = configurate("limiter_smin", input_data, 10)
     constant_smin = configurate("constant_smin", input_data, True)
+    use_hammer_species = configurate("use_hammer_species", input_data, True)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -2082,6 +2087,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         elif use_ignition == 2:
             print("heat source ignition")
         print("#### Ignition control parameters ####\n")
+
+    if rank == 0 and use_injection_source_3d is True:
+        print("injection source 3D ... it's complicated")
 
     # injection mass source
     injection_source_center = np.zeros(shape=(dim,))
@@ -3068,9 +3076,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if use_gauss_outlet is True:
             mdot = 0.022
             outflow_density = pres_bkrnd/temp_bkrnd/r
-            # this number is hard coded for outlet size R=1.45, sigma=0.5
-            sigma = 0.25
-            radius = 1.45
+            sigma = gauss_outlet_sigma
+            #radius = 1.45
+            radius = gauss_outlet_radius
             factor = 1./(2*3.14159*sigma**2*(
                 1 - math.exp(-(radius**2/(2*sigma**2)))))
             if use_axisymmetric:
@@ -3200,7 +3208,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma,
-            gauss_outlet=use_gauss_outlet)
+            gauss_outlet=use_gauss_outlet,
+            gauss_outlet_sigma=gauss_outlet_sigma)
 
     elif init_case == "y3prediction_ramp":
 
@@ -5527,13 +5536,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
             target_av_skappa = fluid_connection(target_data["av_skappa"])
             target_av_sd = fluid_connection(target_data["av_sd"])
         else:
-            target_cv = target_data["cv"]
-            target_av_smu = target_data["av_smu"]
-            target_av_sbeta = target_data["av_sbeta"]
-            target_av_skappa = target_data["av_skappa"]
+
+            #
+            # sometimes the restart data is missing it tagging,
+            # say when restarting from a non-lazy simulation
+            # make a dummy init to get the tagging and append the restart data to it
+            #
+            dummy_cv = bulk_init(
+                dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
+                time=current_t)
+
+            dummy_cv = force_evaluation(actx, dummy_cv)
+            dummy_zeros = actx.np.zeros_like(dummy_cv.mass)
+
+            target_cv = target_data["cv"] + 0.*dummy_cv
+            target_av_smu = target_data["av_smu"] + 0.*dummy_zeros
+            target_av_sbeta = target_data["av_sbeta"] + 0.*dummy_zeros
+            target_av_skappa = target_data["av_skappa"] + 0.*dummy_zeros
             # this is so we can restart from legacy, before use_av=3
             try:
-                target_av_sd = target_data["av_sd"]
+                target_av_sd = target_data["av_sd"] + 0.*dummy_zeros
             except (KeyError):
                 target_av_sd = actx.np.zeros_like(target_av_smu)
                 if rank == 0:
@@ -6000,8 +6022,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
-    # gaussian application in time
-    injection_source_diameter /= 6.0697
+    # gaussian application in space
+    if dim == 2:
+        injection_source_diameter /= 6.0697
+    else:
+        # 95% falls in this diameter
+        injection_source_diameter /= 4.
 
     def injection_source_time_func(t):
         scaled_time = injection_source_init_time - t
@@ -6009,7 +6035,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         xtanh = 4*scaled_time/injection_source_ramp_time
         return 0.5*(1.0 - actx.np.tanh(xtanh))
 
-    from y3prediction.utils import StateSource
+    from y3prediction.utils import StateSource, StateSource3d
     source_mass = injection_source_mass
     source_mom = np.zeros(shape=(dim,))
     source_mom[0] = injection_source_mom_x
@@ -6042,6 +6068,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                         y_amplitude=source_y,
                                         amplitude_func=injection_source_time_func,
                                         #amplitude_func=None,
+                                        width=injection_source_diameter)
+    injection_source_3d = StateSource3d(dim=dim, nspecies=nspecies,
+                                        center=injection_source_center_comb,
+                                        mass_amplitude=source_mass,
+                                        mom_amplitude=source_mom,
+                                        energy_amplitude=source_energy,
+                                        y_amplitude=source_y,
+                                        amplitude_func=injection_source_time_func,
                                         width=injection_source_diameter)
 
     if rank == 0:
@@ -7163,8 +7197,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         return status, dt, dumps_so_far + last_viz_interval
 
     #check_time = _check_time
-    from pytato.array import set_traceback_tag_enabled
-    set_traceback_tag_enabled(True)
+    #from pytato.array import set_traceback_tag_enabled
+    #set_traceback_tag_enabled(True)
 
     def my_pre_step(step, t, dt, state):
 
@@ -7178,7 +7212,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # and sum(Y) = 1 +/- 1e-15. If the ranges are violated,
         # the snippet below will use *hammer_species* to force Y
         # back into the expected range.
-        if nspecies > 0:
+        if nspecies > 0 and use_hammer_species is True:
             if check_step(step=step, interval=nspeccheck):
                 spec_errors = global_reduce(
                     spec_check(state[0]), op="lor")
@@ -7383,7 +7417,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 if viz_level >= 2 and use_species_limiter == 2:
                     cv_lim, theta_rho, theta_Y, theta_pres = \
                         limit_fluid_state_lv(
-                            dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                            dcoll, cv=state[0], gas_model=gas_model,
                             temperature_seed=stepper_state.tseed,
                             entropy_min=stepper_state.smin,
                             dd=dd_vol_fluid, viz_theta=True)
@@ -7419,7 +7453,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if viz_level >= 2 and use_species_limiter == 2:
                 cv_lim, theta_rho, theta_Y, theta_pres = \
                     limit_fluid_state_lv(
-                        dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                        dcoll, cv=state[0], gas_model=gas_model,
                         temperature_seed=stepper_state.tseed,
                         entropy_min=stepper_state.smin,
                         dd=dd_vol_fluid, viz_theta=True)
@@ -7707,6 +7741,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
             fluid_rhs = fluid_rhs + \
                 injection_source_comb(x_vec=fluid_nodes, cv=cv,
                                       eos=gas_model.eos, time=t)
+
+        if use_injection_source_3d is True:
+            fluid_rhs = fluid_rhs + \
+                injection_source_3d(x_vec=fluid_nodes, cv=cv,
+                                    eos=gas_model.eos, time=t)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
