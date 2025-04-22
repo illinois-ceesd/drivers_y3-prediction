@@ -39,7 +39,13 @@ from mirgecom.discretization import create_discretization_collection
 
 from meshmode.mesh import BTAG_ALL, BTAG_REALLY_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
-from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE, DD_VOLUME_ALL
+from grudge.dof_desc import (
+    VolumeDomainTag,
+    # BoundaryDomainTag,
+    DOFDesc,
+    DISCR_TAG_BASE,
+    DD_VOLUME_ALL
+)
 from grudge.op import nodal_max, nodal_min
 from grudge.trace_pair import inter_volume_trace_pairs
 from grudge.discretization import filter_part_boundaries
@@ -109,6 +115,7 @@ from mirgecom.transport import (SimpleTransport,
 from mirgecom.gas_model import (
     GasModel,
     make_fluid_state,
+    # replace_fluid_state,
     make_operator_fluid_states,
     project_fluid_state
 )
@@ -175,6 +182,8 @@ class StepperState:
     av_skappa: DOFArray
     av_sd: DOFArray
 
+    __array_ufunc__ = None
+
     def replace(self, **kwargs):
         """Return a copy of *self* with the attributes in *kwargs* replaced."""
         return replace(self, **kwargs)
@@ -200,6 +209,8 @@ class WallStepperState(StepperState):
 
     wv: WallVars
 
+    __array_ufunc__ = None
+
     def get_obj_array(self):
         """Return an object array containing all the stored quantitines."""
         return make_obj_array([self.cv, self.tseed,
@@ -208,7 +219,8 @@ class WallStepperState(StepperState):
                                self.wv])
 
 
-def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, av_sd, wv=None):
+def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, av_sd, wv=None,
+                       entropy_min=None):
     if wv is not None:
         return WallStepperState(cv=cv, tseed=tseed, av_smu=av_smu,
                                 av_sbeta=av_sbeta, av_skappa=av_skappa,
@@ -566,7 +578,8 @@ def axisym_source_wall(dcoll, wall_nodes, wall_temperature, thermal_conductivity
 
 def make_coupled_operator_fluid_states(
         dcoll, fluid_state, gas_model, boundaries, fluid_dd, wall_dd,
-        quadrature_tag=DISCR_TAG_BASE, comm_tag=None, limiter_func=None):
+        quadrature_tag=DISCR_TAG_BASE, comm_tag=None, limiter_func=None,
+        entropy_min=None):
     """Prepare gas model-consistent fluid states for use in coupled operators."""
 
     all_boundaries = {}
@@ -578,7 +591,8 @@ def make_coupled_operator_fluid_states(
 
     return make_operator_fluid_states(
         dcoll, fluid_state, gas_model, all_boundaries, quadrature_tag,
-        dd=fluid_dd, comm_tag=comm_tag, limiter_func=limiter_func)
+        dd=fluid_dd, comm_tag=comm_tag, limiter_func=limiter_func,
+        entropy_min=entropy_min)
 
 
 def coupled_grad_operator(
@@ -593,6 +607,7 @@ def coupled_grad_operator(
         quadrature_tag=DISCR_TAG_BASE,
         fluid_operator_states_quad=None,
         limiter_func=None,
+        entropy_min=None,
         comm_tag=None):
     """Compute the gradients for the coupled fluid/wall."""
 
@@ -620,6 +635,7 @@ def coupled_grad_operator(
         fluid_operator_states_quad = make_operator_fluid_states(
             dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
             quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+            entropy_min=entropy_min,
             comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
     # Compute the gradient operators for both subdomains
@@ -627,11 +643,12 @@ def coupled_grad_operator(
         dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
         dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
         operator_states_quad=fluid_operator_states_quad,
-        comm_tag=comm_tag)
+        entropy_min=entropy_min, comm_tag=comm_tag)
 
     fluid_grad_temperature = fluid_grad_t_operator(
         dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
         time=time, quadrature_tag=quadrature_tag,
+        limiter_func=limiter_func, entropy_min=entropy_min,
         dd=fluid_dd, operator_states_quad=fluid_operator_states_quad)
 
     wall_grad_temperature = wall_grad_t_operator(
@@ -3027,7 +3044,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
+            rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -3050,7 +3067,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -3776,7 +3793,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     else:  # generate the grid from scratch
 
         # eventually encapsulate these inside a class for the respective inits
-        if init_case == "shock1d" or init_case == "flame1d" or init_case == "unstart_ramp":
+        if init_case == "shock1d" or init_case == "flame1d" or \
+           init_case == "unstart_ramp":
 
             def get_mesh_data():
                 if generate_mesh is True:
@@ -3790,8 +3808,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         use_quads=use_tpe, use_gmsh=use_gmsh,
                         geom_scale=geom_scale, periodic=periodic_mesh)()
                 else:
+
+                    if mesh_filename.endswith(".pkl"):
+                        if rank == 0:
+                            print("Reading mesh from pkl file.")
+                        with open(mesh_filename, "rb") as pkl_file:
+                            global_data = pickle.load(pkl_file)
+                        return global_data
+
                     if rank == 0:
-                        print("Reading mesh")
+                        print("Reading mesh from gmsh file.")
                     from meshmode.mesh.io import read_gmsh
                     mesh_construction_kwargs = {
                         "force_positive_orientation":  True,
@@ -3898,6 +3924,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"Reading mesh from {mesh_filename}")
 
             def get_mesh_data():
+                if mesh_filename.endswith(".pkl"):
+                    with open(mesh_filename, "rb") as pkl_file:
+                        global_data = pickle.load(pkl_file)
+                    return global_data
+
                 from meshmode.mesh.io import read_gmsh
                 mesh_construction_kwargs = {
                     "force_positive_orientation":  True,
@@ -4192,7 +4223,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     smoothed_char_length_fluid = char_length_fluid
 
     if use_smoothed_char_length:
-        for i in range(smooth_char_length):
+        for _ in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
                 compute_smoothed_char_length_compiled(smoothed_char_length_fluid, 0)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
