@@ -57,7 +57,7 @@ transport: 1
 eos: 1
 order:  1
 quadrature_order: 1
-#integrator: euler
-integrator: compiled_lsrk54
+integrator: rhs_caller
+# integrator: compiled_lsrk54
 #health_pres_min: 2828
 #health_pres_max: 274259

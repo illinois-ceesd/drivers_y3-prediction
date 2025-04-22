@@ -1845,12 +1845,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # param sanity check
     allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144",
-                           "compiled_lsrk54", "ssprk43"]
+                           "compiled_lsrk54", "ssprk43", "rhs_caller"]
     if integrator not in allowed_integrators:
         error_message = "Invalid time integrator: {}".format(integrator)
         raise RuntimeError(error_message)
 
-    if integrator == "compiled_lsrk54":
+    if integrator in ("compiled_lsrk54", "rhs_caller"):
         if rank == 0:
             print("Setting force_eval = False for pre-compiled time integration")
         force_eval = False
@@ -2115,6 +2115,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
 
+    def rhs_caller(state, t, dt, rhs):
+        rhs(t, state)
+        return state
+
     timestepper = rk4_step
     if integrator == "euler":
         timestepper = euler_step
@@ -2126,6 +2130,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         timestepper = lsrk144_step
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
+    if integrator == "rhs_caller":
+        timestepper = rhs_caller
 
     flux_msg = "\nSetting inviscid numerical flux to: "
     if use_esdg:
@@ -6864,28 +6870,53 @@ def main(actx_class, restart_filename=None, target_filename=None,
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
 
-        fluid_state = create_fluid_state(cv=stepper_state.cv,
-                                         temperature_seed=stepper_state.tseed,
-                                         smoothness_mu=stepper_state.av_smu,
-                                         smoothness_beta=stepper_state.av_sbeta,
-                                         smoothness_kappa=stepper_state.av_skappa,
-                                         smoothness_d=stepper_state.av_sd)
-        tseed = fluid_state.temperature
-        cv = fluid_state.cv  # reset cv to limited version
+        do_viz = check_step(step=step, interval=nviz)
+        do_restart = check_step(step=step, interval=nrestart)
+        do_health = check_step(step=step, interval=nhealth)
+        do_status = check_step(step=step, interval=nstatus)
+        do_mixture = gas_model.is_mixture
 
-        # This re-creation of the state resets *tseed* to current temp and forces the
-        # limited cv into state
-        stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
+        if any([do_viz, do_restart, do_health, do_status, do_mixture]):
+            fluid_state = create_fluid_state(cv=stepper_state.cv,
+                                             temperature_seed=stepper_state.tseed,
+                                             smoothness_mu=stepper_state.av_smu,
+                                             smoothness_beta=stepper_state.av_sbeta,
+                                             smoothness_kappa=stepper_state.av_skappa,
+                                             smoothness_d=stepper_state.av_sd)
+
+        # NOTE: This means "limiter" won't be called for non-mixtures!
+        #       Runs with passive species will need species fractions
+        #       normalized before use in mixture sim.
+        if do_mixture:
+            tseed = fluid_state.temperature
+            cv = fluid_state.cv  # reset cv to limited version
+            # This re-creation of the state resets *tseed* to current temp and
+            # forces the limited cv into stepper state
+            stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
+
+        # we can't get the limited viz data back from create_fluid_state
+        # so call the limiter directly first, basically doing the limiting twice
+        if do_viz:
+            theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+            theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+            theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
+            if viz_level >= 2 and use_species_limiter == 2:
+                cv_lim, theta_rho, theta_Y, theta_pres = \
+                    limit_fluid_state_lv(
+                        dcoll, cv=stepper_state.cv, gas_model=gas_model,
+                        temperature_seed=stepper_state.tseed,
+                        dd=dd_vol_fluid, viz_theta=True)
+
+        if do_viz or do_restart or do_health or do_status:
+            if use_wall:
+                wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
+            stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
 
         try:
 
             # disable non-constant dt timestepping for now
             # re-enable when we're ready
 
-            do_viz = check_step(step=step, interval=nviz)
-            do_restart = check_step(step=step, interval=nrestart)
-            do_health = check_step(step=step, interval=nhealth)
-            do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
 
             dv = None
@@ -7258,7 +7289,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # work good for shock 1d
 
         tau = current_dt/smoothness_tau
-        epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
+        epsilon_diff = (
+            actx.np.zeros_like(cv.mass)
+            + smoothness_alpha*smoothed_char_length_fluid**2/current_dt)
 
         if use_av > 0:
             # regular boundaries for smoothness mu
@@ -7382,7 +7415,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in ox_tpairs})
 
                 wall_ox_mass_rhs = diffusion_operator(
-                    dcoll, wall_model.oxygen_diffusivity,
+                    dcoll, wall_model.oxygen_diffusivity + actx.np.zeros_like(wv.mass),
                     wall_ox_boundaries, wv.ox_mass,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
@@ -7411,9 +7444,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
                     dcoll, actx.np.zeros_like(fluid_ox_mass), fluid_ox_boundaries,
-                    # FIXME: Figure out why this was OK before, but not now
-                    # dcoll, 0, fluid_ox_boundaries,
-                    fluid_ox_mass, quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
+                    fluid_ox_mass,
+                    quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
                 fluid_rhs = fluid_rhs + 0*fluid_dummy_ox_mass_rhs
