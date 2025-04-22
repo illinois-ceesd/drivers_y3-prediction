@@ -6924,6 +6924,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         return stepper_state.get_obj_array(), dt
 
+    def _queue_finish():
+        # Separate function to make it show up in profiles
+        if queue:
+            queue.finish()
+
     def my_post_step(step, t, dt, state):
 
         if step == last_profiling_step:
@@ -6939,8 +6944,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                             "future GC collections")
                 gc.freeze()
 
-        if queue:
-            queue.finish()
+        _queue_finish()
 
         if logmgr:
             set_dt(logmgr, dt)
