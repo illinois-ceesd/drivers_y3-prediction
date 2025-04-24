@@ -105,7 +105,8 @@ from mirgecom.diffusion import (
 from mirgecom.initializers import Uniform, MulticomponentLump
 from mirgecom.eos import (
     IdealSingleGas, PyrometheusMixture,
-    MixtureDependentVars, GasDependentVars
+    MixtureDependentVars, GasDependentVars,
+    MixtureEOS
 )
 from mirgecom.transport import (SimpleTransport,
                                 PowerLawTransport,
@@ -6874,15 +6875,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
         do_restart = check_step(step=step, interval=nrestart)
         do_health = check_step(step=step, interval=nhealth)
         do_status = check_step(step=step, interval=nstatus)
-        do_mixture = gas_model.is_mixture
+        do_mixture = isinstance(gas_model.eos, MixtureEOS)
 
         if any([do_viz, do_restart, do_health, do_status, do_mixture]):
-            fluid_state = create_fluid_state(cv=stepper_state.cv,
-                                             temperature_seed=stepper_state.tseed,
-                                             smoothness_mu=stepper_state.av_smu,
-                                             smoothness_beta=stepper_state.av_sbeta,
-                                             smoothness_kappa=stepper_state.av_skappa,
-                                             smoothness_d=stepper_state.av_sd)
+            fluid_state = create_fluid_state(
+                cv=stepper_state.cv,
+                temperature_seed=stepper_state.tseed,
+                smoothness_mu=stepper_state.av_smu,
+                smoothness_beta=stepper_state.av_sbeta,
+                smoothness_kappa=stepper_state.av_skappa,
+                smoothness_d=stepper_state.av_sd)
 
         # NOTE: This means "limiter" won't be called for non-mixtures!
         #       Runs with passive species will need species fractions
@@ -7415,7 +7417,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in ox_tpairs})
 
                 wall_ox_mass_rhs = diffusion_operator(
-                    dcoll, wall_model.oxygen_diffusivity + actx.np.zeros_like(wv.mass),
+                    dcoll,
+                    wall_model.oxygen_diffusivity + actx.np.zeros_like(wv.mass),
                     wall_ox_boundaries, wv.ox_mass,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
