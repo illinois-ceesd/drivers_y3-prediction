@@ -299,6 +299,7 @@ class StateSource:
                  mom_amplitude,
                  energy_amplitude,
                  y_amplitude,
+                 axisymmetric=False,
                  amplitude_func=None):
         r"""Initialize the source parameters.
 
@@ -323,6 +324,7 @@ class StateSource:
         self._y_amplitude = y_amplitude
         self._width = width
         self._amplitude_func = amplitude_func
+        self._axisymmetric = axisymmetric
 
     def __call__(self, x_vec, cv, time, **kwargs):
         """
@@ -357,7 +359,20 @@ class StateSource:
         )
         actx = x_vec[0].array_context
         r = actx.np.sqrt(np.dot(rel_center, rel_center))
-        expterm = time_amplitude*actx.np.exp(-(r**2)/(2*self._width*self._width))
+        sigma2 = self._width*self._width
+
+        gauss_fac = 1.
+        if self._dim == 2:
+            gauss_fac = 1./np.pi/sigma2
+        else:
+            gauss_fac = 1./np.pi**(3/2)/(self._width**3)
+
+        expterm = time_amplitude*gauss_fac*actx.np.exp(-(r**2)/(sigma2))
+
+        if self._axisymmetric is True:
+            # modify to get the correct strength
+            # assume axisymmetric about y axis
+            expterm = expterm/(2.*np.pi*loc[0])
 
         mass = actx.np.zeros_like(cv.mass) + self._mass_amplitude*expterm
         momentum = actx.np.zeros_like(cv.momentum)
@@ -449,7 +464,7 @@ class StateSource3d:
             )
             actx = x_vec[0].array_context
             r = actx.np.sqrt(np.dot(rel_center, rel_center))
-            expterm = time_amplitude*actx.np.exp(-(r**2)/(2*self._width*self._width))
+            expterm = time_amplitude*actx.np.exp(-(r**2)/(self._width*self._width))
 
             mass = actx.np.zeros_like(cv.mass) + self._mass_amplitude*expterm
             momentum = actx.np.zeros_like(cv.momentum)
@@ -488,61 +503,84 @@ class StateSource3d:
 
         # isolator injectors
         # put in the target flow rates here
-        rate_factor = 1./(2.*np.pi*self._width**2)**(3/2)
-        mass = 5.95e-4*rate_factor
-        eng = 1.79e+2*rate_factor
-        mom_mag = 3.23e-1*rate_factor
+        #rate_factor = 1./(2.*np.pi*self._width**2)**(3/2)
+        rate_factor = 1./np.pi**(3/2)/(self._width**3)
+        mass = 5.952e-4*rate_factor
+        eng = 17.936*rate_factor
+        mom_mag = 0.1886*rate_factor
 
         # top and bottom y have radius 0.375 mm
         loc = [0.125, injector_radius, 0.]
         mom = [mom_mag, -mom_mag, 0.]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.125, -injector_radius, 0.]
         mom = [mom_mag, mom_mag, 0.]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
 
         # fore and aft z have radius 0.25 mm
         mass = 2.65e-4*rate_factor
-        eng = 7.9718e1*rate_factor
-        mom_mag = 1.4373e-1*rate_factor
+        eng = 13.66*rate_factor
+        mom_mag = 0.08107*rate_factor
 
         loc = [0.125, 0., injector_radius]
         mom = [mom_mag, 0., -mom_mag]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.125, 0., -injector_radius]
         mom = [mom_mag, 0., mom_mag]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
 
         # combustor injectors, radius 0.125 mm
-        mass = 5.78e-5*rate_factor
-        mom_mag = 3.14e-2*rate_factor
-        eng = 1.74e1*rate_factor
+        mass = 5.783e-5*rate_factor
+        mom_mag = 0.018327*rate_factor
+        eng = 17.4256*rate_factor
 
         loc = [0.47534, injector_radius, 0.]
         mom = [mom_mag, -mom_mag, 0.]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.47534, -injector_radius, 0.]
         mom = [mom_mag, mom_mag, 0.]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.47534, 0., injector_radius]
         mom = [mom_mag, 0., -mom_mag]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.47534, 0., -injector_radius]
         mom = [mom_mag, 0., mom_mag]
 
         factor = np.math.sqrt(2)/2
         loc = [0.47534, injector_radius*factor, injector_radius*factor]
         mom = [mom_mag, -mom_mag*factor, -mom_mag*factor]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.47534, -injector_radius*factor, injector_radius*factor]
         mom = [mom_mag, -mom_mag*factor, mom_mag*factor]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.47534, injector_radius*factor, -injector_radius*factor]
         mom = [mom_mag, -mom_mag*factor, mom_mag*factor]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
         loc = [0.47534, -injector_radius*factor, -injector_radius*factor]
         mom = [mom_mag, mom_mag*factor, mom_mag*factor]
-        source_cv = gaussian_point(loc, source_cv, mass, eng, mom, self._y_amplitude)
+        source_cv = gaussian_point(loc=loc, source_cv=source_cv,
+                                   mass_amp=mass, e_amp=eng, mom_amp=mom,
+                                   y_amp=self._y_amplitude)
 
         return source_cv
 

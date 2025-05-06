@@ -1456,6 +1456,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_gmsh = configurate("use_gmsh", input_data, True)
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
     use_tpe = configurate("use_tensor_product_elements", input_data, False)
+    mesh_origin = configurate("mesh_origin", input_data, [0.0, -0.01])
 
     actx = initialize_actx(actx_class, comm,
                            use_axis_tag_inference_fallback=allow_fallbacks,
@@ -2683,6 +2684,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
 
+        disc_location = shock_loc_x*plane_normal
+        fuel_location = fuel_loc_x*plane_normal
         vel_left = (velocity2 - velocity1)*plane_normal
 
         pressure1_total = pres_bkrnd*(1 + (gamma-1)/2*mach**2)**(gamma/(gamma-1))
@@ -3892,6 +3895,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     from y3prediction.shock1d import get_mesh
                     mesh, tag_to_elements = get_mesh(
                         dim=dim, angle=0.*mesh_angle, size=mesh_size,
+                        mesh_origin=mesh_origin,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
                         use_quads=use_tpe, use_gmsh=use_gmsh)()
@@ -5069,7 +5073,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         else:
             fluid_operator_states_quad = make_operator_fluid_states(
                 dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
-                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func,
+                entropy_min=smin)
 
             grad_fluid_cv = grad_cv_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
@@ -6024,15 +6029,18 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # gaussian application in space
     if dim == 2:
-        injection_source_diameter /= 6.0697
+        # 99% falls within this diameter
+        #injection_source_diameter /= 4.684
+        # 95% falls within this diameter
+        injection_source_diameter /= 2.83
     else:
         # 95% falls in this diameter
-        injection_source_diameter /= 4.
+        injection_source_diameter /= 5.08
 
     def injection_source_time_func(t):
         scaled_time = injection_source_init_time - t
-        # this gives about 96% of the change in the requested time
-        xtanh = 4*scaled_time/injection_source_ramp_time
+        # this gives about 99% of the change in the requested time
+        xtanh = 4.684*scaled_time/injection_source_ramp_time
         return 0.5*(1.0 - actx.np.tanh(xtanh))
 
     from y3prediction.utils import StateSource, StateSource3d
@@ -6052,7 +6060,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                    y_amplitude=source_y,
                                    amplitude_func=injection_source_time_func,
                                    #amplitude_func=None,
+                                   axisymmetric=use_axisymmetric,
                                    width=injection_source_diameter)
+
     source_mass = injection_source_mass_comb
     source_mom = np.zeros(shape=(dim,))
     source_mom[0] = injection_source_mom_x_comb
@@ -6068,6 +6078,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                         y_amplitude=source_y,
                                         amplitude_func=injection_source_time_func,
                                         #amplitude_func=None,
+                                        axisymmetric=use_axisymmetric,
                                         width=injection_source_diameter)
     injection_source_3d = StateSource3d(dim=dim, nspecies=nspecies,
                                         center=injection_source_center_comb,
