@@ -188,10 +188,13 @@ class PlanarDiscontinuityMulti:
                               momentum=mom, species_mass=specmass)
 
 
-def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
-             transfinite=False, use_wall=True, use_quads=False,
+def get_mesh(dim, size, bl_ratio, interface_ratio, mesh_origin,
+             angle=0., transfinite=False, use_wall=True, use_quads=False,
              use_gmsh=True):
     """Generate a grid using `gmsh`."""
+
+    if mesh_origin is None:
+        mesh_origin = [0., -0.01]
 
     height = 0.02
     fluid_length = 0.1
@@ -205,8 +208,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
     # rotate the mesh around the bottom-left corner
     theta = angle/180.*np.pi
-    bottom_inflow[0] = 0.0
-    bottom_inflow[1] = -0.01
+    bottom_inflow[0] = mesh_origin[0]
+    bottom_inflow[1] = mesh_origin[1]
     top_inflow[0] = bottom_inflow[0] - height*np.sin(theta)
     top_inflow[1] = bottom_inflow[1] + height*np.cos(theta)
 

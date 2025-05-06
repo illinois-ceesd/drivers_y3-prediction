@@ -8,6 +8,9 @@ if __name__ == "__main__":
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         level=logging.INFO)
 
+    # So warnings get the same format as logging messages
+    logging.captureWarnings(True)
+
     parser = argparse.ArgumentParser(
         description="MIRGE-Com Isentropic Nozzle Driver")
     parser.add_argument("-r", "--restart_file", type=ascii, dest="restart_file",
@@ -28,6 +31,8 @@ if __name__ == "__main__":
                         help="enable lazy evaluation [OFF]")
     parser.add_argument("--disable-fallbacks", action="store_true", default=False,
                         help="prevent lazy compile from using slow fallbacks.")
+    parser.add_argument("--axi-filename", type=str,
+                        help="Restart with this axisymmetric restart file.")
     parser.add_argument("--nolog", action="store_true", default=False,
                         help="enable sql logging with logpyle [OFF]")
     parser.add_argument("--overintegration", action="store_true",
@@ -83,4 +88,5 @@ if __name__ == "__main__":
          disable_logpyle=args.nolog,
          use_overintegration=args.overintegration or args.esdg,
          casename=casename, use_esdg=args.esdg,
-         disable_fallbacks=args.disable_fallbacks)
+         disable_fallbacks=args.disable_fallbacks,
+         axi_filename=args.axi_filename)
