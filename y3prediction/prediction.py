@@ -94,7 +94,6 @@ from mirgecom.boundary import (
     AdiabaticSlipBoundary,
     AdiabaticNoslipWallBoundary,
     PressureOutflowBoundary,
-    RiemannInflowBoundary,
     DummyBoundary
 )
 from mirgecom.diffusion import (
@@ -1044,12 +1043,16 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             for i in range(0, nspecies):
                 data = actx.to_numpy(cv.species_mass_fractions)
                 print(f"Y_initial[{i}] \n {data[i][0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass)
+                print(f"rhoY_initial[{i}] \n {data[i][0][ind]}")
 
     #print(f"inside limiter")
 
     ##################
     # 1.0 limit the density to be above 0.
     ##################
+
     cell_avgs = element_average(dcoll, dd, cv.mass, volumes=element_vols)
     #print(f"rho_avg {cell_avgs}")
 
@@ -1059,6 +1062,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
         cell_avgs,
         min_allowed_density)
     mmin = 0.1*cell_avgs
+    #mmin = 1.e-4
 
     #print(f"modified rho_avg {cell_avgs}")
 
@@ -1067,20 +1071,56 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                       (mmin-mmin_i)/(cell_avgs - mmin_i),
                       0.)
     )
-    #sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
     #print(f"{theta_rho=}")
 
-    mass_lim = (cv.mass + theta_rho*(cell_avgs - cv.mass))
+
+    """
+    spec_lim = make_obj_array([cv.species_mass[i] +
+                               theta_rho*(elem_avg_cv_safe.species_mass[i] -
+                                               cv_updated.species_mass[i])
+                               for i in range(0, nspecies)
+                               ])
+    """
+
+    mass_lim = actx.np.zeros_like(cv.mass)
+    if nspecies > 0:
+        spec_lim = actx.np.zeros_like(cv.species_mass)
+        # find theta for all the species
+        for i in range(0, nspecies):
+            cell_avgs = element_average(
+                dcoll, dd, cv.species_mass[i],
+                volumes=element_vols)
+            mmin = 0.1*cell_avgs
+            cell_avgs = actx.np.where(actx.np.greater(cell_avgs, mmin), cell_avgs,
+                                      mmin)
+            spec_lim[i] = (cv.species_mass[i] +
+                           theta_rho*(
+                               cell_avgs - cv.species_mass[i]))
+            mass_lim = mass_lim + spec_lim[i]
+    else:
+        mass_lim = (cv.mass + theta_rho*(cell_avgs - cv.mass))
+        #spec_lim = mass_lim*cv.species_mass_fractions
 
     mom_lim = mass_lim*cv.velocity
     kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
     int_energy = cv.energy - cv.mass*kin_energy
     energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
-    spec_lim = cv.species_mass_fractions
+
+    """
+    # keep rho balanced with rhoY
+    if nspecies > 0:
+        mass_lim = 0.
+        for i in range(0, nspecies):
+            mass_lim = mass_lim + spec_lim[i]
+    #else:
+        #mass_lim = cv_updated.mass + theta_pressure*(
+            #elem_avg_cv_safe.mass - cv_updated.mass)
+    """
 
     cv_update_rho = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                    momentum=mom_lim,
-                                   species_mass=mass_lim*spec_lim)
+                                   species_mass=spec_lim)
+    #cv_update_rho = cv
 
     if print_stuff is True:
         np.set_printoptions(threshold=sys.maxsize, precision=16)
@@ -1108,16 +1148,19 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             #data = actx.to_numpy(temperature_seed)
             #print(f"temperature_seed \n {data[0][ind]}")
             for i in range(0, nspecies):
-                data = actx.to_numpy(cv.species_mass_fractions)
-                print(f"Y_rho[{i}] \n {data[i][0][ind]}")
+                data = actx.to_numpy(cv_update_rho.species_mass_fractions)
+                print(f"Y_[{i}] \n {data[i][0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_update_rho.species_mass)
+                print(f"rhoY_[{i}] \n {data[i][0][ind]}")
 
     ##################
     # 2.0 limit the species mass fractions
     ##################
     theta_spec = actx.np.zeros_like(cv.species_mass_fractions)
     balance_spec = actx.np.zeros_like(cv.mass)
-    if 0:
-    #if nspecies > 0:
+    #if 0:
+    if nspecies > 0:
         # find theta for all the species
         for i in range(0, nspecies):
             mmin = 0.
@@ -1173,7 +1216,12 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             spec_lim[i] = actx.np.where(actx.np.greater(balance_spec, 0.),
                                         spec_lim[i]/aux, spec_lim[i])
 
-        mass_lim = cv_update_rho.mass
+        # convert back to rhoY
+        spec_lim_mass = spec_lim*cv_update_rho.mass
+
+        mass_lim = 0.
+        for i in range(0, nspecies):
+            mass_lim = mass_lim + spec_lim_mass[i]
         mom_lim = mass_lim*cv_update_rho.velocity
         kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
         int_energy = cv_update_rho.energy - mass_lim*kin_energy
@@ -1202,10 +1250,10 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
             cv_update_rho.energy
         )
         cv_update_y = make_conserved(dim=dim,
-                                     mass=cv_update_rho.mass,
+                                     mass=mass_lim,
                                      energy=energy_lim,
-                                     momentum=cv_update_rho.momentum,
-                                     species_mass=cv_update_rho.mass*spec_lim)
+                                     momentum=mom_lim,
+                                     species_mass=spec_lim_mass)
     else:
         cv_update_y = cv_update_rho
 
@@ -1298,27 +1346,27 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
     # 4.0 limit cv where the entropy minimum function is violated
     #     this in turn keeps the pressure positive
     ##################
-    mass_lim = cv_updated.mass + theta_pressure*(
-        elem_avg_cv_safe.mass - cv_updated.mass)
     mom_lim = make_obj_array([cv_updated.momentum[i] +
         theta_pressure*(elem_avg_cv_safe.momentum[i] - cv_updated.momentum[i])
         for i in range(dim)
     ])
     energy_lim = (cv_updated.energy +
                   theta_pressure*(elem_avg_cv_safe.energy - cv_updated.energy))
-    spec_lim = mass_lim*cv.species_mass_fractions
-    """
-    if isinstance(gas_model.eos, MixtureEOS):
-        spec_lim = make_obj_array([cv_updated.species_mass[i] +
-                                   theta_pressure*(elem_avg_cv_safe.species_mass[i] -
-                                                   cv_updated.species_mass[i])
-                                   for i in range(0, nspecies)
-                                   ])
-    else:
-        spec_lim = mass_lim * cv_updated.species_mass_fractions
-    """
+    spec_lim = make_obj_array([cv_updated.species_mass[i] +
+                               theta_pressure*(elem_avg_cv_safe.species_mass[i] -
+                                               cv_updated.species_mass[i])
+                               for i in range(0, nspecies)
+                               ])
 
-    spec_lim = mass_lim * cv_updated.species_mass_fractions
+    # keep rho balanced with rhoY
+    if nspecies > 0:
+        mass_lim = 0.
+        for i in range(0, nspecies):
+            mass_lim = mass_lim + spec_lim[i]
+    else:
+        mass_lim = cv_updated.mass + theta_pressure*(
+            elem_avg_cv_safe.mass - cv_updated.mass)
+
     cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                             momentum=mom_lim,
                             species_mass=spec_lim)
@@ -5010,6 +5058,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
         smoothness_beta = (lmin(lmax(indicator - av2_beta_s0) - indicator_max)
                            + indicator_max)*href
 
+        #smoothness_beta = (smoothness_beta * cv.mass
+                           #* actx.np.sqrt(np.dot(cv.velocity, cv.velocity)
+                           #+ dv.speed_of_sound**2))
+
         grad_t_mag = actx.np.sqrt(np.dot(grad_t, grad_t))
         grad_t_mag = op.elementwise_max(dcoll, dd_vol_fluid, grad_t_mag)
         indicator = href*grad_t_mag/static_temp
@@ -7679,22 +7731,31 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_sd = stepper_state.av_sd
         smin = stepper_state.smin
 
-        print_stuff = True
+        print_stuff = False
         index = 6000
         if print_stuff is True:
             # initial state
             np.set_printoptions(threshold=sys.maxsize, precision=16)
             print("start of my_rhs")
 
-            data = actx.to_numpy(cv.mass)
-            print(f"mass {data[0][index]}")
+            data_rho = actx.to_numpy(cv.mass)
+            print(f"mass {data_rho[0][index]}")
             for i in range(0, nspecies):
-                data = actx.to_numpy(cv.species_mass_fractions)
-                print(f"Y_[{i}] {data[i][0][index]} ")
+                data_Y = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y_[{i}] {data_Y[i][0][index]} ")
 
             for i in range(0, nspecies):
-                data = actx.to_numpy(cv.species_mass)
-                print(f"rhoY_[{i}] {data[i][0][index]} ")
+                data_rhoY = actx.to_numpy(cv.species_mass)
+                print(f"rhoY_[{i}] {data_rhoY[i][0][index]} ")
+
+            sum_Y = [0., 0., 0., 0.]
+            sum_rhoY = [0., 0., 0., 0.]
+
+            for i in range(0, nspecies):
+                sum_Y = sum_Y + data_Y[i][0][index]
+                sum_rhoY = sum_rhoY + data_rhoY[i][0][index]
+            print(f"diff sum_Y = {1. - sum_Y}")
+            print(f"diff sum_rhoY = {data_rho[0][index] - sum_rhoY}")
 
         # don't really want to do this twice
         if use_drop_order:
@@ -7720,15 +7781,24 @@ def main(actx_class, restart_filename=None, target_filename=None,
             np.set_printoptions(threshold=sys.maxsize, precision=16)
             print("start of my_rhs after make_fluid_state")
 
-            data = actx.to_numpy(cv.mass)
-            print(f"mass {data[0][index]}")
+            data_rho = actx.to_numpy(cv.mass)
+            print(f"mass {data_rho[0][index]}")
             for i in range(0, nspecies):
-                data = actx.to_numpy(cv.species_mass_fractions)
-                print(f"Y_[{i}] {data[i][0][index]} ")
+                data_Y = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y_[{i}] {data_Y[i][0][index]} ")
 
             for i in range(0, nspecies):
-                data = actx.to_numpy(cv.species_mass)
-                print(f"rhoY_[{i}] {data[i][0][index]} ")
+                data_rhoY = actx.to_numpy(cv.species_mass)
+                print(f"rhoY_[{i}] {data_rhoY[i][0][index]} ")
+
+            sum_Y = [0., 0., 0., 0.]
+            sum_rhoY = [0., 0., 0., 0.]
+
+            for i in range(0, nspecies):
+                sum_Y = sum_Y + data_Y[i][0][index]
+                sum_rhoY = sum_rhoY + data_rhoY[i][0][index]
+            print(f"diff sum_Y = {1. - sum_Y}")
+            print(f"diff sum_rhoY = {data_rho[0][index] - sum_rhoY}")
 
         print("Before operator_fluid_states_quad")
         # update wall model
@@ -7863,11 +7933,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
             np.set_printoptions(threshold=sys.maxsize, precision=16)
             print("before updating y_rhs")
 
-            data = actx.to_numpy(fluid_rhs.mass)
-            print(f"rhs_mass {data[0][index]}")
+            data_rho = actx.to_numpy(fluid_rhs.mass)
+            print(f"rhs_mass {data_rho[0][index]}")
+            data_rhoY = actx.to_numpy(fluid_rhs.species_mass)
             for i in range(0, nspecies):
-                data = actx.to_numpy(fluid_rhs.species_mass)
-                print(f"rhoY_[{i}] {data[i][0][index]} ")
+                print(f"rhoY_[{i}] {data_rhoY[i][0][index]} ")
+
+            sum_Y = [0., 0., 0., 0.]
+            sum_rhoY = [0., 0., 0., 0.]
+
+            data_Y = actx.to_numpy(fluid_rhs.species_mass_fractions)
+            for i in range(0, nspecies):
+                sum_rhoY = sum_rhoY + data_rhoY[i][0][index]
+            print(f"diff sum_rhoY_rhs = {data_rho[0][index] - sum_rhoY}")
+
         #print(f"{actx.to_numpy(fluid_rhs.species_mass)=}")
         new_species_mass = actx.np.zeros_like(fluid_rhs.species_mass)
         #new_species_mass[0] = 0.39*fluid_rhs.mass
@@ -7878,11 +7957,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
         new_species_mass[2] = cv.species_mass_fractions[2]*fluid_rhs.mass
         #fluid_rhs = fluid_rhs.replace(species_mass=new_species_mass)
 
-        # try reseting the rho update to be the sum of the species mass fractions
-        new_mass_rhs = (fluid_rhs.species_mass[0] +
-                        fluid_rhs.species_mass[1] +
-                        fluid_rhs.species_mass[2])
-        #fluid_rhs = fluid_rhs.replace(mass=new_mass_rhs)
+        # reset the rho update to be the sum of the species mass fractions
+        if eos_type == 1 or use_species_limiter > 0:
+            new_mass_rhs = 0.
+            for i in range(0, nspecies):
+                new_mass_rhs = new_mass_rhs + fluid_rhs.species_mass[i]
+            fluid_rhs = fluid_rhs.replace(mass=new_mass_rhs)
 
         if print_stuff is True:
             # initial state
@@ -8185,7 +8265,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     theta_rho = actx.np.zeros_like(current_cv.mass)
     theta_Y = actx.np.zeros_like(current_cv.mass)
     theta_pres = actx.np.zeros_like(current_cv.mass)
-    if viz_level == 2 and use_species_limiter == 2:
+    if viz_level >= 2 and use_species_limiter == 2:
         cv_lim, theta_rho, theta_Y, theta_pres = \
             limit_fluid_state_lv(
                 dcoll, cv=current_cv, gas_model=gas_model,
