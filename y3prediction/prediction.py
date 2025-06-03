@@ -1654,7 +1654,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_wall_ox = configurate("use_wall_ox", input_data, True)
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
-    use_injection_source = configurate("use_injection_source", input_data, True)
+    use_injection_source = configurate("use_injection_source", input_data, False)
     use_injection_source_comb = configurate("use_injection_source_comb",
                                             input_data, False)
     use_injection_source_3d = configurate("use_injection_source_3d",
@@ -1739,6 +1739,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # Shock 1D mesh properties
     mesh_size = configurate("mesh_size", input_data, 0.001)
+    mesh_height = configurate("mesh_height", input_data, 0.02)
     bl_ratio = configurate("bl_ratio", input_data, 3)
     interface_ratio = configurate("interface_ratio", input_data, 2)
     transfinite = configurate("transfinite", input_data, False)
@@ -3895,7 +3896,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     from y3prediction.shock1d import get_mesh
                     mesh, tag_to_elements = get_mesh(
                         dim=dim, angle=0.*mesh_angle, size=mesh_size,
-                        mesh_origin=mesh_origin,
+                        mesh_origin=mesh_origin, height=mesh_height,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
                         use_quads=use_tpe, use_gmsh=use_gmsh)()
