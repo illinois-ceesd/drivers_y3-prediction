@@ -967,7 +967,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
     rank = 0
-    print_stuff = True
+    print_stuff = False
 
     if print_stuff is True:
         print("Start of limiting")
