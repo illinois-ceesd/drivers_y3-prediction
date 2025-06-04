@@ -276,9 +276,9 @@ def test_positivity_preserving_limiter_single(actx_factory, order, dim,
 @pytest.mark.parametrize("nspecies", [2, 7])
 #@pytest.mark.parametrize("order", [1])
 #@pytest.mark.parametrize("dim", [2])
-#@pytest.mark.parametrize("rho_amp", [0.00])
-#@pytest.mark.parametrize("p_amp", [0])
-#@pytest.mark.parametrize("y_amp", [0.3])
+#@pytest.mark.parametrize("rho_amp", [-0.005])
+#@pytest.mark.parametrize("p_amp", [50])
+#@pytest.mark.parametrize("y_amp", [0.0])
 #@pytest.mark.parametrize("vmag", [0.])
 #@pytest.mark.parametrize("nspecies", [2])
 def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
