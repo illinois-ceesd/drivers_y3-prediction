@@ -69,7 +69,7 @@ from mirgecom.simutil import (
     check_range_local,
 )
 from mirgecom.utils import force_evaluation
-from mirgecom.restart import write_restart_file
+from mirgecom.restart import write_restart_file, read_restart_data
 from mirgecom.io import make_init_message
 from mirgecom.mpi import mpi_entry_point
 from mirgecom.integrators import (rk4_step, lsrk54_step, lsrk144_step,
@@ -105,7 +105,8 @@ from mirgecom.diffusion import (
 from mirgecom.initializers import Uniform, MulticomponentLump
 from mirgecom.eos import (
     IdealSingleGas, PyrometheusMixture,
-    MixtureDependentVars, GasDependentVars
+    MixtureDependentVars, GasDependentVars,
+    MixtureEOS
 )
 from mirgecom.transport import (SimpleTransport,
                                 PowerLawTransport,
@@ -156,6 +157,7 @@ from arraycontext import outer
 from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
 from meshmode.discretization.connection import FACE_RESTR_ALL
 from mirgecom.flux import num_flux_central
+import time
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -803,7 +805,7 @@ def element_average(dcoll, dd, field, volumes=None):
     actx = field.array_context
     cell_avgs = op.elementwise_integral(dcoll, dd, field)
     if volumes is None:
-        volumes = abs(op.elementwise_integral(
+        volumes = actx.np.abs(op.elementwise_integral(
             dcoll, dd, actx.np.zeros_like(field) + 1.0))
 
     return cell_avgs/volumes
@@ -1628,6 +1630,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     noslip = configurate("noslip", input_data, True)
     use_1d_part = configurate("use_1d_part", input_data, True)
     part_tol = configurate("partition_tolerance", input_data, 0.01)
+    part_axis = configurate("partition_axis", input_data, None)
 
     # setting these to none in the input file toggles the check for that
     # boundary off provides support for legacy runs only where you could
@@ -1938,12 +1941,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # param sanity check
     allowed_integrators = ["rk4", "euler", "lsrk54", "lsrk144",
-                           "compiled_lsrk54", "ssprk43"]
+                           "compiled_lsrk54", "ssprk43", "rhs_caller"]
     if integrator not in allowed_integrators:
         error_message = "Invalid time integrator: {}".format(integrator)
         raise RuntimeError(error_message)
 
-    if integrator == "compiled_lsrk54":
+    if integrator in ("compiled_lsrk54", "rhs_caller"):
         if rank == 0:
             print("Setting force_eval = False for pre-compiled time integration")
         force_eval = False
@@ -2224,6 +2227,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
     def _compiled_stepper_wrapper(state, t, dt, rhs):
         return compiled_lsrk45_step(actx, state, t, dt, rhs)
 
+    def rhs_caller(state, t, dt, rhs):
+        rhs(t, state)
+        return state
+
     timestepper = rk4_step
     if integrator == "euler":
         timestepper = euler_step
@@ -2235,6 +2242,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         timestepper = lsrk144_step
     if integrator == "compiled_lsrk54":
         timestepper = _compiled_stepper_wrapper
+    if integrator == "rhs_caller":
+        timestepper = rhs_caller
 
     flux_msg = "\nSetting inviscid numerical flux to: "
     if use_esdg:
@@ -2455,7 +2464,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     else:
         species_names = pyro_mech.species_names
 
-    print(f"{species_names=}")
+    if rank == 0:
+        print(f"{species_names=}")
 
     # initialize eos and species mass fractions
     y = np.zeros(nspecies, dtype=object)
@@ -2504,7 +2514,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "species_diffusivity", input_data, default_species_diffusivity)
 
     # now read the diffusivities from input
-    print(f"{input_species_diffusivity}")
+    if rank == 0:
+        print(f"{input_species_diffusivity}")
 
     species_diffusivity = spec_diff * np.ones(nspecies)
     for i in range(nspecies):
@@ -2895,7 +2906,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         #mech_data = get_mechanism_input("uiuc_updated")
         mech_file = (f"{pyro_mech_name}.yaml")
 
-        print(f"{mech_file=}")
+        if rank == 0:
+            print(f"{mech_file=}")
         import cantera
         cantera_soln = cantera.Solution(f"{mech_file}", "gas")
 
@@ -2920,7 +2932,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         pres_unburned = 101325.0
 
         # Let the user know about how Cantera is being initilized
-        print(f"Input state (T,P,X) = ({temp_unburned}, {pres_unburned}, {x}")
+        if rank == 0:
+            print(f"Input state (T,P,X) = ({temp_unburned}, {pres_unburned}, {x}")
         # Set Cantera internal gas temperature, pressure, and mole fractios
         cantera_soln.TPX = temp_unburned, pres_unburned, x
         # Pull temperature, total density, mass fractions, and pressure from Cantera
@@ -3218,7 +3231,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
+            rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -3241,7 +3254,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
+                rho_inflow = pyro_mech.get_density(p=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -3933,7 +3946,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_path + "{cname}-{step:09d}-{rank:04d}.pkl"
     )
 
-    from mirgecom.restart import read_restart_data
     restart_nspecies = 0
     if restart_from_axi:
         axi_restart_data = read_restart_data(actx, axi_filename)
@@ -3981,10 +3993,19 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         mesh_origin=mesh_origin, height=mesh_height,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
-                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                        use_quads=use_tpe, use_gmsh=use_gmsh,
+                        periodic=periodic_mesh)()
                 else:
+
+                    if mesh_filename.endswith(".pkl"):
+                        if rank == 0:
+                            print("Reading mesh from pkl file.")
+                        with open(mesh_filename, "rb") as pkl_file:
+                            global_data = pickle.load(pkl_file)
+                        return global_data
+
                     if rank == 0:
-                        print("Reading mesh")
+                        print("Reading mesh from gmsh file.")
                     from meshmode.mesh.io import read_gmsh
                     mesh_construction_kwargs = {
                         "force_positive_orientation":  True,
@@ -4008,8 +4029,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 numpy.set_printoptions(threshold=sys.maxsize)
                 #print(f"{mesh=}")
 
-                # apply periodicity
-                if periodic_mesh is True:
+                # apply periodicity for gmsh meshes
+                if periodic_mesh is True and use_gmsh:
                     from meshmode.mesh.processing import (
                         glue_mesh_boundaries, BoundaryPairMapping)
 
@@ -4160,6 +4181,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"Reading mesh from {mesh_filename}")
 
             def get_mesh_data():
+                if mesh_filename.endswith(".pkl"):
+                    with open(mesh_filename, "rb") as pkl_file:
+                        global_data = pickle.load(pkl_file)
+                    return global_data
+
                 from meshmode.mesh.io import read_gmsh
                 mesh_construction_kwargs = {
                     "force_positive_orientation":  True,
@@ -4198,7 +4224,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 from mirgecom.simutil import geometric_mesh_partitioner
                 return geometric_mesh_partitioner(
                     mesh, num_ranks, auto_balance=True, imbalance_tolerance=part_tol,
-                    debug=False)
+                    debug=False, part_axis=part_axis)
 
             part_func = my_partitioner if use_1d_part else None
             volume_to_local_mesh_data, global_nelements = distribute_mesh(
@@ -4222,13 +4248,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"Number of wall elements: {wall_nelements}")
             print(f"Number of elements: {local_nelements}")
             print("---------------------------")
+            sys.stdout.flush()
         comm.Barrier()
 
     # target data, used for sponge and prescribed boundary condtitions
     if target_filename:  # read the grid from restart data
         target_filename = f"{target_filename}-{rank:04d}.pkl"
 
-        from mirgecom.restart import read_restart_data
         target_data = read_restart_data(actx, target_filename)
         global_nelements = target_data["global_nelements"]
         target_order = int(target_data["order"])
@@ -4462,9 +4488,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     smoothed_char_length_fluid = char_length_fluid
 
     if use_smoothed_char_length:
-        for i in range(smooth_char_length):
+        for _ in range(smooth_char_length):
             smoothed_char_length_fluid_rhs = \
-                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, i)
+                compute_smoothed_char_length_compiled(smoothed_char_length_fluid, 0)
             smoothed_char_length_fluid = smoothed_char_length_fluid + \
                                          smoothed_char_length_fluid_rhs
 
@@ -4850,7 +4876,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                 smoothness_d=smoothness_d,
                                 entropy_min=entropy_min,
                                 limiter_func=limiter_func,
-                                limiter_dd=dd_vol_fluid)
+                                limiter_dd=dd_vol_fluid,
+                                outline=False)
 
     create_fluid_state = actx.compile(_create_fluid_state)
 
@@ -5132,7 +5159,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_d=av_sd,
                                        entropy_min=smin,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid)
+                                       limiter_dd=dd_vol_fluid,
+                                       outline=False)
         cv = fluid_state.cv  # reset cv to the limited version
         dv = fluid_state.dv
 
@@ -5907,6 +5935,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
             target_fluid_state, gas_model,
+            make_fluid_state_func=partial(make_fluid_state, outline=False),
             entropy_stable=use_esdg
         )
 
@@ -7302,7 +7331,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
-        if logmgr:
+        if logmgr is None:
+            print(f"prestep entry time={time.time()}, {step=}")
+        else:
             logmgr.tick_before()
 
         # This check reports when species mass fractions (Y) violate
@@ -7323,9 +7354,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     # Don't raise, just hammer Y back to [0, 1], sum(Y)=1
                     # raise MyRuntimeError("Failed simulation species check.")
                     state[0] = hammer_species(state[0])
-
-        if logmgr:
-            logmgr.tick_before()
 
         stepper_state = make_stepper_state_obj(state)
 
@@ -7354,68 +7382,75 @@ def main(actx_class, restart_filename=None, target_filename=None,
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
 
-        fluid_state = create_fluid_state(cv=stepper_state.cv,
-                                         temperature_seed=stepper_state.tseed,
-                                         smoothness_mu=stepper_state.av_smu,
-                                         smoothness_beta=stepper_state.av_sbeta,
-                                         smoothness_kappa=stepper_state.av_skappa,
-                                         smoothness_d=stepper_state.av_sd,
-                                         entropy_min=stepper_state.smin)
+        do_viz = check_step(step=step, interval=nviz)
+        do_restart = check_step(step=step, interval=nrestart)
+        do_health = check_step(step=step, interval=nhealth)
+        do_status = check_step(step=step, interval=nstatus)
+        do_mixture = isinstance(gas_model.eos, MixtureEOS)
+        do_limit = (use_species_limiter > 0)
 
-        if use_wall:
-            wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
-        cv = fluid_state.cv  # reset cv to limited version
+        if any([do_viz, do_restart, do_health, do_status, do_mixture, do_limit]):
+            fluid_state = create_fluid_state(
+                cv=stepper_state.cv,
+                temperature_seed=stepper_state.tseed,
+                smoothness_mu=stepper_state.av_smu,
+                smoothness_beta=stepper_state.av_sbeta,
+                smoothness_kappa=stepper_state.av_skappa,
+                smoothness_d=stepper_state.av_sd,
+                entropy_min=stepper_state.smin)
 
-        # update temperature seed and our limiter bounds for entropy
-        tseed = fluid_state.temperature
+            tseed = fluid_state.temperature
 
-        ones = 1. + actx.np.zeros_like(cv.mass)
-        if constant_smin is True:
+            if do_mixture:
+                stepper_state = stepper_state.replace(tseed=tseed)
+
+            ones = 1. + actx.np.zeros_like(stepper_state.cv.mass)
             smin_i = ones*limiter_smin
-        else:
-            gamma = gas_model.eos.gamma(cv, fluid_state.temperature)
-            smin = actx.np.log(fluid_state.pressure/fluid_state.mass_density**gamma)
+            if do_limit:
+                cv = fluid_state.cv  # reset cv to limited version
 
-        # MJA satisfy linting until these merge
-        # pylint: disable=no-name-in-module
-            from mirgecom.simutil import (
-                inverse_element_connectivity,
-                compute_vertex_averages,
-                scatter_vertex_values_to_dofarray,
-            )
-        # pylint: enable=no-name-in-module
+                if constant_smin is False:
+                    gamma = gas_model.eos.gamma(cv, fluid_state.temperature)
+                    smin = actx.np.log(fluid_state.pressure /
+                                       fluid_state.mass_density**gamma)
 
-            iconn = inverse_element_connectivity(
-                mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh)
+                    """
+                    # MJA satisfy linting until these merge
+                    # pylint: disable=no-name-in-module
+                        from mirgecom.simutil import (
+                            inverse_element_connectivity,
+                            compute_vertex_averages,
+                            scatter_vertex_values_to_dofarray,
+                        )
+                    # pylint: enable=no-name-in-module
 
-            def nodal_average(field):
-                # Compute cell averages of the state
-                actx = field.array_context
-                nodal_avg = compute_vertex_averages(actx, field, iconn)
-                return scatter_vertex_values_to_dofarray(
-                    actx, field, iconn, nodal_avg)
+                        iconn = inverse_element_connectivity(
+                            mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh)
 
-            element_average_smin = element_average(dcoll, dd_vol_fluid, smin)
-            smin_i = nodal_average(element_average_smin)
+                        def nodal_average(field):
+                            # Compute cell averages of the state
+                            actx = field.array_context
+                            nodal_avg = compute_vertex_averages(actx, field, iconn)
+                            return scatter_vertex_values_to_dofarray(
+                                actx, field, iconn, nodal_avg)
 
-            # fixed offset
-            #smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
-            # fixed offset
-            smin_i = ones*(smin_i - 0.05)
+                        element_average_smin = element_average(dcoll,
+                                                               dd_vol_fluid, smin)
+                        smin_i = nodal_average(element_average_smin)
 
-        # This re-creation of the state resets *tseed* to current temp and forces the
-        # limited cv into state
-        stepper_state = stepper_state.replace(cv=cv, tseed=tseed, smin=smin_i)
-        fluid_state = replace_fluid_state(fluid_state, gas_model, entropy_min=smin_i)
+                        """
+                    # fixed offset
+                    smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
+                    smin_i = ones*(smin_i - 0.05)
+
+                stepper_state = stepper_state.replace(cv=cv, smin=smin_i)
+                fluid_state = replace_fluid_state(fluid_state, gas_model,
+                                                  entropy_min=smin_i)
 
         try:
             # disable non-constant dt timestepping for now
             # re-enable when we're ready
 
-            do_viz = check_step(step=step, interval=nviz)
-            do_restart = check_step(step=step, interval=nrestart)
-            do_health = check_step(step=step, interval=nhealth)
-            do_status = check_step(step=step, interval=nstatus)
             next_dump_number = step
 
             dv = None
@@ -7434,6 +7469,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     wv = stepper_state.wv  # pylint: disable=no-member
 
                 dv = fluid_state.dv
+                if use_wall:
+                    wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
 
                 ts_field_fluid, cfl_fluid, dt_fluid = my_get_timestep(
                     dcoll=dcoll, fluid_state=fluid_state,
@@ -7594,9 +7631,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
             MPI.Pcontrol(2)
             MPI.Pcontrol(1)
 
+        if logmgr is None:
+            print(f"poststep entry time={time.time()}, {step=}")
+
         return stepper_state.get_obj_array(), dt
 
     def my_post_step(step, t, dt, state):
+
+        if logmgr is None:
+            print(f"poststep entry time={time.time()}, {step=}")
 
         if step == last_profiling_step:
             MPI.Pcontrol(0)
@@ -7614,6 +7657,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
+
+        if logmgr is None:
+            print(f"poststep exit time={time.time()}")
 
         return state, dt
 
@@ -7705,7 +7751,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_d=av_sd,
                                        entropy_min=smin,
                                        limiter_func=limiter_func,
-                                       limiter_dd=dd_vol_fluid)
+                                       limiter_dd=dd_vol_fluid,
+                                       outline=False)
 
         cv = fluid_state.cv  # reset cv to the limited version
 
@@ -7869,7 +7916,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         # work good for shock 1d
 
         tau = current_dt/smoothness_tau
-        epsilon_diff = smoothness_alpha*smoothed_char_length_fluid**2/current_dt
+        epsilon_diff = actx.np.zeros_like(cv.mass) + \
+            smoothness_alpha*smoothed_char_length_fluid**2/current_dt
 
         if use_av > 0:
             # regular boundaries for smoothness mu
@@ -7993,7 +8041,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in ox_tpairs})
 
                 wall_ox_mass_rhs = diffusion_operator(
-                    dcoll, wall_model.oxygen_diffusivity,
+                    dcoll,
+                    wall_model.oxygen_diffusivity + actx.np.zeros_like(wv.mass),
                     wall_ox_boundaries, wv.ox_mass,
                     penalty_amount=wall_penalty_amount,
                     quadrature_tag=quadrature_tag, dd=dd_vol_wall,
@@ -8021,7 +8070,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     for tpair in reverse_ox_tpairs})
 
                 fluid_dummy_ox_mass_rhs = diffusion_operator(
-                    dcoll, 0, fluid_ox_boundaries, fluid_ox_mass,
+                    dcoll, actx.np.zeros_like(fluid_ox_mass),
+                    fluid_ox_boundaries, fluid_ox_mass,
                     quadrature_tag=quadrature_tag, dd=dd_vol_fluid,
                     comm_tag=_FluidOxDiffCommTag)
 
