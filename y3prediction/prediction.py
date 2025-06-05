@@ -1524,6 +1524,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
     from mirgecom.io import read_and_distribute_yaml_data
     input_data = read_and_distribute_yaml_data(comm, user_input_file)
 
+    if logmgr and user_input_file and rank == 0:
+        with open(user_input_file, "r") as f:
+            logmgr.set_constant("input_data_yaml", f.read())
+
     use_callbacks = configurate("use_callbacks", input_data, True)
 
     use_gmsh = configurate("use_gmsh", input_data, True)
