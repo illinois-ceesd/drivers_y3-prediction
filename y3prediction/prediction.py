@@ -5160,7 +5160,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func,
                 entropy_min=smin)
 
-
             grad_fluid_cv = grad_cv_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
