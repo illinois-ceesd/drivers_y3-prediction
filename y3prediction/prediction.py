@@ -39,7 +39,13 @@ from mirgecom.discretization import create_discretization_collection
 
 from meshmode.mesh import BTAG_ALL, BTAG_REALLY_ALL, BTAG_NONE  # noqa
 from grudge.shortcuts import make_visualizer
-from grudge.dof_desc import VolumeDomainTag, DOFDesc, DISCR_TAG_BASE, DD_VOLUME_ALL
+from grudge.dof_desc import (
+    VolumeDomainTag,
+    BoundaryDomainTag,
+    DOFDesc,
+    DISCR_TAG_BASE,
+    DD_VOLUME_ALL
+)
 from grudge.op import nodal_max, nodal_min
 from grudge.trace_pair import inter_volume_trace_pairs
 from grudge.discretization import filter_part_boundaries
@@ -109,6 +115,7 @@ from mirgecom.transport import (SimpleTransport,
 from mirgecom.gas_model import (
     GasModel,
     make_fluid_state,
+    replace_fluid_state,
     make_operator_fluid_states,
     project_fluid_state
 )
@@ -168,6 +175,9 @@ class StepperState:
     av_sbeta: DOFArray
     av_skappa: DOFArray
     av_sd: DOFArray
+    smin: DOFArray
+
+    __array_ufunc__ = None
 
     def replace(self, **kwargs):
         """Return a copy of *self* with the attributes in *kwargs* replaced."""
@@ -177,7 +187,8 @@ class StepperState:
         """Return an object array containing all the stored quantitines."""
         return make_obj_array([self.cv, self.tseed,
                                self.av_smu, self.av_sbeta,
-                               self.av_skappa, self.av_sd])
+                               self.av_skappa, self.av_sd,
+                               self.smin])
 
 
 @with_container_arithmetic(bcast_obj_array=False,
@@ -194,34 +205,37 @@ class WallStepperState(StepperState):
 
     wv: WallVars
 
+    __array_ufunc__ = None
+
     def get_obj_array(self):
         """Return an object array containing all the stored quantitines."""
         return make_obj_array([self.cv, self.tseed,
                                self.av_smu, self.av_sbeta,
                                self.av_skappa, self.av_sd,
+                               self.smin,
                                self.wv])
 
 
-def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, av_sd, wv=None):
+def make_stepper_state(cv, tseed, av_smu, av_sbeta, av_skappa, av_sd, smin, wv=None):
     if wv is not None:
         return WallStepperState(cv=cv, tseed=tseed, av_smu=av_smu,
                                 av_sbeta=av_sbeta, av_skappa=av_skappa,
-                                av_sd=av_sd, wv=wv)
+                                av_sd=av_sd, smin=smin, wv=wv)
     else:
         return StepperState(cv=cv, tseed=tseed, av_smu=av_smu,
                             av_sbeta=av_sbeta, av_skappa=av_skappa,
-                            av_sd=av_sd)
+                            av_sd=av_sd, smin=smin)
 
 
 def make_stepper_state_obj(ary):
-    if ary.size > 6:
+    if ary.size > 7:
         return WallStepperState(cv=ary[0], tseed=ary[1], av_smu=ary[2],
                                 av_sbeta=ary[3], av_skappa=ary[4],
-                                av_sd=ary[5], wv=ary[6])
+                                av_sd=ary[5], smin=ary[6], wv=ary[7])
     else:
         return StepperState(cv=ary[0], tseed=ary[1], av_smu=ary[2],
                             av_sbeta=ary[3], av_skappa=ary[4],
-                            av_sd=ary[5])
+                            av_sd=ary[5], smin=ary[6])
 
 
 class SingleLevelFilter(logging.Filter):
@@ -560,7 +574,8 @@ def axisym_source_wall(dcoll, wall_nodes, wall_temperature, thermal_conductivity
 
 def make_coupled_operator_fluid_states(
         dcoll, fluid_state, gas_model, boundaries, fluid_dd, wall_dd,
-        quadrature_tag=DISCR_TAG_BASE, comm_tag=None, limiter_func=None):
+        quadrature_tag=DISCR_TAG_BASE, comm_tag=None, limiter_func=None,
+        entropy_min=None):
     """Prepare gas model-consistent fluid states for use in coupled operators."""
 
     all_boundaries = {}
@@ -572,7 +587,8 @@ def make_coupled_operator_fluid_states(
 
     return make_operator_fluid_states(
         dcoll, fluid_state, gas_model, all_boundaries, quadrature_tag,
-        dd=fluid_dd, comm_tag=comm_tag, limiter_func=limiter_func)
+        dd=fluid_dd, comm_tag=comm_tag, limiter_func=limiter_func,
+        entropy_min=entropy_min)
 
 
 def coupled_grad_operator(
@@ -587,6 +603,7 @@ def coupled_grad_operator(
         quadrature_tag=DISCR_TAG_BASE,
         fluid_operator_states_quad=None,
         limiter_func=None,
+        entropy_min=None,
         comm_tag=None):
     """Compute the gradients for the coupled fluid/wall."""
 
@@ -614,6 +631,7 @@ def coupled_grad_operator(
         fluid_operator_states_quad = make_operator_fluid_states(
             dcoll, fluid_state, gas_model, fluid_all_boundaries_no_grad,
             quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+            entropy_min=entropy_min,
             comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
     # Compute the gradient operators for both subdomains
@@ -621,11 +639,13 @@ def coupled_grad_operator(
         dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
         dd=fluid_dd, time=time, quadrature_tag=quadrature_tag,
         operator_states_quad=fluid_operator_states_quad,
+        entropy_min=entropy_min,
         comm_tag=comm_tag)
 
     fluid_grad_temperature = fluid_grad_t_operator(
         dcoll, gas_model, fluid_all_boundaries_no_grad, fluid_state,
         time=time, quadrature_tag=quadrature_tag,
+        limiter_func=limiter_func, entropy_min=entropy_min,
         dd=fluid_dd, operator_states_quad=fluid_operator_states_quad)
 
     wall_grad_temperature = wall_grad_t_operator(
@@ -654,6 +674,7 @@ def coupled_ns_heat_operator(
         fluid_operator_states_quad=None,
         limiter_func=None,
         ns_operator=general_ns_operator,
+        entropy_min=None,
         comm_tag=None,
         axisymmetric=False,
         fluid_nodes=None,
@@ -683,6 +704,7 @@ def coupled_ns_heat_operator(
         fluid_operator_states_quad = make_operator_fluid_states(
             dcoll, fluid_state, gas_model, fluid_all_boundaries,
             quadrature_tag, dd=fluid_dd, limiter_func=limiter_func,
+            entropy_min=entropy_min,
             comm_tag=(comm_tag, _FluidOpStatesCommTag))
 
     ns_result = ns_operator(
@@ -690,6 +712,7 @@ def coupled_ns_heat_operator(
         gas_model=gas_model,
         dd=fluid_dd,
         operator_states_quad=fluid_operator_states_quad,
+        limiter_func=limiter_func, entropy_min=entropy_min,
         grad_cv=fluid_grad_cv,
         grad_t=fluid_grad_temperature,
         boundaries=fluid_all_boundaries,
@@ -900,8 +923,31 @@ def limit_fluid_state_liu(dcoll, cv, temperature_seed, gas_model, dd):
     return cv_lim
 
 
-def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
-                         viz_theta=False, limiter_smin=10):
+def hammer_species(cv):
+    # limit the species mass fraction (Y) to [0, 1.0] and
+    # sum(Y) = 1.0
+    actx = cv.array_context
+    aux = actx.np.zeros_like(cv.mass)
+    zeros_spec = actx.np.zeros_like(cv.mass)
+    ones_spec = zeros_spec + 1.0
+    spec_lim = cv.species_mass_fractions
+    for i in range(cv.nspecies):
+        spec_lim[i] = actx.np.where(actx.np.less(spec_lim[i], zeros_spec),
+                                    zeros_spec, spec_lim[i])
+        spec_lim[i] = actx.np.where(actx.np.greater(spec_lim[i], ones_spec),
+                                    ones_spec, spec_lim[i])
+        aux = aux + spec_lim[i]
+
+    spec_lim = spec_lim / aux
+    # return cv.replace(species_mass=cv.mass*spec_lim)
+    return make_conserved(dim=cv.dim, mass=cv.mass,
+                          momentum=cv.momentum,
+                          energy=cv.energy,
+                          species_mass=cv.mass*spec_lim)
+
+
+def limit_fluid_state_lv(dcoll, cv, temperature_seed, entropy_min,
+                         gas_model, dd, viz_theta=False):
     r"""Entropy-based positivity preserving limiter
 
     Follows loosely the implementation outline in Lv, et. al.
@@ -912,141 +958,205 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     actx = cv.array_context
     nspecies = cv.nspecies
     dim = cv.dim
-    toler = 1.e-13
+    do_limit_toler = 1.e-9
+    min_allowed_density = 1.e-7
+    min_allowed_pressure = 1.e-12
+
     ones = 1. + actx.np.zeros_like(cv.mass)
     element_vols = abs(op.elementwise_integral(dcoll, dd,
                                                actx.np.zeros_like(cv.mass) + 1.0))
 
+    rank = 0
     print_stuff = False
-    index = 7060
-    rank = 2
-    if print_stuff:
-        my_rank = dcoll.mpi_communicator.Get_rank()
-        if my_rank == rank:
-            print_stuff = True
-        else:
-            print_stuff = False
 
-    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
-        print(f"limiter {rank=}")
-        np.set_printoptions(threshold=sys.maxsize, precision=16)
-
+    if print_stuff is True:
         print("Start of limiting")
+        print(f"{dd=}")
+        print(f"{dd.domain_tag=}")
+        print(f"{dd.domain_tag.tag=}")
+        print(f"{type(dd.domain_tag.tag)=}")
+        print(f"{cv.mass[0].shape=} elements in discretization")
+
+        #my_rank = dcoll.mpi_communicator.Get_rank()
+
+    print_all_nodes = False
+    index = [0]
+    from meshmode.discretization.connection.face import FACE_RESTR_INTERIOR
+    if print_stuff is True and isinstance(dd.domain_tag, VolumeDomainTag):
+        index = [1]
+        print(f"volume limiter {rank=}, element index {index}")
+    elif print_stuff is True and (isinstance(dd.domain_tag, BoundaryDomainTag) and
+          dd.domain_tag.tag == "noslip_wall"):
+        index = [0]
+        print(f"isothermal_wall limiter {rank=}, element index {index}")
+        print_all_nodes = False
+    elif print_stuff is True and (isinstance(dd.domain_tag, BoundaryDomainTag) and
+          #isinstance(dd.domain_tag.tag, FACE_RESTR_INTERIOR)):
+          dd.domain_tag.tag is FACE_RESTR_INTERIOR):
+        index = [76755, 5940, 80880]
+        for ind in index:
+            print(f"interior volume faces {rank=}, element index {ind}")
+        print_all_nodes = False
+    else:
+        print_stuff = False
+
+    if print_stuff is True:
+        print("bbbb")
+        np.set_printoptions(threshold=sys.maxsize, precision=16)
+        print(f"{dd.domain_tag=}")
+        print(f"{dd.domain_tag.tag=}")
+        #print(f"{cv.mass=}")
+        #data = actx.to_numpy(cv.mass)
+        #print(f"cv.mass \n {data[0]}")
+
+        # get the location of the indicies, useful for comparing different dd's
+        limiter_fluid_nodes = force_evaluation(actx, actx.thaw(dcoll.nodes(dd)))
+        nodes_x = actx.to_numpy(limiter_fluid_nodes)[0]
+        nodes_y = actx.to_numpy(limiter_fluid_nodes)[1]
+        if print_all_nodes is True:
+            print(f"element location x {nodes_x[0]=}")
+            print(f"element location y {nodes_y[0]=}")
+        else:
+            for ind in index:
+                print(f"element {ind} location x {nodes_x[0][ind]=}")
+                print(f"element {ind} location y {nodes_y[0][ind]=}")
+        print("eeee")
+
+    if print_stuff is True:
         temperature_initial = gas_model.eos.temperature(
             cv=cv, temperature_seed=temperature_seed)
         pressure_initial = gas_model.eos.pressure(
             cv=cv, temperature=temperature_initial)
         # initial state
-        data = actx.to_numpy(cv.mass)
-        print(f"cv.mass \n {data[0][index]}")
-        data = actx.to_numpy(temperature_initial)
-        print(f"temperature_initial \n {data[0][index]}")
-        data = actx.to_numpy(pressure_initial)
-        print(f"pressure_initial \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(cv.species_mass_fractions)
-            print(f"Y_initial[{i}] \n {data[i][0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            data = actx.to_numpy(cv.mass)
+            print(f"cv.mass \n {data[0][ind]}")
+            data = actx.to_numpy(temperature_initial)
+            print(f"temperature_initial \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_initial)
+            print(f"pressure_initial \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass_fractions)
+                print(f"Y_initial[{i}] \n {data[i][0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv.species_mass)
+                print(f"rhoY_initial[{i}] \n {data[i][0][ind]}")
 
     #print(f"inside limiter")
 
     ##################
     # 1.0 limit the density to be above 0.
     ##################
-    #elem_avg_cv = _element_average_cv(dcoll, cv, dd)
-    #rho_lim = elem_avg_cv.mass*0.1
-    rho_lim = 1.e-6
 
     cell_avgs = element_average(dcoll, dd, cv.mass, volumes=element_vols)
-    #cell_avgs = elem_avg_cv.mass
     #print(f"rho_avg {cell_avgs}")
 
     mmin_i = op.elementwise_min(dcoll, dd, cv.mass)
-    #mmin = actx.np.max(rho_lim, 0.1*cell_avgs)
-    mmin = actx.np.where(actx.np.greater(cell_avgs, rho_lim), 0.1*cell_avgs, rho_lim)
-    #mmin = rho_lim
-
     cell_avgs = actx.np.where(
-        actx.np.greater(cell_avgs, rho_lim), cell_avgs, rho_lim)
+        actx.np.greater(cell_avgs, min_allowed_density),
+        cell_avgs,
+        min_allowed_density)
+    mmin = 0.1*cell_avgs
+    #mmin = 1.e-4
+
     #print(f"modified rho_avg {cell_avgs}")
 
     theta_rho = ones*actx.np.maximum(0.,
-        actx.np.where(actx.np.less(mmin_i + toler, mmin),
+        actx.np.where(actx.np.less(mmin_i + do_limit_toler, mmin),
                       (mmin-mmin_i)/(cell_avgs - mmin_i),
                       0.)
     )
     #print(f"{theta_rho=}")
 
-    mass_lim = (cv.mass + theta_rho*(cell_avgs - cv.mass))
+    mass_lim = actx.np.zeros_like(cv.mass)
+    if nspecies > 0:
+        spec_lim = actx.np.zeros_like(cv.species_mass)
+        # find theta for all the species
+        for i in range(0, nspecies):
+            cell_avgs = element_average(
+                dcoll, dd, cv.species_mass[i],
+                volumes=element_vols)
+            mmin = 0.1*cell_avgs
+            cell_avgs = actx.np.where(
+                actx.np.greater(cell_avgs, min_allowed_density),
+                cell_avgs,
+                min_allowed_density)
 
-    # tseed is the best guess at a reasonable temperature after the limiting
-    # assume that whatever pressure and temperature that was computed was bogus
-    #if temperature_seed is not None:
-    if 0:
-        # preserve internal energy, velocity, and mass fractions,
-        # keeps pressure/temperature constant
-        mom_lim = mass_lim*cv.velocity
-        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
-        int_energy = cv.energy - cv.mass*kin_energy
-        energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
-        spec_lim = cv.species_mass_fractions
-
-        temperature_guess = gas_model.eos.temperature(
-            cv=cv, temperature_seed=temperature_seed)
-        safe_temperature = actx.np.where(actx.np.greater(theta_rho, toler),
-                                         temperature_seed, temperature_guess)
-        energy_lim = mass_lim*(gas_model.eos.get_internal_energy(safe_temperature,
-                               species_mass_fractions=spec_lim) + kin_energy)
+            spec_lim[i] = (cv.species_mass[i] +
+                           theta_rho*(
+                               cell_avgs - cv.species_mass[i]))
+            mass_lim = mass_lim + spec_lim[i]
     else:
-        # if tseed is not available, don't mess with the temperature
-        #mom_lim = cv.momentum/cv.mass*mass_lim
-        #energy_lim = cv.energy/cv.mass*mass_lim
-        #spec_lim = cv.species_mass_fractions/cv.mass*mass_lim
-        mom_lim = mass_lim*cv.velocity
-        kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
-        int_energy = cv.energy - cv.mass*kin_energy
-        energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
-        spec_lim = cv.species_mass_fractions
+        mass_lim = (cv.mass + theta_rho*(cell_avgs - cv.mass))
+        spec_lim = mass_lim*cv.species_mass_fractions
+
+    mom_lim = mass_lim*cv.velocity
+    kin_energy = 0.5*np.dot(cv.velocity, cv.velocity)
+    int_energy = cv.energy - cv.mass*kin_energy
+    energy_lim = (int_energy/cv.mass + kin_energy)*mass_lim
+
+    """
+    # keep rho balanced with rhoY
+    if nspecies > 0:
+        mass_lim = 0.
+        for i in range(0, nspecies):
+            mass_lim = mass_lim + spec_lim[i]
+    #else:
+        #mass_lim = cv_updated.mass + theta_pressure*(
+            #elem_avg_cv_safe.mass - cv_updated.mass)
+    """
 
     cv_update_rho = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                                    momentum=mom_lim,
-                                   species_mass=mass_lim*spec_lim)
+                                   species_mass=spec_lim)
+    #cv_update_rho = cv
 
-    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+    if print_stuff is True:
         np.set_printoptions(threshold=sys.maxsize, precision=16)
         # initial state
         #print(f"{theta_rho=}")
         #print(f"{theta_pressure=}")
         print("After rho limit")
-        data = actx.to_numpy(theta_rho)
-        print(f"theta_rho \n {data[0][index]}")
-        data = actx.to_numpy(cell_avgs)
-        print(f"cell_avgs \n {data[0][index]}")
-        temperature_rho = gas_model.eos.temperature(
-            cv=cv_update_rho, temperature_seed=temperature_seed)
-        pressure_rho = gas_model.eos.pressure(
-            cv=cv_update_rho, temperature=temperature_rho)
-        # initial state
-        data = actx.to_numpy(cv_update_rho.mass)
-        print(f"cv.mass \n {data[0][index]}")
-        data = actx.to_numpy(temperature_rho)
-        print(f"temperature_rho \n {data[0][index]}")
-        data = actx.to_numpy(pressure_rho)
-        print(f"pressure_rho \n {data[0][index]}")
-        data = actx.to_numpy(temperature_seed)
-        print(f"temperature_seed \n {data[0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            data = actx.to_numpy(theta_rho)
+            print(f"theta_rho \n {data[0][ind]}")
+            data = actx.to_numpy(cell_avgs)
+            print(f"cell_avgs \n {data[0][ind]}")
+            temperature_rho = gas_model.eos.temperature(
+                cv=cv_update_rho, temperature_seed=temperature_seed)
+            pressure_rho = gas_model.eos.pressure(
+                cv=cv_update_rho, temperature=temperature_rho)
+            # initial state
+            data = actx.to_numpy(cv_update_rho.mass)
+            print(f"cv.mass \n {data[0][ind]}")
+            data = actx.to_numpy(temperature_rho)
+            print(f"temperature_rho \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_rho)
+            print(f"pressure_rho \n {data[0][ind]}")
+            #data = actx.to_numpy(temperature_seed)
+            #print(f"temperature_seed \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_update_rho.species_mass_fractions)
+                print(f"Y_[{i}] \n {data[i][0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_update_rho.species_mass)
+                print(f"rhoY_[{i}] \n {data[i][0][ind]}")
 
     ##################
     # 2.0 limit the species mass fractions
     ##################
     theta_spec = actx.np.zeros_like(cv.species_mass_fractions)
+    balance_spec = actx.np.zeros_like(cv.mass)
+    #if 0:
     if nspecies > 0:
         # find theta for all the species
         for i in range(0, nspecies):
+            mmin = 0.
             mmin_i = op.elementwise_min(dcoll, dd,
                                         cv_update_rho.species_mass_fractions[i])
-            mmin = 0.
 
-            #cell_avgs = elem_avg_cv.species_mass_fractions[i]
             cell_avgs = element_average(
                 dcoll, dd, cv_update_rho.species_mass_fractions[i],
                 volumes=element_vols)
@@ -1054,7 +1164,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                                       mmin)
 
             _theta = actx.np.maximum(0.,
-                actx.np.where(actx.np.less(mmin_i + toler, mmin),
+                actx.np.where(actx.np.less(mmin_i + do_limit_toler, mmin),
                               (mmin-mmin_i)/(cell_avgs - mmin_i),
                               0.)
             )
@@ -1064,12 +1174,14 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
             mmax = 1.0
             cell_avgs = actx.np.where(actx.np.less(cell_avgs, mmax), cell_avgs, mmax)
             _theta = actx.np.maximum(_theta,
-                actx.np.where(actx.np.greater(mmax_i - toler, mmax),
+                actx.np.where(actx.np.greater(mmax_i - do_limit_toler, mmax),
                               (mmax_i - mmax)/(mmax_i - cell_avgs),
                               0.)
             )
 
             theta_spec[i] = _theta*ones
+            balance_spec = actx.np.where(actx.np.greater(theta_spec[i], 1.e-15),
+                                      1.0, balance_spec)
 
             #print(f"species {i}, {_theta=}")
 
@@ -1078,105 +1190,64 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                            theta_spec[i]*(
                                cell_avgs - cv_update_rho.species_mass_fractions[i]))
 
+            if print_stuff is True:
+                for ind in index:
+                    print(f"element {ind}")
+                    np.set_printoptions(threshold=sys.maxsize, precision=16)
+                    data = actx.to_numpy(spec_lim[i])
+                    print(f"spec_lim[i] \n {data[0][ind]}")
+
         # limit the species mass fraction sum to 1.0
         aux = actx.np.zeros_like(cv_update_rho.mass)
-        sum_theta_y = actx.np.zeros_like(cv_update_rho.mass)
         for i in range(0, nspecies):
             aux = aux + spec_lim[i]
-            sum_theta_y = sum_theta_y + actx.np.abs(spec_lim[i])
-        spec_lim = spec_lim/aux
+        for i in range(nspecies):
+            # only rebalance where species limiting actually occured
+            spec_lim[i] = actx.np.where(actx.np.greater(balance_spec, 0.),
+                                        spec_lim[i]/aux, spec_lim[i])
 
-        # tseed is the best guess at a reasonable temperature after the limiting
-        # assume that whatever pressure and temperature that was computed was bogus
-        #if temperature_seed is not None:
-        if 0:
-            # preserve internal energy, velocity, and mass fractions,
-            # keeps pressure/temperature constant
-            mass_lim = cv_update_rho.mass
-            mom_lim = mass_lim*cv_update_rho.velocity
-            kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-            int_energy = cv_update_rho.energy - mass_lim*kin_energy
-            energy_lim = (int_energy/mass_lim + kin_energy)*mass_lim
+        # convert back to rhoY
+        spec_lim_mass = spec_lim*cv_update_rho.mass
 
-            temperature_guess = gas_model.eos.temperature(
-                cv=cv_update_rho, temperature_seed=temperature_seed)
-            safe_temperature = actx.np.where(actx.np.greater(sum_theta_y, toler),
-                                             temperature_seed, temperature_guess)
-            energy_lim = mass_lim*(
-                gas_model.eos.get_internal_energy(
-                    safe_temperature, species_mass_fractions=spec_lim) + kin_energy)
-        else:
-            mass_lim = cv_update_rho.mass
-            mom_lim = mass_lim*cv_update_rho.velocity
-            kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-            int_energy = cv_update_rho.energy - mass_lim*kin_energy
-            energy_lim = (int_energy/mass_lim + kin_energy)*mass_lim
-
-            # modify Temperature (energy) maintain pressure equilibrium
-            temperature_update_rho = gas_model.eos.temperature(
-                cv=cv_update_rho, temperature_seed=temperature_seed)
-            pressure_update_rho = gas_model.eos.pressure(
-                cv=cv_update_rho, temperature=temperature_update_rho)
-
-            kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-            positive_pressure = actx.np.greater(pressure_update_rho, 1.e-12)
-
-            update_dv = positive_pressure
-
-            r = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
-            temperature_update_y = pressure_update_rho/r/mass_lim
-
-            energy_lim = actx.np.where(
-                update_dv,
-                mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
-                          #species_mass_fractions=spec_lim/mass_lim)
-                          species_mass_fractions=spec_lim)
-                          + kin_energy),
-                cv_update_rho.energy
-            )
-        """
-        # modify Temperature (energy) maintain pressure equilibrium
+        mass_lim = 0.
+        for i in range(0, nspecies):
+            mass_lim = mass_lim + spec_lim_mass[i]
+        mom_lim = mass_lim*cv_update_rho.velocity
         kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
-        positive_pressure = actx.np.greater(pressure_update_rho, 1.e-12)
+        int_energy = cv_update_rho.energy - mass_lim*kin_energy
+        energy_lim = (int_energy/mass_lim + kin_energy)*mass_lim
+
+        # modify Temperature (energy) maintain pressure equilibrium
+        temperature_update_rho = gas_model.eos.temperature(
+            cv=cv_update_rho, temperature_seed=temperature_seed)
+        pressure_update_rho = gas_model.eos.pressure(
+            cv=cv_update_rho, temperature=temperature_update_rho)
+
+        kin_energy = 0.5*np.dot(cv_update_rho.velocity, cv_update_rho.velocity)
+        positive_pressure = actx.np.greater(pressure_update_rho,
+                                            min_allowed_pressure)
+
+        update_dv = positive_pressure
+
         r = gas_model.eos.gas_const(species_mass_fractions=spec_lim)
         temperature_update_y = pressure_update_rho/r/mass_lim
 
         energy_lim = actx.np.where(
-            positive_pressure,
-            mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
-                      #species_mass_fractions=spec_lim/mass_lim)
-                      species_mass_fractions=spec_lim)
-                      + kin_energy),
-            cv_update_rho.energy
-        )
-        """
-
-        """
-        # where species limiting was done, reset the temperature back to tseed
-        limit_y = actx.np.zeros_like(cv.mass)
-        for i in range(0, nspecies):
-            limit_y += actx.np.abs(theta_spec[i])
-
-        temperature_update_y = actx.np.where(actx.np.greater(limit_y, 0.),
-                      temperature_seed, -1.)
-
-        energy_lim = actx.np.where(actx.np.greater(temperature_update_y, 0.),
+            update_dv,
             mass_lim*(gas_model.eos.get_internal_energy(temperature_update_y,
                       species_mass_fractions=spec_lim)
                       + kin_energy),
             cv_update_rho.energy
         )
-        """
-
         cv_update_y = make_conserved(dim=dim,
-                                     mass=cv_update_rho.mass,
-                                     energy=cv_update_rho.energy,
-                                     momentum=cv_update_rho.momentum,
-                                     species_mass=cv_update_rho.mass*spec_lim)
+                                     mass=mass_lim,
+                                     energy=energy_lim,
+                                     momentum=mom_lim,
+                                     species_mass=spec_lim_mass)
     else:
         cv_update_y = cv_update_rho
 
-    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+    if print_stuff is True:
         np.set_printoptions(threshold=sys.maxsize, precision=16)
 
         print("After mass fraction limiting")
@@ -1184,13 +1255,18 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
             cv=cv_update_y, temperature_seed=temperature_seed)
         pressure_update_y = gas_model.eos.pressure(
             cv=cv_update_y, temperature=temperature_update_y)
-        data = actx.to_numpy(temperature_update_y)
-        print(f"temperature_update_y \n {data[0][index]}")
-        data = actx.to_numpy(pressure_update_y)
-        print(f"pressure_update_y \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(cv_update_y.species_mass_fractions)
-            print(f"Y_update_y[{i}] \n {data[i][0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            data = actx.to_numpy(temperature_update_y)
+            print(f"temperature_update_y \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_update_y)
+            print(f"pressure_update_y \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(theta_spec)
+                print(f"theta_spec[{i}] \n {data[i][0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_update_y.species_mass_fractions)
+                print(f"Y_update_y[{i}] \n {data[i][0][ind]}")
 
     ##################
     # 3.0 find the average element cv and pressure
@@ -1201,19 +1277,11 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     pressure_updated = gas_model.eos.pressure(
         cv=cv_updated, temperature=temperature_updated)
 
-    #print(f"{pressure_updated=}")
-    #entropy = actx.np.log(pressure_updated/cv_updated.mass**1.4)
-    #print(f"{entropy=}")
-
     elem_avg_cv = _element_average_cv(dcoll, dd, cv_updated, volumes=element_vols)
     elem_avg_temp = gas_model.eos.temperature(
         cv=elem_avg_cv, temperature_seed=temperature_seed)
     elem_avg_pres = gas_model.eos.pressure(
         cv=elem_avg_cv, temperature=elem_avg_temp)
-
-    #print(f"{elem_avg_pres=}")
-    #avg_entropy = actx.np.log(elem_avg_pres/elem_avg_cv.mass**1.4)
-    #print(f"{avg_entropy=}")
 
     # use an entropy function to keep pressure positive and entropy
     # above some minimum value
@@ -1222,14 +1290,15 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     gamma_avg = gas_model.eos.gamma(elem_avg_cv, elem_avg_temp)
     mmin = 1.e-12
     theta_smin = (pressure_updated -
-                  math.exp(limiter_smin)*cv_updated.mass**gamma)
+                  actx.np.exp(entropy_min)*cv_updated.mass**gamma)
     theta_smin_i = op.elementwise_min(dcoll, dd, theta_smin)
 
     # in some cases, the average pressure is too small, we need to satisfy
-    # elem_avg_pres > math.exp(limiter_smin)*elem_avg_cv.mass**gamma
+    # elem_avg_pres > math.exp(entropy_min)*elem_avg_cv.mass**gamma
     # compute a safe pressure such that this is always true and use it to compute
     # a safe average energy
-    safe_pressure = math.exp(limiter_smin)*elem_avg_cv.mass**gamma_avg - toler
+    #safe_pressure = actx.np.exp(entropy_min)*elem_avg_cv.mass**gamma_avg - toler
+    safe_pressure = actx.np.exp(entropy_min)*elem_avg_cv.mass**gamma_avg
     r_avg = gas_model.eos.gas_const(
         species_mass_fractions=elem_avg_cv.species_mass_fractions)
     safe_temperature = safe_pressure/elem_avg_cv.mass/r_avg
@@ -1240,48 +1309,33 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
             species_mass_fractions=elem_avg_cv.species_mass_fractions)
         + kin_energy)
 
-    #print(f"{safe_energy=}")
     safe_energy = actx.np.where(
-        actx.np.less(math.exp(limiter_smin)*elem_avg_cv.mass**gamma_avg,
+        actx.np.less(actx.np.exp(entropy_min)*elem_avg_cv.mass**gamma_avg,
                      elem_avg_pres),
         elem_avg_cv.energy, safe_energy)
 
-    #print(f"{safe_pressure=}")
-    #print(f"{safe_energy=}")
-    #print(f"{elem_avg_cv.energy=}")
     theta_savg = actx.np.maximum(
         elem_avg_pres, safe_pressure) -\
-        math.exp(limiter_smin)*elem_avg_cv.mass**gamma_avg
+        actx.np.exp(entropy_min)*elem_avg_cv.mass**gamma_avg
     elem_avg_cv_safe = elem_avg_cv.replace(energy=safe_energy)
 
     """
-    check_temperature_updated = gas_model.eos.temperature(
-        cv=elem_avg_cv_safe, temperature_seed=temperature_seed)
-    check_pressure_updated = gas_model.eos.pressure(
-        cv=elem_avg_cv_safe, temperature=check_temperature_updated)
-    check_entropy_updated = actx.np.log(check_pressure_updated/elem_avg_cv.mass**1.4)
-
-    print(f"{check_temperature_updated=}")
-    print(f"{check_pressure_updated=}")
-    print(f"{check_entropy_updated=}")
-
-    print(f"{theta_savg=}")
-    """
-
     theta_pressure = ones*actx.np.maximum(0.,
-        actx.np.where(actx.np.less(theta_smin_i + toler, mmin),
+        actx.np.where(actx.np.greater(actx.np.abs(theta_smin_i - theta_savg),
+                                      actx.np.abs(1.e-6*theta_savg)),
+                      (mmin-theta_smin_i)/(theta_savg - theta_smin_i),
+                      0.))
+    """
+    theta_pressure = actx.np.maximum(0.,
+        actx.np.where(actx.np.less(theta_smin_i + do_limit_toler, mmin),
                       (mmin-theta_smin_i)/(theta_savg - theta_smin_i),
                       0.)
     )
-
-    #print(f"{theta_pressure=}")
 
     ##################
     # 4.0 limit cv where the entropy minimum function is violated
     #     this in turn keeps the pressure positive
     ##################
-    mass_lim = cv_updated.mass + theta_pressure*(
-        elem_avg_cv_safe.mass - cv_updated.mass)
     mom_lim = make_obj_array([cv_updated.momentum[i] +
         theta_pressure*(elem_avg_cv_safe.momentum[i] - cv_updated.momentum[i])
         for i in range(dim)
@@ -1289,16 +1343,25 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
     energy_lim = (cv_updated.energy +
                   theta_pressure*(elem_avg_cv_safe.energy - cv_updated.energy))
     spec_lim = make_obj_array([cv_updated.species_mass[i] +
-        theta_pressure*(elem_avg_cv_safe.species_mass[i] -
-                        cv_updated.species_mass[i])
-        for i in range(0, nspecies)
-    ])
+                               theta_pressure*(elem_avg_cv_safe.species_mass[i] -
+                                               cv_updated.species_mass[i])
+                               for i in range(0, nspecies)
+                               ])
+
+    # keep rho balanced with rhoY
+    if nspecies > 0:
+        mass_lim = 0.
+        for i in range(0, nspecies):
+            mass_lim = mass_lim + spec_lim[i]
+    else:
+        mass_lim = cv_updated.mass + theta_pressure*(
+            elem_avg_cv_safe.mass - cv_updated.mass)
 
     cv_lim = make_conserved(dim=dim, mass=mass_lim, energy=energy_lim,
                             momentum=mom_lim,
                             species_mass=spec_lim)
 
-    if print_stuff and isinstance(dd.domain_tag, VolumeDomainTag):
+    if print_stuff is True:
         np.set_printoptions(threshold=sys.maxsize, precision=16)
 
         temperature_final = gas_model.eos.temperature(
@@ -1306,6 +1369,7 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
         pressure_final = gas_model.eos.pressure(
             cv=cv_lim, temperature=temperature_final)
 
+        """
         def get_temperature_update_limit(cv, temperature):
             y = cv.species_mass_fractions
             e = gas_model.eos.internal_energy(cv)/cv.mass
@@ -1332,31 +1396,62 @@ def limit_fluid_state_lv(dcoll, cv, temperature_seed, gas_model, dd,
                 data_t_i = actx.to_numpy(t_i)[0][index]
                 data_t_resid = actx.to_numpy(t_resid)[0][index]
                 print(f"iter {_=}: {data_t_i=}, {data_t_resid=}")
+        """
 
         #do_temperature_iter(cv_lim, temperature_seed)
         # initial state
-        #print(f"{theta_rho=}")
-        #print(f"{theta_pressure=}")
-        #print(f"{theta_spec=}")
+        #print(f"{actx.to_numpy(theta_rho)=}")
+        #print(f"{actx.to_numpy(theta_pressure)=}")
+        #print(f"{actx.to_numpy(theta_spec)=}")
         #print(f"{cv_lim.species_mass_fractions=}")
         #print(f"{temperature_final}")
         #print(f"{temp_resid=}")
         print("All done limiting")
-        data = actx.to_numpy(temp_resid)
-        print(f"temp_resid \n {data[0][index]}")
-        data = actx.to_numpy(theta_rho)
-        print(f"theta_rho \n {data[0][index]}")
-        data = actx.to_numpy(theta_pressure)
-        print(f"theta_pressure \n {data[0][index]}")
-        for i in range(0, nspecies):
-            data = actx.to_numpy(theta_spec)
-            print(f"theta_Y[{i}] \n {data[i][0][index]}")
-        data = actx.to_numpy(cv_lim.mass)
-        print(f"cv_lim.mass \n {data[0][index]}")
-        data = actx.to_numpy(temperature_final)
-        print(f"temperature_final \n {data[0][index]}")
-        data = actx.to_numpy(pressure_final)
-        print(f"pressure_final \n {data[0][index]}")
+        for ind in index:
+            print(f"element {ind}")
+            #data = actx.to_numpy(temp_resid)
+            #print(f"temp_resid \n {data[0][ind]}")
+            data = actx.to_numpy(theta_rho)
+            print(f"theta_rho \n {data[0][ind]}")
+            data = actx.to_numpy(theta_pressure)
+            print(f"theta_pressure \n {data[0][ind]}")
+
+            data = actx.to_numpy(entropy_min)
+            print(f"entropy_min \n {data[0][ind]}")
+            entropy_initial = actx.np.log(pressure_initial/cv.mass**1.4)
+            data = actx.to_numpy(entropy_initial)
+            print(f"entropy_initial \n {data[0][ind]}")
+            entropy_final = actx.np.log(pressure_final/cv_lim.mass**1.4)
+            data = actx.to_numpy(entropy_final)
+            print(f"entropy_final \n {data[0][ind]}")
+
+            data = actx.to_numpy(theta_savg)
+            print(f"theta_savg \n {data[0][ind]}")
+            data = actx.to_numpy(theta_smin)
+            print(f"theta_smin_i \n {data[0][ind]}")
+            data = actx.to_numpy(theta_smin_i)
+            print(f"theta_smin_i \n {data[0][ind]}")
+
+            for i in range(0, nspecies):
+                data = actx.to_numpy(theta_spec)
+                print(f"theta_Y[{i}] \n {data[i][0][ind]}")
+            data = actx.to_numpy(cv_lim.mass)
+            print(f"cv_lim.mass \n {data[0][ind]}")
+            for i in range(0, nspecies):
+                data = actx.to_numpy(cv_lim.species_mass_fractions)
+                print(f"Y_final[{i}] \n {data[i][0][ind]}")
+            for i in range(0, dim):
+                data = actx.to_numpy(cv_lim.momentum)
+                print(f"cv_lim.momentum_final[{i}] \n {data[i][0][ind]}")
+            for i in range(0, dim):
+                data = actx.to_numpy(cv_lim.velocity)
+                print(f"cv_lim.velocity_final[{i}] \n {data[i][0][ind]}")
+            data = actx.to_numpy(temperature_final)
+            print(f"temperature_final \n {data[0][ind]}")
+            data = actx.to_numpy(pressure_final)
+            print(f"pressure_final \n {data[0][ind]}")
+
+            print("End of limiting")
 
     if viz_theta:
         return make_obj_array([cv_lim, theta_rho,
@@ -1371,7 +1466,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
          user_input_file=None, use_overintegration=False,
          disable_logpyle=False,
          casename=None, log_path="log_data", use_esdg=False,
-         disable_fallbacks=False):
+         disable_fallbacks=False, axi_filename=None):
 
     allow_fallbacks = not disable_fallbacks
     # control log messages
@@ -1434,6 +1529,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_gmsh = configurate("use_gmsh", input_data, True)
     from mirgecom.array_context import initialize_actx, actx_class_is_profiling
     use_tpe = configurate("use_tensor_product_elements", input_data, False)
+    mesh_origin = configurate("mesh_origin", input_data, [0.0, -0.01])
 
     actx = initialize_actx(actx_class, comm,
                            use_axis_tag_inference_fallback=allow_fallbacks,
@@ -1447,6 +1543,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
     nrestart = configurate("nrestart", input_data, 5000)
     nhealth = configurate("nhealth", input_data, 1)
     nstatus = configurate("nstatus", input_data, 1)
+    nspeccheck = configurate("nspeccheck", input_data, 1)
+
+    # Restart from previous axisymmetric run
+    # Enable axi restart by setting "axi_filename" on
+    # command line or in input yaml file.
+    if axi_filename is None:
+        axi_filename = configurate("axi_filename", None)
+    restart_from_axi = axi_filename is not None
 
     # garbage collection frequency
     ngarbage = configurate("ngarbage", input_data, 10)
@@ -1581,6 +1685,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "adiabatic_slip",
         "pressure_outflow",
         "riemann_outflow",
+        "riemann_inflow",
         "prescribed",
         "isentropic_pressure_ramp"
     ]
@@ -1614,6 +1719,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     fluid_mw = configurate("fluid_mw", input_data, -1.)
     fluid_kappa = configurate("fluid_kappa", input_data, -1.)
     fluid_mu = configurate("mu", input_data, -1.)
+    fluid_beta = configurate("beta", input_data, -1.)
 
     # rhs control
     use_axisymmetric = configurate("use_axisymmetric", input_data, False)
@@ -1622,9 +1728,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_wall_ox = configurate("use_wall_ox", input_data, True)
     use_wall_mass = configurate("use_wall_mass", input_data, True)
     use_ignition = configurate("use_ignition", input_data, 0)
-    use_injection_source = configurate("use_injection_source", input_data, True)
+    use_injection_source = configurate("use_injection_source", input_data, False)
     use_injection_source_comb = configurate("use_injection_source_comb",
                                             input_data, False)
+    use_injection_source_3d = configurate("use_injection_source_3d",
+                                          input_data, False)
     use_injection = configurate("use_injection", input_data, True)
     init_injection = configurate("init_injection", input_data, False)
     use_upstream_injection = configurate("use_upstream_injection", input_data, False)
@@ -1633,6 +1741,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_sponge = configurate("use_sponge", input_data, True)
     use_time_dependent_sponge = configurate("use_time_dependent_sponge",
                                             input_data, False)
+    use_gauss_outlet = configurate("use_gauss_outlet", input_data, False)
+    gauss_outlet_radius = configurate("gauss_outlet_radius", input_data, 1.45)
+    gauss_outlet_sigma = configurate("gauss_outlet_sigma", input_data, 0.5)
     sponge_sigma = configurate("sponge_sigma", input_data, 1.0)
 
     # artificial viscosity control
@@ -1646,6 +1757,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     #    1 - limit in on call to make_fluid_state
     use_species_limiter = configurate("use_species_limiter", input_data, 0)
     limiter_smin = configurate("limiter_smin", input_data, 10)
+    constant_smin = configurate("constant_smin", input_data, True)
+    use_hammer_species = configurate("use_hammer_species", input_data, True)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -1692,6 +1805,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     # Shock 1D flow properties
     pres_bkrnd = configurate("pres_bkrnd", input_data, 100.)
     temp_bkrnd = configurate("temp_bkrnd", input_data, 300.)
+    vel_bkrnd = configurate("vel_bkrnd", input_data, 0.)
     mach = configurate("mach", input_data, 2.0)
     shock_loc_x = configurate("shock_loc_x", input_data, 0.05)
     fuel_loc_x = configurate("fuel_loc_x", input_data, 0.07)
@@ -1699,6 +1813,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     # Shock 1D mesh properties
     mesh_size = configurate("mesh_size", input_data, 0.001)
+    mesh_height = configurate("mesh_height", input_data, 0.02)
     bl_ratio = configurate("bl_ratio", input_data, 3)
     interface_ratio = configurate("interface_ratio", input_data, 2)
     transfinite = configurate("transfinite", input_data, False)
@@ -1718,6 +1833,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
     total_pres_inflow = configurate("total_pres_inflow", input_data, 2.745e5)
     total_temp_inflow = configurate("total_temp_inflow", input_data, 2076.43)
     mf_o2 = configurate("mass_fraction_o2", input_data, 0.273)
+    mole_c2h4 = configurate("mole_c2h4", input_data, 0.5)
+    mole_h2 = configurate("mole_h2", input_data, 0.5)
 
     # injection flow properties
     total_pres_inj = configurate("total_pres_inj", input_data, 50400.)
@@ -1794,6 +1911,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                          input_data, -0.021)
     injection_source_loc_z_comb = configurate("injection_source_loc_z_comb",
                                          input_data, 0.0)
+    injection_source_mass_comb = configurate("injection_source_mass_comb",
+                                        input_data, 2.)
+    injection_source_mom_x_comb = configurate("injection_source_mom_x_comb",
+                                         input_data, 3.)
+    injection_source_mom_y_comb = configurate("injection_source_mom_y_comb",
+                                         input_data, 3.)
+    injection_source_mom_z_comb = configurate("injection_source_mom_z_comb",
+                                         input_data, 0.)
+    injection_source_energy_comb = configurate("injection_source_energy_comb",
+                                          input_data, 1.e3)
 
     # initialization for the sponge
     inlet_sponge_x0 = configurate("inlet_sponge_x0", input_data, 0.225)
@@ -1948,6 +2075,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
             print(f"Shock Mach number {mach}")
             print(f"Ambient pressure {pres_bkrnd}")
             print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "backward_step":
+            print("\tInitializing flow to backward_step")
+            print(f"Shock Mach number {mach}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
+        elif init_case == "forward_step":
+            print("\tInitializing flow to forward_step")
+            print(f"Shock Mach number {mach}")
+            print(f"Ambient pressure {pres_bkrnd}")
+            print(f"Ambient temperature {temp_bkrnd}")
         elif init_case == "mixing_layer":
             print("\tInitializing flow to mixing_layer")
             print(f"Vorticity thickness {vorticity_thickness}")
@@ -1990,6 +2127,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "\t unstart"
                 "\t unstart_ramp"
                 "\t shock1d"
+                "\t backward_step"
+                "\t forward_step"
                 "\t discontinuity"
                 "\t flame1d"
                 "\t wedge"
@@ -2024,6 +2163,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
         elif use_ignition == 2:
             print("heat source ignition")
         print("#### Ignition control parameters ####\n")
+
+    if rank == 0 and use_injection_source_3d is True:
+        print("injection source 3D ... it's complicated")
 
     # injection mass source
     injection_source_center = np.zeros(shape=(dim,))
@@ -2163,7 +2305,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if fluid_gamma > 0:
         gamma = fluid_gamma
 
-    mf_c2h4 = mw_c2h4/(mw_c2h4 + mw_h2)
+    mf_c2h4 = mole_c2h4*mw_c2h4/(mole_c2h4*mw_c2h4 + mole_h2*mw_h2)
     mf_h2 = 1 - mf_c2h4
 
     # user can reset the mw to whatever they want
@@ -2179,6 +2321,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     mu_o2 = 3.76e-5
     mu_n2 = 3.19e-5
     mu = mu_o2*mf_o2 + mu_n2*(1-mu_o2)  # 3.3456e-5
+    beta = 0.
 
     if gas_mat_prop == 1:
         # working gas: Ar #
@@ -2186,6 +2329,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         mu = mu_ar
     if not fluid_mu < 0:
         mu = fluid_mu
+    if not fluid_beta < 0:
+        beta = fluid_beta
 
     kappa = cp*mu/Pr
     if fluid_kappa > 0:
@@ -2198,7 +2343,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         use_upstream_injection = False
 
     # Turn off combustion unless EOS supports it
-    if nspecies < 3:
+    if nspecies < 4:
         use_combustion = False
 
     if nspecies > 3:
@@ -2313,7 +2458,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     print(f"{species_names=}")
 
     # initialize eos and species mass fractions
-    y = np.zeros(nspecies)
+    y = np.zeros(nspecies, dtype=object)
     y_fuel = np.zeros(nspecies)
     if nspecies == 2:
         y[0] = 1
@@ -2398,7 +2543,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             raise RuntimeError(error_message)
 
     physical_transport_model = SimpleTransport(
-        viscosity=mu, thermal_conductivity=kappa,
+        viscosity=mu, bulk_viscosity=beta,
+        thermal_conductivity=kappa,
         species_diffusivity=species_diffusivity)
 
     if transport_type == 1:
@@ -2429,11 +2575,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
     gas_model = GasModel(eos=eos, transport=transport_model)
 
     # quiescent initialization
+    velocity_bkrnd = np.zeros(shape=(dim,))
+    velocity_bkrnd[0] = vel_bkrnd
     bulk_init = Uniform(
         dim=dim,
-        velocity=np.zeros(shape=(dim,)),
+        velocity=velocity_bkrnd,
         pressure=pres_bkrnd,
-        temperature=temp_bkrnd
+        temperature=temp_bkrnd,
+        species_mass_fractions=y
     )
 
     # select the initialization case
@@ -2486,7 +2635,52 @@ def main(actx_class, restart_filename=None, target_filename=None,
             vel_sigma=vel_sigma,
             temp_sigma=temp_sigma)
 
-    elif init_case == "shock1d":
+    elif (init_case == "forward_step" or
+          init_case == "backward_step"):
+
+        print(f"{pres_bkrnd=}")
+        print(f"{temp_bkrnd=}")
+
+        # initialization to uniform M=mach flow
+        velocity_bkrnd = np.zeros(dim, dtype=object)
+        if use_axisymmetric or dim == 3:
+            velocity_bkrnd[1] = vel_bkrnd
+        else:
+            velocity_bkrnd[0] = vel_bkrnd
+
+        mass_bkrnd = eos.get_density(pressure=pres_bkrnd, temperature=temp_bkrnd,
+                                     species_mass_fractions=y)
+        energy_bkrnd = mass_bkrnd*eos.get_internal_energy(temperature=temp_bkrnd,
+                                                          species_mass_fractions=y)
+        cv_bkrnd = make_conserved(dim=dim, mass=mass_bkrnd,
+                                  momentum=mass_bkrnd*velocity_bkrnd,
+                                  energy=energy_bkrnd, species_mass=mass_bkrnd*y)
+        gamma = eos.gamma(cv_bkrnd, temp_bkrnd)
+
+        c_bkrnd = np.sqrt(gamma*pres_bkrnd/mass_bkrnd)
+
+        if use_axisymmetric:
+            velocity_bkrnd[1] = velocity_bkrnd[1] + c_bkrnd*mach
+        else:
+            velocity_bkrnd[0] = velocity_bkrnd[0] + c_bkrnd*mach
+
+        ysp = y
+        if nspecies == 2:
+            ysp[0] = 0.25
+            ysp[1] = 0.75
+        if nspecies == 3:
+            ysp[0] = 0.39
+            ysp[1] = 0.35
+            ysp[2] = 0.26
+        bulk_init = Uniform(
+            dim=dim,
+            velocity=velocity_bkrnd,
+            pressure=pres_bkrnd,
+            temperature=temp_bkrnd,
+            species_mass_fractions=ysp
+        )
+
+    elif (init_case == "shock1d"):
 
         # init params
         disc_location = np.zeros(shape=(dim,))
@@ -2573,6 +2767,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         plane_normal[1] = np.sin(theta)
         plane_normal = plane_normal/np.linalg.norm(plane_normal)
 
+        disc_location = shock_loc_x*plane_normal
+        fuel_location = fuel_loc_x*plane_normal
         vel_left = (velocity2 - velocity1)*plane_normal
 
         pressure1_total = pres_bkrnd*(1 + (gamma-1)/2*mach**2)**(gamma/(gamma-1))
@@ -2961,6 +3157,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
         #
         vel_inflow = np.zeros(shape=(dim,))
         vel_outflow = np.zeros(shape=(dim,))
+        vel_bulk = np.zeros(shape=(dim,))
+
+        if use_gauss_outlet is True:
+            mdot = 0.022
+            outflow_density = pres_bkrnd/temp_bkrnd/r
+            sigma = gauss_outlet_sigma
+            #radius = 1.45
+            radius = gauss_outlet_radius
+            factor = 1./(2*3.14159*sigma**2*(
+                1 - math.exp(-(radius**2/(2*sigma**2)))))
+            if use_axisymmetric:
+                vel_outflow[1] = mdot/outflow_density*factor
+            else:
+                vel_outflow[0] = mdot/outflow_density*factor
 
         throat_height = 6.3028e-3
         inlet_area_ratio = inlet_height/throat_height
@@ -3070,7 +3280,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             inlet_height=inlet_height,
             pressure_bulk=pres_bkrnd,
             temperature_bulk=temp_bkrnd,
-            velocity_bulk=vel_outflow,
+            velocity_bulk=vel_bulk,
             mass_frac_bulk=y,
             pressure_inlet=pres_inflow,
             temperature_inlet=temp_inflow,
@@ -3083,7 +3293,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
             inlet_pressure_func=inlet_ramp_pressure,
             temp_wall=temp_bkrnd,
             vel_sigma=vel_sigma,
-            temp_sigma=temp_sigma)
+            temp_sigma=temp_sigma,
+            gauss_outlet=use_gauss_outlet,
+            gauss_outlet_sigma=gauss_outlet_sigma)
 
     elif init_case == "y3prediction_ramp":
 
@@ -3721,11 +3933,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_path + "{cname}-{step:09d}-{rank:04d}.pkl"
     )
 
+    from mirgecom.restart import read_restart_data
+    restart_nspecies = 0
+    if restart_from_axi:
+        axi_restart_data = read_restart_data(actx, axi_filename)
+        vol_to_axi_mesh = axi_restart_data["volume_to_local_mesh_data"]
+        axi_vol_meshes = {
+            vol: mesh for vol, (mesh, _) in vol_to_axi_mesh.items()}
+        restart_order = int(axi_restart_data["order"])
+        restart_nspecies = axi_restart_data["nspecies"]
+
     if restart_filename:  # read the grid from restart data
         restart_filename = f"{restart_filename}-{rank:04d}.pkl"
-
-        from mirgecom.restart import read_restart_data
         restart_data = read_restart_data(actx, restart_filename)
+
         current_step = restart_data["step"]
         first_step = current_step
         current_t = restart_data["t"]
@@ -3738,7 +3959,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_order = int(restart_data["order"])
 
         restart_nspecies = restart_data["nspecies"]
-        #assert restart_data["nparts"] == nparts
 
         restart_nparts = restart_data["num_parts"]
         if restart_nparts != nparts:
@@ -3758,6 +3978,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     from y3prediction.shock1d import get_mesh
                     mesh, tag_to_elements = get_mesh(
                         dim=dim, angle=0.*mesh_angle, size=mesh_size,
+                        mesh_origin=mesh_origin, height=mesh_height,
                         bl_ratio=bl_ratio, interface_ratio=interface_ratio,
                         transfinite=transfinite, use_wall=use_wall,
                         use_quads=use_tpe, use_gmsh=use_gmsh)()
@@ -3816,6 +4037,74 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 from meshmode.mesh.processing import rotate_mesh_around_axis
                 if mesh_angle > 0:
                     mesh = rotate_mesh_around_axis(mesh, theta=theta)
+
+                return mesh, tag_to_elements, volume_to_tags
+        # eventually encapsulate these inside a class for the respective inits
+        elif init_case == "backward_step":
+            def get_mesh_data():
+                if generate_mesh is True:
+                    if rank == 0:
+                        print("Generating mesh from scratch")
+                    #from y3prediction.backward_step import get_mesh
+                    from y3prediction.forward_step import get_mesh
+                    mesh, tag_to_elements = get_mesh(
+                        dim=dim, size=mesh_size,
+                        bl_ratio=bl_ratio, interface_ratio=interface_ratio,
+                        transfinite=transfinite, use_wall=use_wall,
+                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                else:
+                    if rank == 0:
+                        print("Reading mesh")
+                    from meshmode.mesh.io import read_gmsh
+                    mesh_construction_kwargs = {
+                        "force_positive_orientation":  True,
+                        "skip_element_orientation_test":  True}
+                    mesh, tag_to_elements = read_gmsh(
+                        mesh_filename, force_ambient_dim=dim,
+                        mesh_construction_kwargs=mesh_construction_kwargs,
+                        return_tag_to_elements_map=True)
+
+                volume_to_tags = {"fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
+
+                return mesh, tag_to_elements, volume_to_tags
+        elif init_case == "forward_step":
+            def get_mesh_data():
+                if generate_mesh is True:
+                    if rank == 0:
+                        print("Generating mesh from scratch")
+                    from y3prediction.forward_step import get_mesh
+                    mesh, tag_to_elements = get_mesh(
+                        dim=dim, size=mesh_size,
+                        bl_ratio=bl_ratio, interface_ratio=interface_ratio,
+                        transfinite=transfinite, use_wall=use_wall,
+                        use_quads=use_tpe, use_gmsh=use_gmsh)()
+                else:
+                    if rank == 0:
+                        print("Reading mesh")
+                    from meshmode.mesh.io import read_gmsh
+                    mesh_construction_kwargs = {
+                        "force_positive_orientation":  True,
+                        "skip_element_orientation_test":  True}
+                    mesh, tag_to_elements = read_gmsh(
+                        mesh_filename, force_ambient_dim=dim,
+                        mesh_construction_kwargs=mesh_construction_kwargs,
+                        return_tag_to_elements_map=True)
+
+                volume_to_tags = {"fluid": ["fluid"]}
+                if use_wall:
+                    volume_to_tags["wall"] = ["wall_insert"]
+                else:
+                    from mirgecom.simutil import extract_volumes
+                    mesh, tag_to_elements = extract_volumes(
+                        mesh, tag_to_elements, volume_to_tags["fluid"],
+                        "wall_interface")
 
                 return mesh, tag_to_elements, volume_to_tags
         elif init_case == "mixing_layer" or init_case == "mixing_layer_hot":
@@ -3920,6 +4209,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if use_wall:
         wall_nelements = volume_to_local_mesh_data["wall"][0].nelements
     local_nelements = fluid_nelements + wall_nelements
+    vol_meshes = {vol: mesh for vol, (mesh, _) in volume_to_local_mesh_data.items()}
 
     # Early grep-ready nelement report
     for rnk in range(nparts):
@@ -3966,6 +4256,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.warning("No target file specied, using restart as target")
 
     disc_msg = f"Making {dim}D order {order} discretization"
+    if quadrature_order < 0:
+        # TPE does 2*p+1 on the inside
+        if use_tpe:
+            disc_msg = disc_msg + "Adjusting quadrature order for TPE"
+            quadrature_order = order
+        else:
+            quadrature_order = 2*order + 1
+
     if use_overintegration:
         disc_msg = disc_msg + f" with quadrature order {quadrature_order}"
     disc_msg = disc_msg + "."
@@ -3973,13 +4271,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         logger.info(disc_msg)
 
     dcoll = create_discretization_collection(
-        actx,
-        volume_meshes={
-            vol: mesh
-            for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-        order=order,
-        quadrature_order=quadrature_order,
-        tensor_product_elements=use_tpe)
+        actx, volume_meshes=vol_meshes, order=order,
+        quadrature_order=quadrature_order, tensor_product_elements=use_tpe)
 
     from grudge.dof_desc import DISCR_TAG_BASE, DISCR_TAG_QUAD
     if use_overintegration:
@@ -4040,6 +4333,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         "adiabatic_slip": AdiabaticSlipBoundary(),
         "isothermal_slip": IsothermalSlipWallBoundary(),
         "pressure_outflow": PressureOutflowBoundary(outflow_pressure)
+        #"riemann_inflow": RiemannInflowBoundary(cv_inflow, temp_inflow)
     }
 
     wall_farfield = DirichletDiffusionBoundary(temp_wall)
@@ -4526,15 +4820,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
     elif use_species_limiter == 2:
         logger.info("Positivity-preserving limiter enabled:")
 
-    def my_limiter_func(cv, temperature_seed, gas_model, dd):
+    def my_limiter_func(cv, temperature_seed, entropy_min, gas_model, dd):
         limiter_func = None
         if use_species_limiter == 1:
             limiter_func = limit_fluid_state(
                 dcoll, cv, temperature_seed, gas_model, dd)
         elif use_species_limiter == 2:
             limiter_func = limit_fluid_state_lv(
-                dcoll, cv, temperature_seed, gas_model,
-                dd, limiter_smin=limiter_smin)
+                dcoll, cv, temperature_seed, entropy_min, gas_model,
+                dd)
         return limiter_func
 
     limiter_func = None
@@ -4546,13 +4840,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
     ########################################
 
     def _create_fluid_state(cv, temperature_seed, smoothness_mu,
-                            smoothness_beta, smoothness_kappa, smoothness_d):
+                            smoothness_beta, smoothness_kappa, smoothness_d,
+                            entropy_min):
         return make_fluid_state(cv=cv, gas_model=gas_model,
                                 temperature_seed=temperature_seed,
                                 smoothness_mu=smoothness_mu,
                                 smoothness_beta=smoothness_beta,
                                 smoothness_kappa=smoothness_kappa,
                                 smoothness_d=smoothness_d,
+                                entropy_min=entropy_min,
                                 limiter_func=limiter_func,
                                 limiter_dd=dd_vol_fluid)
 
@@ -4718,7 +5014,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         from mirgecom.fluid import velocity_gradient
         vel_grad = velocity_gradient(cv, grad_cv)
+
+        """
+        # find the average gradient in each cell
+        element_vols = abs(op.elementwise_integral(
+            dcoll, dd_vol_fluid, actx.np.zeros_like(cv.mass) + 1.0))
+        vel_grad_avg = element_average(dcoll, dd_vol_fluid, vel_grad,
+                                   volumes=element_vols)
+        ones = 1. + actx.np.zeros_like(cv.mass)
+        vel_grad = ones*vel_grad_avg
+        """
+
         div_v = np.trace(vel_grad)
+        # use a constant, the smallest (strongest) value in each
+        div_v = op.elementwise_min(dcoll, dd_vol_fluid, div_v)
 
         gamma = gas_model.eos.gamma(cv=cv, temperature=dv.temperature)
         # somehow this can be negative ... which is bad
@@ -4736,6 +5045,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                            + indicator_max)*href
 
         grad_t_mag = actx.np.sqrt(np.dot(grad_t, grad_t))
+        grad_t_mag = op.elementwise_max(dcoll, dd_vol_fluid, grad_t_mag)
         indicator = href*grad_t_mag/static_temp
 
         # limit the indicator range
@@ -4765,6 +5075,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                           vel_grad[1][2]*vel_grad[1][2] +
                                           vel_grad[2][0]*vel_grad[2][0] +
                                           vel_grad[2][1]*vel_grad[2][1])/vmax
+
+        indicator = op.elementwise_max(dcoll, dd_vol_fluid, indicator)
 
         # limit the indicator range
         # multiply by href, since we won't have access to it inside transport
@@ -4810,6 +5122,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_sbeta = state.av_sbeta
         av_skappa = state.av_skappa
         av_sd = state.av_sd
+        smin = state.smin
 
         fluid_state = make_fluid_state(cv=cv, gas_model=gas_model,
                                        temperature_seed=tseed,
@@ -4817,6 +5130,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_beta=av_sbeta,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
+                                       entropy_min=smin,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
         cv = fluid_state.cv  # reset cv to the limited version
@@ -4838,22 +5152,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 interface_noslip=noslip,
                 quadrature_tag=quadrature_tag,
                 limiter_func=limiter_func,
+                entropy_min=smin,
                 comm_tag=_InitCommTag)
         else:
             fluid_operator_states_quad = make_operator_fluid_states(
                 dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
-                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func,
+                entropy_min=smin)
 
             grad_fluid_cv = grad_cv_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
                 time=time, quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func, entropy_min=smin,
                 operator_states_quad=fluid_operator_states_quad)
 
             grad_fluid_t = fluid_grad_t_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
                 state=fluid_state, boundaries=uncoupled_fluid_boundaries,
                 time=time, quadrature_tag=quadrature_tag,
+                limiter_func=limiter_func, entropy_min=smin,
                 operator_states_quad=fluid_operator_states_quad)
 
         # now compute the smoothness part
@@ -4898,69 +5216,59 @@ def main(actx_class, restart_filename=None, target_filename=None,
     ##################################
 
     restart_wv = None
+    temperature_seed = None
+    restart_av_smu = None
+    restart_av_sbeta = None
+    restart_av_skappa = None
+    restart_av_sd = None
+    restart_entropy_min = None
+    # Restart from a given filename assumed to have same geometry
     if restart_filename:
         if rank == 0:
             logger.info("Restarting soln.")
-        temperature_seed = restart_data["temperature_seed"]
-        restart_cv = restart_data["cv"]
-        restart_av_smu = restart_data["av_smu"]
-        restart_av_sbeta = restart_data["av_sbeta"]
-        restart_av_skappa = restart_data["av_skappa"]
 
-        # this is so we can restart from legacy, before use_av=3
-        try:
-            restart_av_sd = restart_data["av_sd"]
-        except (KeyError):
-            restart_av_sd = actx.np.zeros_like(restart_av_smu)
-            if rank == 0:
-                print("no data for av_sd in restart file")
-                print("av_sd will be initialzed to 0 on the mesh")
+        #temperature_seed = restart_data["temperature_seed"]
+        #restart_cv = restart_data["cv"]
+        #restart_av_smu = restart_data["av_smu"]
+        #restart_av_sbeta = restart_data["av_sbeta"]
+        #restart_av_skappa = restart_data["av_skappa"]
+
+        #
+        # sometimes the restart data is missing it tagging, say when restarting from
+        # a non-lazy simulation
+        # make a dummy init to get the tagging and append the restart data to it
+        #
+        dummy_cv = bulk_init(
+            dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
+            time=current_t)
+
+        dummy_cv = force_evaluation(actx, dummy_cv)
 
         if use_wall:
             restart_wv = restart_data["wv"]
-        if restart_order != order:
-            restart_dcoll = create_discretization_collection(
-                actx,
-                volume_meshes={
-                    vol: mesh
-                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
-                order=restart_order, tensor_product_elements=use_tpe)
-            from meshmode.discretization.connection import make_same_mesh_connection
-            fluid_connection = make_same_mesh_connection(
-                actx,
-                dcoll.discr_from_dd(dd_vol_fluid),
-                restart_dcoll.discr_from_dd(dd_vol_fluid)
-            )
-            if use_wall:
-                wall_connection = make_same_mesh_connection(
-                    actx,
-                    dcoll.discr_from_dd(dd_vol_wall),
-                    restart_dcoll.discr_from_dd(dd_vol_wall)
-                )
-            restart_cv = fluid_connection(restart_data["cv"])
-            restart_av_smu = fluid_connection(restart_data["av_smu"])
-            restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
-            restart_av_skappa = fluid_connection(restart_data["av_skappa"])
 
-            # this is so we can restart from legacy, before use_av=3
-            try:
-                restart_av_sd = fluid_connection(restart_data["av_sd"])
-            except (KeyError):
-                restart_av_sd = actx.np.zeros_like(restart_av_smu)
-                if rank == 0:
-                    print("no data for av_sd in restart file")
-                    print("av_sd will be initialzed to 0 on the mesh")
+        dummy_temperature_seed = actx.np.zeros_like(dummy_cv.mass) + init_temperature
+        dummy_temperature_seed = force_evaluation(actx, dummy_temperature_seed)
 
-            temperature_seed = fluid_connection(restart_data["temperature_seed"])
-            if use_wall:
-                restart_wv = wall_connection(restart_data["wv"])
+        dummy_av_smu = actx.np.zeros_like(dummy_cv.mass)
+        dummy_av_sbeta = actx.np.zeros_like(dummy_cv.mass)
+        dummy_av_skappa = actx.np.zeros_like(dummy_cv.mass)
+        dummy_av_sd = actx.np.zeros_like(dummy_cv.mass)
+        dummy_entropy_min = actx.np.zeros_like(dummy_cv.mass) + limiter_smin
 
+        # need this for species transition
+        temperature_seed = restart_data["temperature_seed"] +\
+                           0.*dummy_temperature_seed
+
+        # figure out cv first
         if restart_nspecies != nspecies:
             if rank == 0:
                 print(f"Transitioning restart from {restart_nspecies} to {nspecies}")
                 print("Preserving pressure and temperature")
 
             restart_eos = IdealSingleGas(gamma=gamma, gas_const=r)
+
+            restart_cv = restart_data["cv"]
 
             mass = restart_cv.mass
             velocity = restart_cv.momentum/mass
@@ -4969,7 +5277,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             pressure = restart_eos.pressure(restart_cv)
             temperature = restart_eos.temperature(restart_cv, temperature_seed)
 
-            if nspecies > 2:
+            if nspecies > 3:
                 if restart_nspecies == 0:
                     species_mass_frac_multi[i_ox] = mf_o2
                     species_mass_frac_multi[i_di] = (1. - mf_o2)
@@ -5009,11 +5317,155 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     species_mass=restart_cv.mass*y)
 
             restart_cv = modified_cv
+        else:
+            restart_cv = restart_data["cv"] + 0.*dummy_cv
+
+        # get rest of the actual restart data
+        restart_av_smu = restart_data["av_smu"] + 0.*dummy_av_smu
+        restart_av_sbeta = restart_data["av_sbeta"] + 0.*dummy_av_sbeta
+        restart_av_skappa = restart_data["av_skappa"] + 0.*dummy_av_skappa
+
+        # backwards compatibility, for before entropy_min
+        try:
+            restart_entropy_min = restart_data["entropy_min"] + 0.*dummy_entropy_min
+        except (KeyError):
+            restart_entropy_min = actx.np.zeros_like(restart_cv.mass)\
+                + limiter_smin + 0.*dummy_entropy_min
+            if rank == 0:
+                print("no data for entropy_min in restart file")
+                print(f"entropy_min will be initialzed to {limiter_smin=}")
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            restart_av_sd = restart_data["av_sd"] + 0.*dummy_av_sd
+        except (KeyError):
+            restart_av_sd = actx.np.zeros_like(restart_av_smu)
+            if rank == 0:
+                print("no data for av_sd in restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+
+        if use_wall:
+            restart_wv = restart_data["wv"]
+
+        if restart_order != order:
+            restart_dcoll = create_discretization_collection(
+                actx,
+                volume_meshes={
+                    vol: mesh
+                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
+                order=restart_order, tensor_product_elements=use_tpe)
+            from meshmode.discretization.connection import make_same_mesh_connection
+            fluid_connection = make_same_mesh_connection(
+                actx,
+                dcoll.discr_from_dd(dd_vol_fluid),
+                restart_dcoll.discr_from_dd(dd_vol_fluid)
+            )
+            if use_wall:
+                wall_connection = make_same_mesh_connection(
+                    actx,
+                    dcoll.discr_from_dd(dd_vol_wall),
+                    restart_dcoll.discr_from_dd(dd_vol_wall)
+                )
+            restart_cv = fluid_connection(restart_data["cv"])
+            restart_av_smu = fluid_connection(restart_data["av_smu"])
+            restart_av_sbeta = fluid_connection(restart_data["av_sbeta"])
+            restart_av_skappa = fluid_connection(restart_data["av_skappa"])
+
+            # this is so we can restart from legacy, before use_av=3
+            try:
+                restart_av_sd = fluid_connection(restart_data["av_sd"])
+            except (KeyError):
+                restart_av_sd = actx.np.zeros_like(restart_av_smu)
+                if rank == 0:
+                    print("no data for av_sd in restart file")
+                    print("av_sd will be initialzed to 0 on the mesh")
+
+            temperature_seed = fluid_connection(restart_data["temperature_seed"])
+            if use_wall:
+                restart_wv = wall_connection(restart_data["wv"])
+
+    # Or restart from a previous axisymmetric version of geometry
+    elif restart_from_axi:
+
+        # MJA satisfy linting until these merge
+        # pylint: disable=no-name-in-module
+        from mirgecom.simutil import remap_dofarrays_in_structure
+        # pylint: enable=no-name-in-module
+
+        if rank == 0:
+            logger.info("Restarting from axisymmetric soln.")
+
+        # For now, hardcode the axi->3D assuming Y is the axis
+        # of symmetry in the axi run and X is the long axis in
+        # 3D.
+        def target_point_map(target_point):
+            tx = target_point[0]
+            ty = target_point[1]
+            tz = target_point[2]
+            y_axi = tx
+            x_axi = np.sqrt(ty*ty + tz*tz)
+            return np.array([x_axi, y_axi])
+
+        # Take care to respect volume-specific data items
+        axi_fluid_items = {
+            "tseed": axi_restart_data["temperature_seed"],
+            "cv": axi_restart_data["cv"],
+            "av_smu": axi_restart_data["av_smu"],
+            "av_sbeta": axi_restart_data["av_sbeta"],
+            "av_skappa": axi_restart_data["av_skappa"]
+        }
+
+        # this is so we can restart from legacy, before use_av=3
+        try:
+            axi_av_sd = axi_restart_data["av_sd"]
+        except (KeyError):
+            axi_av_sd = actx.np.zeros_like(axi_fluid_items["av_smu"])
+            if rank == 0:
+                print("no data for av_sd in axi restart file")
+                print("av_sd will be initialzed to 0 on the mesh")
+        axi_fluid_items["av_sd"] = axi_av_sd
+
+        x_vol = "fluid"
+        fluid_restart_items = remap_dofarrays_in_structure(
+            actx, axi_fluid_items, axi_vol_meshes,
+            vol_meshes, target_point_map=target_point_map,
+            volume_id=x_vol)
+
+        axi_cv = fluid_restart_items["cv"]
+        axi_mom = axi_cv.momentum
+        fl_y = fluid_nodes[1]
+        fl_z = fluid_nodes[2]
+        fl_r = actx.np.sqrt(fl_y*fl_y + fl_z*fl_z)
+        xfer_mom_x = axi_mom[1]  # y-component of axi maps to Vx
+        xfer_mom_y = axi_mom[0] * fl_y/fl_r  # Vy_axi * r_hat_x
+        xfer_mom_z = axi_mom[0] * fl_z/fl_r  # Vy_axi * r_hat_y
+        restart_mom = make_obj_array([xfer_mom_x, xfer_mom_y, xfer_mom_z])
+        restart_cv = axi_cv.replace(momentum=restart_mom)
+
+        temperature_seed = fluid_restart_items["tseed"]
+        restart_av_smu = fluid_restart_items["av_smu"]
+        restart_av_sbeta = fluid_restart_items["av_sbeta"]
+        restart_av_skappa = fluid_restart_items["av_skappa"]
+        restart_av_sd = fluid_restart_items["av_sd"]
+
+        if use_wall:
+            axi_wall_items = {}
+            axi_wall_items["wv"] = axi_restart_data["wv"]
+            x_vol = "wall"
+            wall_restart_items = remap_dofarrays_in_structure(
+                actx, axi_wall_items, axi_vol_meshes,
+                vol_meshes, target_point_map=target_point_map,
+                volume_id=x_vol)
+            restart_wv = wall_restart_items["wv"]
+
+    # Intialize the solution from restarted data
+    if restart_filename or restart_from_axi:
 
         restart_fluid_state = create_fluid_state(
             cv=restart_cv, temperature_seed=temperature_seed,
             smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-            smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd)
+            smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd,
+            entropy_min=restart_entropy_min)
 
         # update current state with injection intialization
         if init_injection:
@@ -5026,7 +5478,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 restart_fluid_state = create_fluid_state(
                     cv=restart_cv, temperature_seed=temperature_seed,
                     smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                    smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd)
+                    smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd,
+                    entropy_min=restart_entropy_min)
                 temperature_seed = restart_fluid_state.temperature
 
             if use_upstream_injection:
@@ -5036,13 +5489,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 restart_fluid_state = create_fluid_state(
                     cv=restart_cv, temperature_seed=temperature_seed,
                     smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
-                    smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd)
+                    smoothness_kappa=restart_av_skappa, smoothness_d=restart_av_sd,
+                    entropy_min=restart_entropy_min)
                 temperature_seed = restart_fluid_state.temperature
 
         if logmgr:
             logmgr_set_time(logmgr, current_step, current_t)
+
+    # Not a restart of any sort, Set the current state from time 0
     else:
-        # Set the current state from time 0
         if rank == 0:
             logger.info("Initializing soln.")
         restart_cv = bulk_init(
@@ -5058,6 +5513,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         restart_av_sbeta = actx.np.zeros_like(restart_cv.mass)
         restart_av_skappa = actx.np.zeros_like(restart_cv.mass)
         restart_av_sd = actx.np.zeros_like(restart_cv.mass)
+        restart_entropy_min = actx.np.zeros_like(restart_cv.mass) + limiter_smin
 
         # get the initial temperature field to use as a seed
         restart_fluid_state = create_fluid_state(cv=restart_cv,
@@ -5065,7 +5521,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                  smoothness_mu=restart_av_smu,
                                                  smoothness_beta=restart_av_sbeta,
                                                  smoothness_kappa=restart_av_skappa,
-                                                 smoothness_d=restart_av_sd)
+                                                 smoothness_d=restart_av_sd,
+                                                 entropy_min=restart_entropy_min)
         temperature_seed = restart_fluid_state.temperature
 
         # this is a little funky, need a better way of handling this
@@ -5082,7 +5539,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
                 smoothness_kappa=restart_av_skappa,
-                smoothness_d=restart_av_sd)
+                smoothness_d=restart_av_sd,
+                entropy_min=restart_entropy_min)
             temperature_seed = restart_fluid_state.temperature
 
             restart_cv = bulk_init.add_outlet(
@@ -5093,7 +5551,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
                 smoothness_kappa=restart_av_skappa,
-                smoothness_d=restart_av_sd)
+                smoothness_d=restart_av_sd,
+                entropy_min=restart_entropy_min)
             temperature_seed = restart_fluid_state.temperature
 
         # update current state with injection intialization
@@ -5106,7 +5565,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
                 smoothness_kappa=restart_av_skappa,
-                smoothness_d=restart_av_sd)
+                smoothness_d=restart_av_sd,
+                entropy_min=restart_entropy_min)
             temperature_seed = restart_fluid_state.temperature
 
         if use_upstream_injection:
@@ -5118,7 +5578,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 cv=restart_cv, temperature_seed=temperature_seed,
                 smoothness_mu=restart_av_smu, smoothness_beta=restart_av_sbeta,
                 smoothness_kappa=restart_av_skappa,
-                smoothness_d=restart_av_sd)
+                smoothness_d=restart_av_sd,
+                entropy_min=restart_entropy_min)
             temperature_seed = restart_fluid_state.temperature
 
         # Ideally we would compute the smoothness variables here,
@@ -5153,10 +5614,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             logger.info("Reading target soln.")
         if target_order != order:
             target_dcoll = create_discretization_collection(
-                actx,
-                volume_meshes={
-                    vol: mesh
-                    for vol, (mesh, _) in volume_to_local_mesh_data.items()},
+                actx, volume_meshes=vol_meshes,
                 order=target_order, tensor_product_elements=use_tpe)
             from meshmode.discretization.connection import make_same_mesh_connection
             fluid_connection = make_same_mesh_connection(
@@ -5170,13 +5628,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
             target_av_skappa = fluid_connection(target_data["av_skappa"])
             target_av_sd = fluid_connection(target_data["av_sd"])
         else:
-            target_cv = target_data["cv"]
-            target_av_smu = target_data["av_smu"]
-            target_av_sbeta = target_data["av_sbeta"]
-            target_av_skappa = target_data["av_skappa"]
+
+            #
+            # sometimes the restart data is missing it tagging,
+            # say when restarting from a non-lazy simulation
+            # make a dummy init to get the tagging and append the restart data to it
+            #
+            dummy_cv = bulk_init(
+                dcoll=dcoll, x_vec=fluid_nodes, eos=eos_init,
+                time=current_t)
+
+            dummy_cv = force_evaluation(actx, dummy_cv)
+            dummy_zeros = actx.np.zeros_like(dummy_cv.mass)
+
+            target_cv = target_data["cv"] + 0.*dummy_cv
+            target_av_smu = target_data["av_smu"] + 0.*dummy_zeros
+            target_av_sbeta = target_data["av_sbeta"] + 0.*dummy_zeros
+            target_av_skappa = target_data["av_skappa"] + 0.*dummy_zeros
             # this is so we can restart from legacy, before use_av=3
             try:
-                target_av_sd = target_data["av_sd"]
+                target_av_sd = target_data["av_sd"] + 0.*dummy_zeros
             except (KeyError):
                 target_av_sd = actx.np.zeros_like(target_av_smu)
                 if rank == 0:
@@ -5243,13 +5714,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
         target_av_sbeta = force_evaluation(actx, target_av_sbeta)
         target_av_skappa = force_evaluation(actx, target_av_skappa)
         target_av_sd = force_evaluation(actx, target_av_sd)
+        target_entropy_min = actx.np.zeros_like(target_cv.mass) + limiter_smin
 
         target_fluid_state = create_fluid_state(cv=target_cv,
                                                 temperature_seed=temperature_seed,
                                                 smoothness_mu=target_av_smu,
                                                 smoothness_beta=target_av_sbeta,
                                                 smoothness_kappa=target_av_skappa,
-                                                smoothness_d=target_av_sd)
+                                                smoothness_d=target_av_sd,
+                                                entropy_min=target_entropy_min)
 
     else:
         # Set the current state from time 0
@@ -5258,6 +5731,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         target_av_sbeta = restart_av_sbeta
         target_av_skappa = restart_av_skappa
         target_av_sd = restart_av_sd
+        target_entropy_min = actx.np.zeros_like(target_cv.mass) + limiter_smin
 
         target_fluid_state = restart_fluid_state
 
@@ -5323,7 +5797,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             cv=target_cv, temperature_seed=temperature_seed,
             smoothness_mu=target_av_smu, smoothness_beta=target_av_sbeta,
             smoothness_kappa=target_av_skappa,
-            smoothness_d=target_av_sd)
+            smoothness_d=target_av_sd,
+            entropy_min=target_entropy_min)
 
     ##################################
     # Set up the boundary conditions #
@@ -5431,7 +5906,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         return project_fluid_state(
             dcoll, dd_vol_fluid,
             dd_vol_fluid.trace(btag).with_discr_tag(quadrature_tag),
-            target_fluid_state, gas_model, limiter_func=limiter_func,
+            target_fluid_state, gas_model,
             entropy_stable=use_esdg
         )
 
@@ -5571,7 +6046,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_smu=restart_av_smu,
         av_sbeta=restart_av_sbeta,
         av_skappa=restart_av_skappa,
-        av_sd=restart_av_sd)
+        av_sd=restart_av_sd,
+        smin=restart_entropy_min)
 
     # finish initializing the smoothness for non-restarts
     if not restart_filename:
@@ -5585,6 +6061,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     restart_av_sbeta = force_evaluation(actx, restart_stepper_state.av_sbeta)
     restart_av_skappa = force_evaluation(actx, restart_stepper_state.av_skappa)
     restart_av_sd = force_evaluation(actx, restart_stepper_state.av_sd)
+    restart_entropy_min = force_evaluation(actx, restart_stepper_state.smin)
 
     # set the initial data used by the simulation
     current_fluid_state = create_fluid_state(cv=restart_cv,
@@ -5592,7 +6069,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                              smoothness_mu=restart_av_smu,
                                              smoothness_beta=restart_av_sbeta,
                                              smoothness_kappa=restart_av_skappa,
-                                             smoothness_d=restart_av_sd)
+                                             smoothness_d=restart_av_sd,
+                                             entropy_min=restart_entropy_min)
 
     if use_wall:
         current_wv = force_evaluation(actx, restart_stepper_state.wv)
@@ -5604,7 +6082,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_smu=current_fluid_state.dv.smoothness_mu,
         av_sbeta=current_fluid_state.dv.smoothness_beta,
         av_skappa=current_fluid_state.dv.smoothness_kappa,
-        av_sd=current_fluid_state.dv.smoothness_d)
+        av_sd=current_fluid_state.dv.smoothness_d,
+        smin=restart_entropy_min)
 
     ####################
     # Ignition Sources #
@@ -5635,16 +6114,23 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                       amplitude_func=spark_time_func,
                                       width=spark_diameter)
 
-    # gaussian application in time
-    injection_source_diameter /= 6.0697
+    # gaussian application in space
+    if dim == 2:
+        # 99% falls within this diameter
+        #injection_source_diameter /= 4.684
+        # 95% falls within this diameter
+        injection_source_diameter /= 2.83
+    else:
+        # 95% falls in this diameter
+        injection_source_diameter /= 5.08
 
     def injection_source_time_func(t):
         scaled_time = injection_source_init_time - t
-        # this gives about 96% of the change in the requested time
-        xtanh = 4*scaled_time/injection_source_ramp_time
+        # this gives about 99% of the change in the requested time
+        xtanh = 4.684*scaled_time/injection_source_ramp_time
         return 0.5*(1.0 - actx.np.tanh(xtanh))
 
-    from y3prediction.utils import StateSource
+    from y3prediction.utils import StateSource, StateSource3d
     source_mass = injection_source_mass
     source_mom = np.zeros(shape=(dim,))
     source_mom[0] = injection_source_mom_x
@@ -5661,7 +6147,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                    y_amplitude=source_y,
                                    amplitude_func=injection_source_time_func,
                                    #amplitude_func=None,
+                                   axisymmetric=use_axisymmetric,
                                    width=injection_source_diameter)
+
+    source_mass = injection_source_mass_comb
+    source_mom = np.zeros(shape=(dim,))
+    source_mom[0] = injection_source_mom_x_comb
+    source_mom[1] = injection_source_mom_y_comb
+    if dim == 3:
+        source_mom[2] = injection_source_mom_z_comb
+    source_energy = injection_source_energy_comb
     injection_source_comb = StateSource(dim=dim, nspecies=nspecies,
                                         center=injection_source_center_comb,
                                         mass_amplitude=source_mass,
@@ -5670,6 +6165,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                         y_amplitude=source_y,
                                         amplitude_func=injection_source_time_func,
                                         #amplitude_func=None,
+                                        axisymmetric=use_axisymmetric,
+                                        width=injection_source_diameter)
+    injection_source_3d = StateSource3d(dim=dim, nspecies=nspecies,
+                                        center=injection_source_center_comb,
+                                        mass_amplitude=source_mass,
+                                        mom_amplitude=source_mom,
+                                        energy_amplitude=source_energy,
+                                        y_amplitude=source_y,
+                                        amplitude_func=injection_source_time_func,
                                         width=injection_source_diameter)
 
     if rank == 0:
@@ -5715,12 +6219,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     sponge_field=sponge_field, x_vec=x_vec)
             return sponge_field
 
-    elif init_case == "shock1d" or init_case == "flame1d":
+    elif (init_case == "shock1d" or
+          init_case == "flame1d" or
+          init_case == "forward_step" or
+          init_case == "backward_step"):
 
-        inlet_sponge_x0 = 0.015
-        inlet_sponge_thickness = 0.015
-        outlet_sponge_x0 = 0.085
-        outlet_sponge_thickness = 0.015
         sponge_init_inlet = InitSponge(x0=inlet_sponge_x0,
                                        thickness=inlet_sponge_thickness,
                                        amplitude=sponge_amp,
@@ -6066,6 +6569,16 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
     compute_viz_fields_compiled = actx.compile(compute_viz_fields)
 
+    def grad_cv(fluid_state, time):
+        return grad_cv_operator(dcoll=dcoll, gas_model=gas_model,
+                                dd=dd_vol_fluid,
+                                boundaries=uncoupled_fluid_boundaries,
+                                state=fluid_state,
+                                time=time,
+                                quadrature_tag=quadrature_tag)
+
+    grad_cv_compiled = actx.compile(grad_cv) # noqa
+
     def my_write_viz(step, t, t_wall, viz_state, viz_dv,
                      theta_rho, theta_Y, theta_pres,
                      ts_field_fluid, ts_field_wall, dump_number):
@@ -6077,11 +6590,15 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if use_wall:
             fluid_state = viz_state[0]
-            wv = viz_state[1]
+            tseed = viz_state[1]
+            entropy_min = viz_state[2]
+            wv = viz_state[3]
             dv = viz_dv[0]
             wdv = viz_dv[1]
         else:
-            fluid_state = viz_state
+            fluid_state = viz_state[0]
+            tseed = viz_state[1]
+            entropy_min = viz_state[2]
             dv = viz_dv
             wv = None
             wdv = None
@@ -6152,6 +6669,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             entropy = actx.np.log(dv.pressure/(cv.mass**gamma))
 
             fluid_viz_ext = [("entropy", entropy),
+                             ("entropy_min", entropy_min),
                              ("gamma", gamma)]
             fluid_viz_fields.extend(fluid_viz_ext)
 
@@ -6161,6 +6679,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 production_rates = compute_production_rates(cv,
                                                             dv.temperature)
                 fluid_viz_ext = [("temp_resid", temp_resid),
+                                 ("tseed", tseed),
                                  ("production_rates", production_rates)]
                 fluid_viz_fields.extend(fluid_viz_ext)
 
@@ -6194,7 +6713,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 fluid_state.viscosity)
             cp = gas_model.eos.heat_capacity_cp(cv, fluid_state.temperature)
             alpha_heat = fluid_state.thermal_conductivity/cp/cv.mass
-            nu = fluid_state.viscosity/fluid_state.mass_density
+            nu = (4./3.*fluid_state.viscosity + fluid_state.bulk_viscosity) / \
+                  fluid_state.mass_density
 
             cell_Pe_momentum = char_length_fluid*fluid_state.wavespeed/nu
 
@@ -6251,24 +6771,43 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 viz_ext = [("alpha", cell_alpha)]
                 wall_viz_fields.extend(viz_ext)
 
-        # this gives us the DOFArray indices for each element. Useful for debugging
-        discr = dcoll.discr_from_dd(dd_vol_fluid)
-        nelem = discr.groups[0].nelements
-        ndof = discr.groups[0].nunit_dofs
-
-        el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
-            np.indices((nelem,)), np.ones(ndof))),))
-        viz_ext = [("el_indices", el_indices)]
-        fluid_viz_fields.extend(viz_ext)
-
-        if use_wall:
-            discr = dcoll.discr_from_dd(dd_vol_wall)
+            # this gives us the DOFArray indices for each element.
+            discr = dcoll.discr_from_dd(dd_vol_fluid)
             nelem = discr.groups[0].nelements
             ndof = discr.groups[0].nunit_dofs
+
             el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
                 np.indices((nelem,)), np.ones(ndof))),))
             viz_ext = [("el_indices", el_indices)]
-            wall_viz_fields.extend(viz_ext)
+            fluid_viz_fields.extend(viz_ext)
+
+            if use_wall:
+                discr = dcoll.discr_from_dd(dd_vol_wall)
+                nelem = discr.groups[0].nelements
+                ndof = discr.groups[0].nunit_dofs
+                el_indices = DOFArray(actx, data=(actx.from_numpy(np.outer(
+                    np.indices((nelem,)), np.ones(ndof))),))
+                viz_ext = [("el_indices", el_indices)]
+                wall_viz_fields.extend(viz_ext)
+
+            # get grad_cv to compute a numerical schlieren
+            grad_fluid_cv = grad_cv_compiled(
+                fluid_state=fluid_state, time=t)
+            grad_rho = grad_fluid_cv.mass
+
+            norm_grad_rho = actx.np.sqrt(np.dot(grad_rho, grad_rho))
+            norm_grad_rho_max = vol_max(dd_vol_fluid, norm_grad_rho)
+            norm_grad_rho_min = vol_min(dd_vol_fluid, norm_grad_rho)
+            schlieren_beta = 10.
+
+            zero = actx.np.zeros_like(cv.mass)
+            ratio = actx.np.where(actx.np.greater(norm_grad_rho_max - 1.e-10,
+                                                  norm_grad_rho_min),
+                                  ((norm_grad_rho - norm_grad_rho_min - 1.e-10) /
+                                  (norm_grad_rho_max - norm_grad_rho_min)), zero)
+            schlieren = 1. - actx.np.exp(-schlieren_beta*ratio)
+            viz_ext = [("schlieren", schlieren)]
+            fluid_viz_fields.extend(viz_ext)
 
         # debbuging viz quantities, things here are used for diagnosing run issues
         if viz_level > 2:
@@ -6332,6 +6871,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                            for i in range(nspecies))
             fluid_viz_fields.extend(viz_ext)
 
+            """
             # write out the grid metrics
             from grudge.geometry import inverse_metric_derivative_mat
             metric = inverse_metric_derivative_mat(
@@ -6344,6 +6884,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 viz_ext.extend([("metric_z", metric[2])])
 
             fluid_viz_fields.extend(viz_ext)
+            """
 
             """
             if use_wall:
@@ -6411,6 +6952,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 "av_skappa": state.av_skappa,
                 "av_sd": state.av_sd,
                 "temperature_seed": state.tseed,
+                "entropy_min": state.smin,
                 "nspecies": nspecies,
                 "t": t,
                 "step": step,
@@ -6456,9 +6998,60 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                 f"({guilty_node_x[i]}, {guilty_node_y[i]}, "
                                 f"{guilty_node_z[i]}): "
                                 f"data value {guilty_data[i]}")
-                if i > 50:
-                    logger.info("Violators truncated at 50")
+                if i > 5:
+                    logger.info("Violators truncated at 5")
                     break
+
+    def spec_check(cv):
+        health_error = False
+        ysum = actx.np.zeros_like(cv.mass)
+        spec_tol = 1e-16
+        for i in range(nspecies):
+            yspec = cv.species_mass_fractions[i]
+            ysum = ysum + yspec
+            if global_range_check(dd_vol_fluid, yspec, 0.0, 1+spec_tol):
+                health_error = True
+                y_min = vol_min(dd_vol_fluid, yspec)
+                y_max = vol_max(dd_vol_fluid, yspec)
+                y_min_loc = vol_min_loc(dd_vol_fluid, yspec)
+                y_max_loc = vol_max_loc(dd_vol_fluid, yspec)
+                if rank == 0:
+                    logger.info("Species mass fraction range violation:\n"
+                                "\tSpecified Limits "
+                                f"({health_mass_frac_min=}, "
+                                f"{health_mass_frac_max=})\n"
+                                f"\tGlobal Range     {species_names[i]}:"
+                                f"({y_min:1.3e}, {y_max:1.3e})")
+                logger.info(f"{rank=}: "
+                            f"Local Range      {species_names[i]}: "
+                            f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                print(f"{rank=}: "
+                      f"Local Range      {species_names[i]}: "
+                      f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
+                report_violators(yspec, 0.0, 1.+spec_tol)
+
+        ysum_m1 = actx.np.abs(ysum - 1.0)
+        sum_tol = 1e-15
+        if global_range_check(dd_vol_fluid, ysum_m1, 0., sum_tol):
+            health_error = True
+            local_max = actx.np.max(ysum)
+            local_min = actx.np.min(ysum)
+            global_min = vol_min(dd_vol_fluid, ysum)
+            global_max = vol_max(dd_vol_fluid, ysum)
+            global_min_loc = vol_min_loc(dd_vol_fluid, ysum)
+            global_max_loc = vol_max_loc(dd_vol_fluid, ysum)
+            if rank == 0:
+                logger.info("Total species mass fraction range violation:\n"
+                            f"{sum_tol=}), {global_min=}, {global_max=}\n"
+                            f"{global_min_loc=}, {global_max_loc=}")
+            logger.info(f"{rank=}: "
+                        f"Local sum:      {actx.to_numpy(local_max)=},"
+                        f" {actx.to_numpy(local_min)=}")
+            print(f"{rank=}: {actx.to_numpy(local_max)=}, "
+                  f"{actx.to_numpy(local_min)=}")
+            report_violators(ysum, 1.-sum_tol, 1.+sum_tol)
+
+        return health_error
 
     def my_health_check(fluid_state, wall_temperature):
         health_error = False
@@ -6590,7 +7183,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         if fluid_state.is_viscous:
             from mirgecom.viscous import get_local_max_species_diffusivity
-            nu = fluid_state.viscosity/fluid_state.mass_density
+            #nu = fluid_state.viscosity/fluid_state.mass_density
+            nu = ((4./3.*fluid_state.viscosity + fluid_state.bulk_viscosity) /
+                  fluid_state.mass_density)
             d_alpha_max = \
                 get_local_max_species_diffusivity(
                     fluid_state.array_context,
@@ -6700,11 +7295,34 @@ def main(actx_class, restart_filename=None, target_filename=None,
         return status, dt, dumps_so_far + last_viz_interval
 
     #check_time = _check_time
+    #from pytato.array import set_traceback_tag_enabled
+    #set_traceback_tag_enabled(True)
 
     def my_pre_step(step, t, dt, state):
 
         # I don't think this should be needed, but shouldn't hurt anything
         #state = force_evaluation(actx, state)
+        if logmgr:
+            logmgr.tick_before()
+
+        # This check reports when species mass fractions (Y) violate
+        # the constraints of being in the range [0, 1] +/- 1e-16,
+        # and sum(Y) = 1 +/- 1e-15. If the ranges are violated,
+        # the snippet below will use *hammer_species* to force Y
+        # back into the expected range.
+        if nspecies > 0 and use_hammer_species is True:
+            if check_step(step=step, interval=nspeccheck):
+                spec_errors = global_reduce(
+                    spec_check(state[0]), op="lor")
+                if spec_errors:
+                    if rank == 0:
+                        logger.info("Solution failed species check.")
+                    logger.info(f"{rank=}: Solution failed species check.")
+                    print(f"{rank=}: Solution failed species check - limiting more.")
+                    comm.Barrier()  # make msg before any rank raises
+                    # Don't raise, just hammer Y back to [0, 1], sum(Y)=1
+                    # raise MyRuntimeError("Failed simulation species check.")
+                    state[0] = hammer_species(state[0])
 
         if logmgr:
             logmgr.tick_before()
@@ -6736,33 +7354,59 @@ def main(actx_class, restart_filename=None, target_filename=None,
             cv = drop_order_cv(stepper_state.cv, smoothness, drop_order_strength)
             stepper_state = stepper_state.replace(cv=cv)
 
-        # we can't get the limited viz data back from create_fluid_state
-        # so call the limiter directly first, basically doing the limiting twice
-        theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
-        theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
-        theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
-        if viz_level >= 2 and use_species_limiter == 2:
-            cv_lim, theta_rho, theta_Y, theta_pres = \
-                limit_fluid_state_lv(
-                    dcoll, cv=stepper_state.cv, gas_model=gas_model,
-                    temperature_seed=stepper_state.tseed,
-                    dd=dd_vol_fluid, viz_theta=True)
-
         fluid_state = create_fluid_state(cv=stepper_state.cv,
                                          temperature_seed=stepper_state.tseed,
                                          smoothness_mu=stepper_state.av_smu,
                                          smoothness_beta=stepper_state.av_sbeta,
                                          smoothness_kappa=stepper_state.av_skappa,
-                                         smoothness_d=stepper_state.av_sd)
+                                         smoothness_d=stepper_state.av_sd,
+                                         entropy_min=stepper_state.smin)
 
         if use_wall:
             wdv = create_wall_dependent_vars_compiled(stepper_state.wv)
         cv = fluid_state.cv  # reset cv to limited version
+
+        # update temperature seed and our limiter bounds for entropy
         tseed = fluid_state.temperature
+
+        ones = 1. + actx.np.zeros_like(cv.mass)
+        if constant_smin is True:
+            smin_i = ones*limiter_smin
+        else:
+            gamma = gas_model.eos.gamma(cv, fluid_state.temperature)
+            smin = actx.np.log(fluid_state.pressure/fluid_state.mass_density**gamma)
+
+        # MJA satisfy linting until these merge
+        # pylint: disable=no-name-in-module
+            from mirgecom.simutil import (
+                inverse_element_connectivity,
+                compute_vertex_averages,
+                scatter_vertex_values_to_dofarray,
+            )
+        # pylint: enable=no-name-in-module
+
+            iconn = inverse_element_connectivity(
+                mesh=dcoll.discr_from_dd(dd_vol_fluid).mesh)
+
+            def nodal_average(field):
+                # Compute cell averages of the state
+                actx = field.array_context
+                nodal_avg = compute_vertex_averages(actx, field, iconn)
+                return scatter_vertex_values_to_dofarray(
+                    actx, field, iconn, nodal_avg)
+
+            element_average_smin = element_average(dcoll, dd_vol_fluid, smin)
+            smin_i = nodal_average(element_average_smin)
+
+            # fixed offset
+            #smin_i = op.elementwise_min(dcoll, dd_vol_fluid, smin)
+            # fixed offset
+            smin_i = ones*(smin_i - 0.05)
 
         # This re-creation of the state resets *tseed* to current temp and forces the
         # limited cv into state
-        stepper_state = stepper_state.replace(cv=cv, tseed=tseed)
+        stepper_state = stepper_state.replace(cv=cv, tseed=tseed, smin=smin_i)
+        fluid_state = replace_fluid_state(fluid_state, gas_model, entropy_min=smin_i)
 
         try:
             # disable non-constant dt timestepping for now
@@ -6868,12 +7512,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 my_write_restart(step=step, t=t, t_wall=t_wall, state=stepper_state)
 
             if do_viz:
+                # we can't get the limited viz data back from create_fluid_state
+                # so call the limiter directly first, basically doing the limiting
+                # twice
+                theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+                theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+                theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
+                if viz_level >= 2 and use_species_limiter == 2:
+                    cv_lim, theta_rho, theta_Y, theta_pres = \
+                        limit_fluid_state_lv(
+                            dcoll, cv=state[0], gas_model=gas_model,
+                            temperature_seed=stepper_state.tseed,
+                            entropy_min=stepper_state.smin,
+                            dd=dd_vol_fluid, viz_theta=True)
+
                 # pack things up
                 if use_wall:
-                    viz_state = make_obj_array([fluid_state, wv])
+                    viz_state = make_obj_array([fluid_state, tseed, smin_i, wv])
                     viz_dv = make_obj_array([dv, wdv])
                 else:
-                    viz_state = fluid_state
+                    viz_state = make_obj_array([fluid_state, tseed, smin_i])
                     viz_dv = dv
 
                 my_write_viz(
@@ -6890,6 +7548,20 @@ def main(actx_class, restart_filename=None, target_filename=None,
             if rank == 0:
                 logger.error("Errors detected; attempting graceful exit.")
 
+            # we can't get the limited viz data back from create_fluid_state
+            # so call the limiter directly first, basically doing the limiting
+            # twice
+            theta_rho = actx.np.zeros_like(stepper_state.cv.mass)
+            theta_Y = actx.np.zeros_like(stepper_state.cv.mass)
+            theta_pres = actx.np.zeros_like(stepper_state.cv.mass)
+            if viz_level >= 2 and use_species_limiter == 2:
+                cv_lim, theta_rho, theta_Y, theta_pres = \
+                    limit_fluid_state_lv(
+                        dcoll, cv=state[0], gas_model=gas_model,
+                        temperature_seed=stepper_state.tseed,
+                        entropy_min=stepper_state.smin,
+                        dd=dd_vol_fluid, viz_theta=True)
+
             if viz_interval_type == 0:
                 dump_number = step
             else:
@@ -6898,10 +7570,10 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
             # pack things up
             if use_wall:
-                viz_state = make_obj_array([fluid_state, wv])
+                viz_state = make_obj_array([fluid_state, tseed, smin_i, wv])
                 viz_dv = make_obj_array([dv, wdv])
             else:
-                viz_state = fluid_state
+                viz_state = make_obj_array([fluid_state, tseed, smin_i])
                 viz_dv = dv
 
             my_write_viz(
@@ -6945,6 +7617,68 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         return state, dt
 
+    from arraycontext import outer
+    from grudge.trace_pair import interior_trace_pairs, tracepair_with_discr_tag
+    from meshmode.discretization.connection import FACE_RESTR_ALL
+    from mirgecom.flux import num_flux_central
+
+    def my_derivative_function(dcoll, field, field_bounds, dd_vol,
+                               bnd_cond, comm_tag):
+
+        dd_vol_quad = dd_vol.with_discr_tag(quadrature_tag)
+        dd_allfaces_quad = dd_vol_quad.trace(FACE_RESTR_ALL)
+
+        interp_to_surf_quad = partial(
+            tracepair_with_discr_tag, dcoll, quadrature_tag)
+
+        def interior_flux(field_tpair):
+            dd_trace_quad = field_tpair.dd.with_discr_tag(quadrature_tag)
+            #normal_quad = actx.thaw(dcoll.normal(dd_trace_quad))
+            normal_quad = normal_vector(actx, dcoll, dd_trace_quad)
+            bnd_tpair_quad = interp_to_surf_quad(field_tpair)
+            flux_int = outer(
+                num_flux_central(bnd_tpair_quad.int, bnd_tpair_quad.ext),
+                normal_quad)
+
+            return op.project(dcoll, dd_trace_quad, dd_allfaces_quad, flux_int)
+
+        def boundary_flux(bdtag, bdry):
+            if isinstance(bdtag, DOFDesc):
+                bdtag = bdtag.domain_tag
+            dd_bdry_quad = dd_vol_quad.with_domain_tag(bdtag)
+            normal_quad = normal_vector(actx, dcoll, dd_bdry_quad)
+            int_soln_quad = op.project(dcoll, dd_vol, dd_bdry_quad, field)
+
+            # MJA, not sure about this
+            if bnd_cond == "symmetry" and bdtag == "symmetry":
+                ext_soln_quad = 0.0*int_soln_quad
+            else:
+                ext_soln_quad = 1.0*int_soln_quad
+
+            bnd_tpair = TracePair(bdtag, interior=int_soln_quad,
+                                  exterior=ext_soln_quad)
+            flux_bnd = outer(
+                num_flux_central(bnd_tpair.int, bnd_tpair.ext), normal_quad)
+
+            return op.project(dcoll, dd_bdry_quad, dd_allfaces_quad, flux_bnd)
+
+        field_quad = op.project(dcoll, dd_vol, dd_vol_quad, field)
+
+        return -1.0*op.inverse_mass(
+            dcoll, dd_vol_quad,
+            op.weak_local_grad(dcoll, dd_vol_quad, field_quad)
+            -  # noqa: W504
+            op.face_mass(
+                dcoll, dd_allfaces_quad,
+                sum(
+                    interior_flux(u_tpair) for u_tpair in interior_trace_pairs(
+                        dcoll, field, volume_dd=dd_vol, comm_tag=comm_tag))
+                + sum(
+                     boundary_flux(bdtag, bdry)
+                     for bdtag, bdry in field_bounds.items())
+            )
+        )
+
     def unfiltered_rhs(t, state):
 
         stepper_state = make_stepper_state_obj(state)
@@ -6954,6 +7688,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         av_sbeta = stepper_state.av_sbeta
         av_skappa = stepper_state.av_skappa
         av_sd = stepper_state.av_sd
+        smin = stepper_state.smin
 
         # don't really want to do this twice
         if use_drop_order:
@@ -6968,6 +7703,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        smoothness_beta=av_sbeta,
                                        smoothness_kappa=av_skappa,
                                        smoothness_d=av_sd,
+                                       entropy_min=smin,
                                        limiter_func=limiter_func,
                                        limiter_dd=dd_vol_fluid)
 
@@ -6981,7 +7717,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             fluid_operator_states_quad = make_coupled_operator_fluid_states(
                 dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
                 dd_vol_fluid, dd_vol_wall, quadrature_tag=quadrature_tag,
-                limiter_func=limiter_func)
+                limiter_func=limiter_func, entropy_min=smin)
 
             grad_fluid_cv, grad_fluid_t, grad_wall_t = coupled_grad_operator(
                 dcoll,
@@ -6994,24 +7730,28 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 interface_noslip=noslip,
                 quadrature_tag=quadrature_tag,
                 fluid_operator_states_quad=fluid_operator_states_quad,
+                entropy_min=smin,
                 limiter_func=limiter_func)
 
         else:
             # Get the operator fluid states
             fluid_operator_states_quad = make_operator_fluid_states(
                 dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
-                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func)
+                quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func,
+                entropy_min=smin)
 
             grad_fluid_cv = grad_cv_operator(
                 dcoll, gas_model, uncoupled_fluid_boundaries, fluid_state,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
-                time=t, quadrature_tag=quadrature_tag)
+                time=t, quadrature_tag=quadrature_tag, limiter_func=limiter_func,
+                entropy_min=smin)
 
             grad_fluid_t = fluid_grad_t_operator(
                 dcoll=dcoll, gas_model=gas_model,
                 boundaries=uncoupled_fluid_boundaries, state=fluid_state,
                 dd=dd_vol_fluid, operator_states_quad=fluid_operator_states_quad,
-                time=t, quadrature_tag=quadrature_tag)
+                time=t, quadrature_tag=quadrature_tag, limiter_func=limiter_func,
+                entropy_min=smin)
 
         smoothness_mu = actx.np.zeros_like(cv.mass)
         smoothness_beta = actx.np.zeros_like(cv.mass)
@@ -7032,6 +7772,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                        grad_t=grad_fluid_t)
 
         tseed_rhs = actx.np.zeros_like(fluid_state.temperature)
+        smin_rhs = actx.np.zeros_like(fluid_state.cv.mass)
 
         # have all the gradients and states, compute the rhs sources
         ns_operator = partial(
@@ -7061,11 +7802,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 quadrature_tag=quadrature_tag,
                 fluid_operator_states_quad=fluid_operator_states_quad,
                 limiter_func=limiter_func,
+                entropy_min=smin,
                 ns_operator=ns_operator,
                 axisymmetric=use_axisymmetric,
                 fluid_nodes=fluid_nodes,
                 wall_nodes=wall_nodes)
-
         else:
             fluid_rhs = ns_operator(
                 dcoll=dcoll,
@@ -7090,7 +7831,14 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                         boundaries=uncoupled_fluid_boundaries,
                                         grad_cv=grad_fluid_cv, grad_t=grad_fluid_t)
 
-        if use_combustion:
+        # reset the rho update to be the sum of the species mass fractions
+        if eos_type == 1 or use_species_limiter > 0:
+            new_mass_rhs = 0.
+            for i in range(0, nspecies):
+                new_mass_rhs = new_mass_rhs + fluid_rhs.species_mass[i]
+            fluid_rhs = fluid_rhs.replace(mass=new_mass_rhs)
+
+        if use_combustion is True:
             fluid_rhs = fluid_rhs + \
                 eos.get_species_source_terms(cv, temperature=fluid_state.temperature)
 
@@ -7103,6 +7851,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
             fluid_rhs = fluid_rhs + \
                 injection_source_comb(x_vec=fluid_nodes, cv=cv,
                                       eos=gas_model.eos, time=t)
+
+        if use_injection_source_3d is True:
+            fluid_rhs = fluid_rhs + \
+                injection_source_3d(x_vec=fluid_nodes, cv=cv,
+                                    eos=gas_model.eos, time=t)
 
         if use_ignition > 0:
             fluid_rhs = fluid_rhs + \
@@ -7169,9 +7922,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     ) + 1/tau * (smoothness_d - av_sd)
                 )
 
-        if use_sponge:
+        if use_sponge is True:
             sponge_cv = cv
-            if use_time_dependent_sponge:
+            if use_time_dependent_sponge is True:
                 # as long as these pieces only operate on a non-overlapping subset
                 # of the domain, we don't need to call make_fluid_state
                 # in between each additive call to recompute temperature/pressure
@@ -7186,13 +7939,13 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                 x_vec=fluid_nodes,
                                                 eos=eos, time=t)
 
-                if use_injection:
+                if use_injection is True:
                     sponge_cv = bulk_init.add_injection(
                         cv=sponge_cv, pressure=fluid_state.pressure,
                         temperature=fluid_state.temperature, eos=eos_init,
                         x_vec=fluid_nodes)
 
-                if use_upstream_injection:
+                if use_upstream_injection is True:
                     sponge_cv = bulk_init.add_injection_upstream(
                         cv=sponge_cv, pressure=fluid_state.pressure,
                         temperature=fluid_state.temperature,
@@ -7281,7 +8034,8 @@ def main(actx_class, restart_filename=None, target_filename=None,
             av_smu=av_smu_rhs,
             av_sbeta=av_sbeta_rhs,
             av_skappa=av_skappa_rhs,
-            av_sd=av_sd_rhs)
+            av_sd=av_sd_rhs,
+            smin=smin_rhs)
 
         return rhs_stepper_state.get_obj_array()
 
@@ -7341,24 +8095,26 @@ def main(actx_class, restart_filename=None, target_filename=None,
     current_av_sbeta = current_stepper_state.av_sbeta
     current_av_skappa = current_stepper_state.av_skappa
     current_av_sd = current_stepper_state.av_sd
+    current_smin = current_stepper_state.smin
 
     # we can't get the limited viz data back from create_fluid_state
     # so call the limiter directly first, basically doing the limiting twice
     theta_rho = actx.np.zeros_like(current_cv.mass)
     theta_Y = actx.np.zeros_like(current_cv.mass)
     theta_pres = actx.np.zeros_like(current_cv.mass)
-    if viz_level == 3 and use_species_limiter == 2:
+    if viz_level >= 2 and use_species_limiter == 2:
         cv_lim, theta_rho, theta_Y, theta_pres = \
             limit_fluid_state_lv(
                 dcoll, cv=current_cv, gas_model=gas_model,
-                temperature_seed=tseed,
+                temperature_seed=tseed, entropy_min=current_smin,
                 dd=dd_vol_fluid, viz_theta=True)
 
     current_fluid_state = create_fluid_state(current_cv, tseed,
                                              smoothness_mu=current_av_smu,
                                              smoothness_beta=current_av_sbeta,
                                              smoothness_kappa=current_av_skappa,
-                                             smoothness_d=current_av_sd)
+                                             smoothness_d=current_av_sd,
+                                             entropy_min=current_smin)
 
     if last_profiling_step < 0:
         MPI.Pcontrol(0)
@@ -7402,10 +8158,12 @@ def main(actx_class, restart_filename=None, target_filename=None,
     if nviz > 0:
         # pack things up
         if use_wall:
-            viz_state = make_obj_array([current_fluid_state, current_wv])
+            viz_state = make_obj_array([current_fluid_state, tseed,
+                                        current_smin, current_wv])
             viz_dv = make_obj_array([current_fluid_state.dv, current_wdv])
         else:
-            viz_state = current_fluid_state
+            viz_state = make_obj_array([current_fluid_state, tseed,
+                                        current_smin])
             viz_dv = current_fluid_state.dv
 
         my_write_viz(

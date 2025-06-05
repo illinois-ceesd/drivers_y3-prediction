@@ -188,12 +188,17 @@ class PlanarDiscontinuityMulti:
                               momentum=mom, species_mass=specmass)
 
 
-def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
-             transfinite=False, use_wall=True, use_quads=False,
+def get_mesh(dim, size, bl_ratio, interface_ratio, mesh_origin, height=0.02,
+             angle=0., transfinite=False, use_wall=True, use_quads=False,
              use_gmsh=True):
     """Generate a grid using `gmsh`."""
 
-    height = 0.02
+    if mesh_origin is None:
+        if dim == 2:
+            mesh_origin = [0., -0.01]
+        else:
+            mesh_origin = [0., -0.01, -0.01]
+
     fluid_length = 0.1
     wall_length = 0.05
     bottom_inflow = np.zeros(shape=(dim,))
@@ -205,8 +210,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
 
     # rotate the mesh around the bottom-left corner
     theta = angle/180.*np.pi
-    bottom_inflow[0] = 0.0
-    bottom_inflow[1] = -0.01
+    bottom_inflow[0] = mesh_origin[0]
+    bottom_inflow[1] = mesh_origin[1]
     top_inflow[0] = bottom_inflow[0] - height*np.sin(theta)
     top_inflow[1] = bottom_inflow[1] + height*np.cos(theta)
 
@@ -219,6 +224,14 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
     bottom_wall[1] = bottom_interface[1] + wall_length*np.sin(theta)
     top_wall[0] = top_interface[0] + wall_length*np.cos(theta)
     top_wall[1] = top_interface[1] + wall_length*np.sin(theta)
+
+    if dim == 3:
+        bottom_inflow[2] = mesh_origin[2]
+        top_inflow[2] = mesh_origin[2]
+        bottom_interface[2] = mesh_origin[2]
+        top_interface[2] = mesh_origin[2]
+        bottom_wall[2] = mesh_origin[2]
+        top_wall[2] = mesh_origin[2]
 
     if use_gmsh:
         from meshmode.mesh.io import (
@@ -267,9 +280,11 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
                 Physical Curve('solid_wall_end') = {7};
             """)
         elif dim == 3:
-            my_string += ("""
-                fluid_surface_vector[] = Extrude {0, 0, 0.02} { Surface{1}; };
-                wall_surface_vector[] = Extrude {0, 0, 0.02} { Surface{2}; };
+            my_string += (f"""
+                fluid_surface_vector[] =
+                    Extrude {{0, 0, {height}}} {{ Surface{{1}};}};
+                wall_surface_vector[] =
+                    Extrude {{0, 0, {height}}} {{ Surface{{2}};}};
                 """)
 
             my_string += ("""Coherence;""")
@@ -448,7 +463,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             Recombine Surface {1, 2};
             """)
 
-        print(my_string)
+        #print(my_string)
         mesh_construction_kwargs = {
             "force_positive_orientation":  True,
             "skip_element_orientation_test":  True}
@@ -476,8 +491,9 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             x = mgrp.nodes[0, :, :]
             x_avg = np.sum(x, axis=1)/x.shape[1]
             tag_to_elements = {
-                "fluid": np.where(x_avg < fluid_length)[0],
-                "wall_insert": np.where(x_avg > fluid_length)[0]}
+
+                "fluid": np.where(x_avg < fluid_length + mesh_origin[0])[0],
+                "wall_insert": np.where(x_avg > fluid_length + mesh_origin[0])[0]}
 
             return mesh, tag_to_elements
 
@@ -496,8 +512,8 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
                                   int(height/size))
         else:
-            a = (bottom_inflow[0], bottom_inflow[1], 0.)
-            b = (top_wall[0], top_wall[1], 0.02)
+            a = (bottom_inflow[0], bottom_inflow[1], bottom_inflow[2])
+            b = (top_wall[0], top_wall[1], top_wall[2] + height)
             boundary_tag_to_face = {
                 "inflow": ["-x"],
                 "outflow": ["+x"],
@@ -507,6 +523,10 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, angle=0.,
             nelements_per_axis = (int(fluid_length/size) + int(wall_length/size),
                                   int(height/size),
                                   int(height/size))
+
+            print(f"{a=}")
+            print(f"{b=}")
+            print(f"{nelements_per_axis=}")
             #nelements_per_axis = (3, 2, 2)
             #print(f"{nelements_per_axis=}")
 
