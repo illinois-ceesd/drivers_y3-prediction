@@ -3218,7 +3218,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
             sos = math.sqrt(gamma*pres_inflow/rho_inflow)
             inlet_gamma = gamma
         else:
-            rho_inflow = pyro_mech.get_density(p=pres_inflow,
+            rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                               temperature=temp_inflow,
                                               mass_fractions=y)
             inlet_gamma = (
@@ -3241,7 +3241,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                                                        T0=total_temp_inflow,
                                                        gamma=gamma_guess)
 
-                rho_inflow = pyro_mech.get_density(p=pres_inflow,
+                rho_inflow = pyro_mech.get_density(pressure=pres_inflow,
                                                   temperature=temp_inflow,
                                                   mass_fractions=y)
                 inlet_gamma = \
@@ -5159,6 +5159,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 dcoll, fluid_state, gas_model, uncoupled_fluid_boundaries,
                 quadrature_tag, dd=dd_vol_fluid, limiter_func=limiter_func,
                 entropy_min=smin)
+
 
             grad_fluid_cv = grad_cv_operator(
                 dcoll=dcoll, gas_model=gas_model, dd=dd_vol_fluid,
@@ -7324,6 +7325,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                     # raise MyRuntimeError("Failed simulation species check.")
                     state[0] = hammer_species(state[0])
 
+        if logmgr:
+            logmgr.tick_before()
+
         stepper_state = make_stepper_state_obj(state)
 
         if check_step(step=step, interval=ngarbage):
@@ -7804,7 +7808,6 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 axisymmetric=use_axisymmetric,
                 fluid_nodes=fluid_nodes,
                 wall_nodes=wall_nodes)
-
         else:
             fluid_rhs = ns_operator(
                 dcoll=dcoll,

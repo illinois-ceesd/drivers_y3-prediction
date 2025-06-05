@@ -491,6 +491,7 @@ def get_mesh(dim, size, bl_ratio, interface_ratio, mesh_origin, height=0.02,
             x = mgrp.nodes[0, :, :]
             x_avg = np.sum(x, axis=1)/x.shape[1]
             tag_to_elements = {
+
                 "fluid": np.where(x_avg < fluid_length + mesh_origin[0])[0],
                 "wall_insert": np.where(x_avg > fluid_length + mesh_origin[0])[0]}
 
