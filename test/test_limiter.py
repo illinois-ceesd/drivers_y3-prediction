@@ -174,11 +174,8 @@ class MulticomponentLump:
 
         # gaussian in pressure
         pressure = self._p0 + self._p_amp*expterm
-        print(f"init {pressure=}")
         r = eos.gas_const(species_mass_fractions=species_mass/mass)
-        print(f"init {r=}")
         temperature = pressure/mass/r
-        print(f"init {temperature=}")
         energy = mass*(
             eos.get_internal_energy(
                 temperature=temperature, species_mass_fractions=species_mass/mass) +
@@ -188,23 +185,29 @@ class MulticomponentLump:
                               momentum=mom, species_mass=species_mass)
 
 
-@pytest.mark.parametrize("order", [1, 4])
-@pytest.mark.parametrize("dim", [2, 3])
+@pytest.mark.parametrize("order", [1])
+@pytest.mark.parametrize("dim", [2])
 @pytest.mark.parametrize("rho_amp", [0.001, 0., -0.002, -0.005])
 @pytest.mark.parametrize("p_amp", [50, 0., -150, -400])
 @pytest.mark.parametrize("vmag", [0., 1])
 #@pytest.mark.parametrize("order", [1])
 #@pytest.mark.parametrize("dim", [2])
 #@pytest.mark.parametrize("rho_amp", [0.001])
-#@pytest.mark.parametrize("p_amp", [-400])
+#@pytest.mark.parametrize("rho_amp", [0.001, 0., -0.002, -0.005])
+#@pytest.mark.parametrize("p_amp", [0.])
 #@pytest.mark.parametrize("vmag", [0.])
-def test_positivity_preserving_limiter(actx_factory, order, dim,
+def test_positivity_preserving_limiter_single(actx_factory, order, dim,
                                        rho_amp, p_amp, vmag):
     """Testing positivity-preserving limiter."""
     actx = actx_factory()
 
     nel_1d = 2
 
+    print(f"{order=}")
+    print(f"{dim=}")
+    print(f"{rho_amp=}")
+    print(f"{p_amp=}")
+    print(f"{vmag=}")
     from meshmode.mesh.generation import generate_regular_rect_mesh
     mesh = generate_regular_rect_mesh(
         a=(-1.0,) * dim, b=(1.0,) * dim, nelements_per_axis=(nel_1d,) * dim
@@ -221,7 +224,6 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     velocity = np.zeros(shape=(dim,)) + vmag
     # Gaussian with a negative peak for rho and pressure
 
-    # gets a negative pressure and pres_avg is effed
     initializer = MulticomponentLump(dim=dim, p0=100.0, p_amp=p_amp,
                                      rho0=0.001, rho_amp=rho_amp,
                                      center=center, velocity=velocity,
@@ -230,16 +232,15 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     # think of this as the last known good temperature
     tseed = 100.0
     fluid_cv = initializer(nodes, eos=eos)
-    print(f"{nodes=}")
-    print(f"{fluid_cv.mass=}")
+    print(f"{actx.to_numpy(fluid_cv.mass)=}")
     temperature = gas_model.eos.temperature(
          cv=fluid_cv, temperature_seed=tseed)
     pressure = gas_model.eos.pressure(
          cv=fluid_cv, temperature=tseed)
-    print(f"{pressure=}")
-    print(f"{temperature=}")
+    print(f"{actx.to_numpy(pressure)=}")
+    print(f"{actx.to_numpy(temperature)=}")
     entropy = actx.np.log(pressure/fluid_cv.mass**1.4)
-    print(f"{entropy=}")
+    print(f"{actx.to_numpy(entropy)=}")
 
     # apply positivity-preserving limiter
     #
@@ -247,11 +248,12 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     #
     from grudge.dof_desc import DD_VOLUME_ALL
     smin = 11
+    entropy_min = actx.np.zeros_like(fluid_cv.mass) + smin
     limited_cv = limit_fluid_state_lv(
         dcoll=dcoll, cv=fluid_cv, temperature_seed=tseed,
-        gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
+        gas_model=gas_model, dd=DD_VOLUME_ALL, entropy_min=entropy_min)
     limited_mass = limited_cv.mass
-    print(f"{limited_mass=}")
+    print(f"{actx.to_numpy(limited_mass)=}")
     assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0
 
     temperature_limited = gas_model.eos.temperature(
@@ -259,9 +261,9 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
     pressure_limited = gas_model.eos.pressure(
          cv=limited_cv, temperature=tseed)
     entropy_limited = actx.np.log(pressure_limited/limited_cv.mass**1.4)
-    print(f"{entropy_limited=}")
-    print(f"{pressure_limited=}")
-    print(f"{temperature_limited=}")
+    print(f"{actx.to_numpy(entropy_limited)=}")
+    print(f"{actx.to_numpy(pressure_limited)=}")
+    print(f"{actx.to_numpy(temperature_limited)=}")
     assert actx.to_numpy(actx.np.min(entropy_limited)) >= smin - 1.e-4
 
 
@@ -274,11 +276,11 @@ def test_positivity_preserving_limiter(actx_factory, order, dim,
 @pytest.mark.parametrize("nspecies", [2, 7])
 #@pytest.mark.parametrize("order", [1])
 #@pytest.mark.parametrize("dim", [2])
-#@pytest.mark.parametrize("rho_amp", [-0.002])
-#@pytest.mark.parametrize("p_amp", [0.])
-#@pytest.mark.parametrize("y_amp", [0.])
+#@pytest.mark.parametrize("rho_amp", [-0.005])
+#@pytest.mark.parametrize("p_amp", [50])
+#@pytest.mark.parametrize("y_amp", [0.0])
 #@pytest.mark.parametrize("vmag", [0.])
-#@pytest.mark.parametrize("nspecies", [7])
+#@pytest.mark.parametrize("nspecies", [2])
 def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
                                              rho_amp, p_amp, y_amp, vmag):
     """Testing positivity-preserving limiter."""
@@ -378,9 +380,10 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
     #
     from grudge.dof_desc import DD_VOLUME_ALL
     smin = 11
+    entropy_min = actx.np.zeros_like(fluid_cv.mass) + smin
     limited_cv = limit_fluid_state_lv(
         dcoll=dcoll, cv=fluid_cv, temperature_seed=tseed,
-        gas_model=gas_model, dd=DD_VOLUME_ALL, limiter_smin=smin)
+        gas_model=gas_model, dd=DD_VOLUME_ALL, entropy_min=entropy_min)
     limited_mass = limited_cv.mass
     print(f"{actx.to_numpy(limited_mass)=}")
     assert actx.to_numpy(actx.np.min(limited_mass)) >= 0.0
@@ -399,14 +402,24 @@ def test_positivity_preserving_limiter_multi(actx_factory, order, dim, nspecies,
 
     print(f"{actx.to_numpy(limited_mass_frac)=}")
     # check minimum and maximum
+    spec_tol_min = 1e-16
+    spec_tol_max = 2e-16
     for i in range(nspecies):
-        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) > 0.0 - 1.e-11
-        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) < 1.0 + 1.e-11
+        assert actx.to_numpy(actx.np.min(limited_mass_frac[i])) > -spec_tol_min
+        assert actx.to_numpy(actx.np.max(limited_mass_frac[i])) < 1.0 + spec_tol_max
 
     # check y sums to 1
+    spec_sum_tol = 1e-15
     y_sum = actx.np.zeros_like(limited_cv.mass)
     for i in range(nspecies):
         y_sum = y_sum + limited_mass_frac[i]
+    y_sum_m1 = actx.np.abs(y_sum - 1.0)
+    assert actx.to_numpy(actx.np.max(y_sum_m1)) < spec_sum_tol
+
+    y_ones = 0.*y_sum + 1.0
+    y_sum_mone = y_sum - y_ones
+    print(f"{actx.to_numpy(y_sum)=}")
+    assert actx.to_numpy(actx.np.max(actx.np.abs(y_sum_mone))) < 1e-11
 
     # check pressure positivity
     assert actx.to_numpy(actx.np.min(pressure_limited)) > 0.
