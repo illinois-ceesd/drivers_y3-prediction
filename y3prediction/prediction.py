@@ -7615,6 +7615,9 @@ def main(actx_class, restart_filename=None, target_filename=None,
                             "future GC collections")
                 gc.freeze()
 
+        from mirgecom.simutil import queue_finish
+        queue_finish(queue)
+
         if logmgr:
             set_dt(logmgr, dt)
             logmgr.tick_after()
