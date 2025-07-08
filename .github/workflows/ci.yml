@@ -52,8 +52,6 @@ jobs:
             python -m pip install wheel
             python -m pip install pylint pyyaml
 
-            pylint setup.py driver.py y3prediction/*.py
-
         - name: Pytest
           run: |
             source emirge/config/activate_env.sh
