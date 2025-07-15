@@ -7036,7 +7036,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
 
         ysum_m1 = actx.np.abs(ysum - 1.0)
         sum_tol = 1e-15
-        if global_range_check(dd_vol_fluid, ysum_m1, -sum_tol, sum_tol):
+        if global_range_check(dd_vol_fluid, ysum_m1, 0.0, sum_tol):
             health_error = True
             local_max = actx.np.max(ysum)
             local_min = actx.np.min(ysum)
