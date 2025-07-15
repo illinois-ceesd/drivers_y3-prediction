@@ -7053,7 +7053,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         f" {actx.to_numpy(local_min)=}")
             print(f"{rank=}: {actx.to_numpy(local_max)=}, "
                   f"{actx.to_numpy(local_min)=}")
-            report_violators(ysum, -sum_tol, sum_tol)
+            report_violators(ysum, 1.0 - sum_tol, 1.0 + sum_tol)
 
         return health_error
 
