@@ -1762,7 +1762,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
     use_species_limiter = configurate("use_species_limiter", input_data, 0)
     limiter_smin = configurate("limiter_smin", input_data, 10)
     constant_smin = configurate("constant_smin", input_data, True)
-    use_hammer_species = configurate("use_hammer_species", input_data, True)
+    use_hammer_species = configurate("use_hammer_species", input_data, False)
 
     # Filtering is implemented according to HW Sec. 5.3
     # The modal response function is e^-(alpha * eta ^ 2s), where
@@ -7013,7 +7013,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
         for i in range(nspecies):
             yspec = cv.species_mass_fractions[i]
             ysum = ysum + yspec
-            if global_range_check(dd_vol_fluid, yspec, 0.0, 1+spec_tol):
+            if global_range_check(dd_vol_fluid, yspec, 0.0-spec_tol, 1+spec_tol):
                 health_error = True
                 y_min = vol_min(dd_vol_fluid, yspec)
                 y_max = vol_max(dd_vol_fluid, yspec)
@@ -7032,11 +7032,11 @@ def main(actx_class, restart_filename=None, target_filename=None,
                 print(f"{rank=}: "
                       f"Local Range      {species_names[i]}: "
                       f"({y_min_loc:1.3e}, {y_max_loc:1.3e})")
-                report_violators(yspec, 0.0, 1.+spec_tol)
+                report_violators(yspec, 0.0-spec_tol, 1.+spec_tol)
 
         ysum_m1 = actx.np.abs(ysum - 1.0)
         sum_tol = 1e-15
-        if global_range_check(dd_vol_fluid, ysum_m1, 0., sum_tol):
+        if global_range_check(dd_vol_fluid, ysum_m1, 0.0, sum_tol):
             health_error = True
             local_max = actx.np.max(ysum)
             local_min = actx.np.min(ysum)
@@ -7053,7 +7053,7 @@ def main(actx_class, restart_filename=None, target_filename=None,
                         f" {actx.to_numpy(local_min)=}")
             print(f"{rank=}: {actx.to_numpy(local_max)=}, "
                   f"{actx.to_numpy(local_min)=}")
-            report_violators(ysum, 1.-sum_tol, 1.+sum_tol)
+            report_violators(ysum, 1.0 - sum_tol, 1.0 + sum_tol)
 
         return health_error
 

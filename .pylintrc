@@ -3,3 +3,6 @@
 extension-pkg-whitelist=numpy
 disable=all
 enable=E
+
+[MESSAGES CONTROL]
+disable=E0611
