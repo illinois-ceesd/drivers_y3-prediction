@@ -2,7 +2,7 @@
 
 # default branch for building mirgecom for this driver
 #mirge_branch="test-tuo-perf-volpart"
-mirge_branch="production"
+mirge_branch="production-enable-duplication-checks"
 # conda environment name
 conda_env="mirgeDriver.Y3prediction"
 
